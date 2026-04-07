@@ -1,0 +1,77 @@
+[gd_scene format=3 uid="uid://bnismjitymiib"]
+
+[ext_resource type="Script" uid="uid://sj5bio6im08g" path="res://jiaoben/Scripts.gd" id="1_0ycyx"]
+[ext_resource type="PackedScene" uid="uid://b0xmh8dr2s6yp" path="res://zidan.tscn" id="2_msri1"]
+[ext_resource type="Texture2D" uid="uid://dekq730af314k" path="res://godot/FASHI2.png" id="3_msri1"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_vhy2e"]
+atlas = ExtResource("3_msri1")
+region = Rect2(0, 0, 649, 887)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_lkj6h"]
+atlas = ExtResource("3_msri1")
+region = Rect2(649, 0, 649, 887)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_k6cw2"]
+atlas = ExtResource("3_msri1")
+region = Rect2(1298, 0, 649, 887)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_8nm75"]
+atlas = ExtResource("3_msri1")
+region = Rect2(1947, 0, 649, 887)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_rp16c"]
+atlas = ExtResource("3_msri1")
+region = Rect2(2596, 0, 649, 887)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_i0j5y"]
+atlas = ExtResource("3_msri1")
+region = Rect2(3245, 0, 649, 887)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_n7sjj"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_vhy2e")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_lkj6h")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_k6cw2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_8nm75")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_rp16c")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_i0j5y")
+}],
+"loop": true,
+"name": &"default",
+"speed": 8.0
+}]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_0ycyx"]
+radius = 45.276924
+
+[node name="wanjia" type="CharacterBody2D" unique_id=1666786488]
+script = ExtResource("1_0ycyx")
+zidan_scene = ExtResource("2_msri1")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=734368568]
+position = Vector2(117, 126.00001)
+scale = Vector2(0.3076923, 0.28287962)
+sprite_frames = SubResource("SpriteFrames_n7sjj")
+autoplay = "default"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1699687125]
+position = Vector2(151, 137)
+shape = SubResource("CircleShape2D_0ycyx")
+
+[node name="Timer" type="Timer" parent="." unique_id=114481936]
+autostart = true
+
+[connection signal="timeout" from="Timer" to="." method="_on_fire"]
