@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://dsqea755ovq1p"]
+
+[ext_resource type="Script" uid="uid://br76nqg5cdhwv" path="res://now_enemies.gd" id="1_nsu4k"]
+
+[node name="Now_enemies" type="Node2D" unique_id=850744361]
+script = ExtResource("1_nsu4k")
+
+[node name="Timer" type="Timer" parent="." unique_id=819458200]
+autostart = true
+
+[connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]
