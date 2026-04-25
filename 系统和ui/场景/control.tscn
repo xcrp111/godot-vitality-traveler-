@@ -1,7 +1,9 @@
-[gd_scene load_steps=9 format=3 uid="uid://3pvgsvwepvm8"]
+[gd_scene load_steps=11 format=3 uid="uid://3pvgsvwepvm8"]
 
 [ext_resource type="Script" uid="uid://dy7xias8v6dy2" path="res://脚本/control.gd" id="1_5ynmq"]
 [ext_resource type="PackedScene" uid="uid://8yslhnjpfqdj" path="res://场景/main.tscn" id="2_w7kai"]
+[ext_resource type="PackedScene" uid="uid://b1gu7ntplalkn" path="res://场景/skill_book.tscn" id="3_y3n4o"]
+[ext_resource type="Script" uid="uid://16n7787noacw" path="res://脚本/skill_book.gd" id="4_y3n4o"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_yik8t"]
 bg_color = Color(0.985631, 0.287199, 0.624772, 1)
@@ -50,8 +52,6 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_5ynmq")
 
-[node name="Main" parent="." instance=ExtResource("2_w7kai")]
-
 [node name="MenuControl" type="Control" parent="."]
 anchors_preset = 0
 offset_right = 40.0
@@ -92,3 +92,168 @@ theme_override_styles/hover = SubResource("StyleBoxFlat_w7kai")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_v4bni")
 theme_override_styles/normal = SubResource("StyleBoxFlat_5wjxh")
 text = "Quit"
+
+[node name="Main" parent="." instance=ExtResource("2_w7kai")]
+
+[node name="DialogUI" type="Control" parent="Main"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="LeftBox" type="ColorRect" parent="Main/DialogUI"]
+layout_mode = 0
+offset_right = 1179.0
+offset_bottom = 670.0
+color = Color(0.188373, 0.142956, 0.557507, 1)
+
+[node name="LeftText" type="Label" parent="Main/DialogUI"]
+layout_mode = 0
+offset_left = 6.0
+offset_top = 32.0
+offset_right = 46.0
+offset_bottom = 55.0
+
+[node name="RightBox" type="ColorRect" parent="Main/DialogUI"]
+layout_mode = 0
+offset_right = 1182.0
+offset_bottom = 669.0
+color = Color(0.941519, 0.489608, 0.406754, 1)
+
+[node name="RightText" type="Label" parent="Main/DialogUI"]
+layout_mode = 0
+offset_left = 1102.0
+offset_top = 30.0
+offset_right = 1142.0
+offset_bottom = 53.0
+
+[node name="LeftName" type="Label" parent="Main/DialogUI"]
+layout_mode = 0
+offset_left = 1083.0
+offset_right = 1147.0
+offset_bottom = 23.0
+text = "生命行者"
+
+[node name="RightName" type="Label" parent="Main/DialogUI"]
+layout_mode = 0
+offset_left = 7.0
+offset_top = 3.0
+offset_right = 47.0
+offset_bottom = 26.0
+text = "导师"
+
+[node name="CloseBtn" type="Button" parent="Main/DialogUI"]
+visible = false
+layout_mode = 0
+offset_left = 17.0
+offset_top = 539.0
+offset_right = 118.0
+offset_bottom = 636.0
+
+[node name="SkillBook" parent="Main" instance=ExtResource("3_y3n4o")]
+script = ExtResource("4_y3n4o")
+
+[node name="Sprite2D" parent="Main/SkillBook" index="1"]
+position = Vector2(748, 200)
+scale = Vector2(0.304688, 0.40625)
+
+[node name="InteractBtn" type="Button" parent="Main"]
+visible = false
+offset_left = 777.0
+offset_top = 88.0
+offset_right = 864.0
+offset_bottom = 161.0
+text = "技能书"
+
+[node name="CoinLabel" type="Label" parent="Main"]
+offset_left = 395.0
+offset_top = 182.0
+offset_right = 491.0
+offset_bottom = 220.0
+
+[node name="SkillUI" type="Control" parent="Main"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Title" type="Label" parent="Main/SkillUI"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="CloseBtn" type="Button" parent="Main/SkillUI"]
+visible = false
+layout_mode = 0
+offset_left = 2.0
+offset_top = 556.0
+offset_right = 95.0
+offset_bottom = 646.0
+
+[node name="MenuLayer" type="CanvasLayer" parent="."]
+
+[node name="MenuButton" type="Button" parent="MenuLayer"]
+offset_left = 1078.0
+offset_top = 614.0
+offset_right = 1150.0
+offset_bottom = 645.0
+text = "菜单"
+
+[node name="MenuPanel" type="Control" parent="MenuLayer"]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 421.0
+offset_top = 190.0
+offset_right = 683.0
+offset_bottom = 472.0
+size_flags_horizontal = 4
+
+[node name="ColorRect" type="ColorRect" parent="MenuLayer/MenuPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -1360.0
+offset_top = -1383.0
+offset_right = -1320.0
+offset_bottom = -1343.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(86.7466, 84.4506)
+color = Color(1, 1, 1, 0.717647)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MenuLayer/MenuPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -61.0
+offset_top = -81.0
+offset_right = 139.0
+offset_bottom = 119.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="RestartBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer"]
+custom_minimum_size = Vector2(180, 60)
+layout_mode = 2
+text = "重新开始"
+
+[node name="CloseBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+text = "关闭菜单"
+
+[node name="QuitBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+text = "退出游戏"
+
+[connection signal="body_entered" from="Main/SkillBook" to="Main/SkillBook" method="_on_body_entered"]
+[connection signal="body_exited" from="Main/SkillBook" to="Main/SkillBook" method="_on_body_exited"]
+
+[editable path="Main/SkillBook"]
