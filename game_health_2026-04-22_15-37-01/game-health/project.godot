@@ -17,11 +17,12 @@ config/icon="res://icon.svg"
 
 [display]
 
-window/size/viewport_width=1920
-window/size/viewport_height=1280
+window/size/viewport_width=1280
+window/size/viewport_height=980
 window/size/mode=4
+window/size/maximize_disabled=true
 window/size/window_width_override=1280
-window/size/window_height_override=720
+window/size/window_height_override=980
 window/stretch/mode="canvas_items"
 
 [input]
