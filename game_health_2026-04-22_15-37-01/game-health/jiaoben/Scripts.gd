@@ -21,7 +21,7 @@ func _physics_process(delta: float) -> void:
 			marker2d.scale = Vector2(-1,1)
 	move_and_slide()
 	var mouse_pos: Vector2 = get_global_mouse_position()
-	look_at(mouse_pos)
+	
 func game_over():
 	is_game_over = true
 	await get_tree().create_timer(4).timeout
@@ -52,7 +52,8 @@ func fire_bullet() -> void:
 		# 设置子弹初始位置为当前节点位置
 		zidan.global_position = global_position + Vector2(60,60)
 		# 设置子弹方向为当前朝向
-		zidan.rotation = rotation
+		var target_dir = get_global_mouse_position() - zidan.global_position
+		zidan.rotation = target_dir.angle()
 		# 将子弹添加到父节点（通常是主场景或关卡节点）
 		get_parent().add_child(zidan)
 		
