@@ -8,8 +8,8 @@
 [ext_resource type="Texture2D" uid="uid://vg6t5jcvpa7u" path="res://godot/fashi.png" id="5_k6cw2"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_msri1"]
-radius = 32.0
-height = 154.0
+radius = 29.0
+height = 71.99997
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_8nm75"]
 atlas = ExtResource("4_lkj6h")
@@ -144,11 +144,11 @@ animations = [{
 }]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_lkj6h"]
-radius = 930.12085
+radius = 866.04333
 
 [node name="wanjia" type="CharacterBody2D" unique_id=1666786488]
 z_index = 5
-position = Vector2(1.9999998, 6.9999995)
+position = Vector2(7.1054274e-15, 8)
 scale = Vector2(0.4, 0.4)
 script = ExtResource("1_0ycyx")
 zidan_scene = ExtResource("2_msri1")
