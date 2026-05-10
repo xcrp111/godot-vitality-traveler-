@@ -1,5 +1,5 @@
 63f7b34db8d8cdea90c76aacccf841ec
-::res://::1778414030
+::res://::1778414254
 bg_map.tscn::PackedScene::6290563779726394251::1778413918::0::1::::<><><>0<>0<><>::uid://kfnbcnet1t8x::::res://godot/map1.png<>uid://dsqea755ovq1p::::res://Enemy/now_enemies.tscn<>uid://bnismjitymiib::::res://changjing/fashi.tscn
 hanbingjian.gd::GDScript::7249590928491617934::1778413919::0::1::::<>Area2D<><>0<>0<><>::
 hanbingjian.tscn::PackedScene::3414950856509883467::1778413919::0::1::::<><><>0<>0<><>::uid://dbj0x6e8e0a8e::::res://hanbingjian.gd<>uid://b2ryj53pmqcfa::::res://godot/Bullet.png
