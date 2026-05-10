@@ -1,0 +1,152 @@
+[gd_scene format=3 uid="uid://4qhwpj63bq56"]
+
+[ext_resource type="Texture2D" uid="uid://cf8qw8lhwsd2g" path="res://godot/Slimer.png" id="1_a4e41"]
+[ext_resource type="Script" uid="uid://b11blodfv555w" path="res://jiaoben/shilaimu.gd" id="1_b2tjs"]
+[ext_resource type="Texture2D" uid="uid://whi8f71oe8rp" path="res://godot/SlimerDeath.png" id="2_ue4ha"]
+
+[sub_resource type="PackedScene" id="PackedScene_ue4ha"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_d5fc1"]
+radius = 41.0
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ff3uj"]
+atlas = ExtResource("2_ue4ha")
+region = Rect2(0, 0, 64, 58)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2bcyp"]
+atlas = ExtResource("2_ue4ha")
+region = Rect2(64, 0, 64, 58)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_in3c8"]
+atlas = ExtResource("2_ue4ha")
+region = Rect2(128, 0, 64, 58)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_tfiof"]
+atlas = ExtResource("2_ue4ha")
+region = Rect2(192, 0, 64, 58)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_20ubj"]
+atlas = ExtResource("2_ue4ha")
+region = Rect2(256, 0, 64, 58)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_akhwp"]
+atlas = ExtResource("2_ue4ha")
+region = Rect2(320, 0, 64, 58)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_spay5"]
+atlas = ExtResource("2_ue4ha")
+region = Rect2(384, 0, 64, 58)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_oruvf"]
+atlas = ExtResource("1_a4e41")
+region = Rect2(0, 0, 41, 38)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_20v7d"]
+atlas = ExtResource("1_a4e41")
+region = Rect2(41, 0, 41, 38)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_v8tib"]
+atlas = ExtResource("1_a4e41")
+region = Rect2(82, 0, 41, 38)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_t1823"]
+atlas = ExtResource("1_a4e41")
+region = Rect2(123, 0, 41, 38)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_oltrf"]
+atlas = ExtResource("1_a4e41")
+region = Rect2(164, 0, 41, 38)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_sf32t"]
+atlas = ExtResource("1_a4e41")
+region = Rect2(205, 0, 41, 38)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_0vyba"]
+atlas = ExtResource("1_a4e41")
+region = Rect2(246, 0, 41, 38)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_te3oj"]
+atlas = ExtResource("1_a4e41")
+region = Rect2(287, 0, 41, 38)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_ixyw5"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ff3uj")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_2bcyp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_in3c8")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_tfiof")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_20ubj")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_akhwp")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_spay5")
+}],
+"loop": false,
+"name": &"siwang",
+"speed": 12.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_oruvf")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_20v7d")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_v8tib")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_t1823")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_oltrf")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_sf32t")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_0vyba")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_te3oj")
+}],
+"loop": true,
+"name": &"zhuti",
+"speed": 12.0
+}]
+
+[node name="shilaumu" type="Area2D" unique_id=2087246088 groups=["enemy"]]
+script = ExtResource("1_b2tjs")
+shilaimu_scene = SubResource("PackedScene_ue4ha")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1838016302]
+position = Vector2(1, 9)
+shape = SubResource("CircleShape2D_d5fc1")
+metadata/_edit_group_ = true
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1211927849 groups=["zidan"]]
+position = Vector2(0, -23.999998)
+scale = Vector2(3.6158535, 3.9078956)
+sprite_frames = SubResource("SpriteFrames_ixyw5")
+animation = &"zhuti"
+autoplay = "zhuti"
+metadata/_edit_group_ = true
+
+[node name="Timer" type="Timer" parent="." unique_id=2111256871]
+wait_time = 3.0
+
+[connection signal="area_entered" from="." to="." method="_on_area_entered"]
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]
+[connection signal="timeout" from="Timer" to="." method="shilaimu_shengc"]
