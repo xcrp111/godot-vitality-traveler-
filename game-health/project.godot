@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Game Health"
-run/main_scene="uid://di1sc6xh4ghrw"
+run/main_scene="uid://3pvgsvwepvm8"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 

@@ -157,7 +157,8 @@ shilaimu_scene = ExtResource("4_k6cw2")
 metadata/_edit_group_ = true
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1699687125]
-position = Vector2(151, 144)
+position = Vector2(181, 155)
+scale = Vector2(0.8, 0.8)
 shape = SubResource("CapsuleShape2D_msri1")
 metadata/_edit_group_ = true
 
@@ -185,6 +186,16 @@ position = Vector2(149.99998, 144.99998)
 shape = SubResource("CircleShape2D_lkj6h")
 metadata/_edit_lock_ = true
 metadata/_edit_group_ = true
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=636996209]
+zoom = Vector2(1.4, 1.4)
+position_smoothing_enabled = true
+drag_horizontal_enabled = true
+drag_vertical_enabled = true
+drag_left_margin = 0.23
+drag_top_margin = 0.25
+drag_right_margin = 0.23
+drag_bottom_margin = 0.22
 
 [connection signal="timeout" from="Timer" to="." method="_on_fire"]
 [connection signal="body_entered" from="Area2D" to="." method="_on_area_2d_body_entered"]
