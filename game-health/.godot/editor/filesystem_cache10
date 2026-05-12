@@ -1,5 +1,5 @@
 63f7b34db8d8cdea90c76aacccf841ec
-::res://::1778584598
+::res://::1778589708
 bg_map.tscn::PackedScene::6290563779726394251::1778413918::0::1::::<><><>0<>0<><>::uid://kfnbcnet1t8x::::res://godot/map1.png<>uid://dsqea755ovq1p::::res://Enemy/now_enemies.tscn<>uid://bnismjitymiib::::res://changjing/fashi.tscn
 hanbingjian.gd::GDScript::7249590928491617934::1778413919::0::1::::<>Area2D<><>0<>0<><>::
 hanbingjian.tscn::PackedScene::3414950856509883467::1778413919::0::1::::<><><>0<>0<><>::uid://dbj0x6e8e0a8e::::res://hanbingjian.gd<>uid://b2ryj53pmqcfa::::res://godot/Bullet.png
@@ -58,9 +58,9 @@ changjingguanli.gdc::GDScript::2537185031162110912::1778413919::0::1::::<>RefCou
 Scripts.gdc::GDScript::3752119065897482708::1778413919::0::1::::<>RefCounted<><>0<>0<><>::
 shilaimu.gdc::GDScript::1252795749435693742::1778413919::0::1::::<>RefCounted<><>0<>0<><>::
 zidan.gdc::GDScript::8750577781055401747::1778413919::0::1::::<>RefCounted<><>0<>0<><>::
-::res://场景/::1778413919
+::res://场景/::1778587120
 character_body_2d.tscn::PackedScene::2690386792496109069::1778413919::0::1::::<><><>0<>0<><>::uid://c48levhhq7ad6::::res://资源/待机.png<>uid://b2750plei1jps::::res://脚本/character_body_2d.gd
-control.tscn::PackedScene::1997540038654062789::1778413919::0::1::::<><><>0<>0<><>::uid://dy7xias8v6dy2::::res://脚本/control.gd<>uid://8yslhnjpfqdj::::res://场景/main.tscn<>uid://b1gu7ntplalkn::::res://场景/skill_book.tscn<>uid://16n7787noacw::::res://脚本/skill_book.gd
+control.tscn::PackedScene::1997540038654062789::1778587120::0::1::::<><><>0<>0<><>::uid://dy7xias8v6dy2::::res://脚本/control.gd<>uid://8yslhnjpfqdj::::res://场景/main.tscn<>uid://b1gu7ntplalkn::::res://场景/skill_book.tscn<>uid://16n7787noacw::::res://脚本/skill_book.gd
 door.tscn::PackedScene::2495867830228647094::1778413919::0::1::::<><><>0<>0<><>::uid://b8ns5nngbhf62::::res://new/icon1.svg
 main.tscn::PackedScene::2366889843930340903::1778413919::0::1::::<><><>0<>0<><>::uid://dv7pfl3t0skw8::::res://资源/豆包(1).jpg
 skill_book.tscn::PackedScene::4224989082917667549::1778413919::0::1::::<><><>0<>0<><>::uid://b8ns5nngbhf62::::res://new/icon1.svg
