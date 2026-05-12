@@ -98,8 +98,10 @@ text = "Quit"
 [node name="DialogUI" type="Control" parent="Main" unique_id=887363106]
 layout_mode = 3
 anchors_preset = 0
-offset_right = 40.0
-offset_bottom = 40.0
+offset_left = 71.0
+offset_top = -33.0
+offset_right = 111.0
+offset_bottom = 7.0
 metadata/_edit_group_ = true
 
 [node name="LeftBox" type="ColorRect" parent="Main/DialogUI" unique_id=762260213]
