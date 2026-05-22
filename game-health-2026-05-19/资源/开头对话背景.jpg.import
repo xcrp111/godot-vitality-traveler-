@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cf8qw8lhwsd2g"
-path="res://.godot/imported/Slimer.png-a716c937c42280df1eec305d6218093f.ctex"
+uid="uid://dote4hqs3270"
+path="res://.godot/imported/开头对话背景.jpg-47543f4a7b8780ed824e72be0d2289a4.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://godot/Slimer.png"
-dest_files=["res://.godot/imported/Slimer.png-a716c937c42280df1eec305d6218093f.ctex"]
+source_file="res://资源/开头对话背景.jpg"
+dest_files=["res://.godot/imported/开头对话背景.jpg-47543f4a7b8780ed824e72be0d2289a4.ctex"]
 
 [params]
 

@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Game Health"
 run/main_scene="uid://3pvgsvwepvm8"
-config/features=PackedStringArray("4.6", "Forward Plus")
+config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="res://icon.svg"
 
 [display]
@@ -20,10 +20,10 @@ config/icon="res://icon.svg"
 window/size/viewport_width=1920
 window/size/viewport_height=1080
 window/size/mode=4
-window/size/maximize_disabled=true
 window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
+window/size/maximize_disabled=true
 
 [global_group]
 
