@@ -1,0 +1,61 @@
+[gd_scene format=3 uid="uid://dyq165u8ehfsf"]
+
+[ext_resource type="Texture2D" uid="uid://veil8n62gdhe" path="res://bg map/Walls_interior.png" id="1_0r486"]
+[ext_resource type="Script" uid="uid://cwhyydsfd6lsr" path="res://jiaoben/portal.gd" id="1_7rant"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ef3v5"]
+atlas = ExtResource("1_0r486")
+region = Rect2(0, 180, 32, 45)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_grrij"]
+atlas = ExtResource("1_0r486")
+region = Rect2(32, 180, 32, 45)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_6r214"]
+atlas = ExtResource("1_0r486")
+region = Rect2(0, 225, 32, 45)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2pgh4"]
+atlas = ExtResource("1_0r486")
+region = Rect2(32, 225, 32, 45)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_wtc1a"]
+animations = [{
+"frames": [{
+"duration": 2.0,
+"texture": SubResource("AtlasTexture_ef3v5")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_grrij")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_6r214")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_2pgh4")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_svtls"]
+size = Vector2(80.000244, 80)
+
+[node name="portal" type="Area2D" unique_id=1588842535]
+script = ExtResource("1_7rant")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1354108998]
+scale = Vector2(2, 2)
+sprite_frames = SubResource("SpriteFrames_wtc1a")
+autoplay = "default"
+frame_progress = 0.13152632
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1437842086]
+position = Vector2(0, 8)
+shape = SubResource("RectangleShape2D_svtls")
+
+[node name="DestinationPoint" type="Marker2D" parent="." unique_id=1640399178]
+position = Vector2(399, -6)
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]
