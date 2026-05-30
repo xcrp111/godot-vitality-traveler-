@@ -1316,37 +1316,39 @@ position = Vector2(40, 0)
 [node name="DestinationPoint" parent="portal/portal" index="2" unique_id=1640399178]
 position = Vector2(965, -215)
 
-[node name="portal3" parent="portal" unique_id=535279579 instance=ExtResource("5_yic1l")]
+[node name="portal2" parent="portal" unique_id=535279579 instance=ExtResource("5_yic1l")]
 position = Vector2(582, 325)
 scale = Vector2(0.4, 0.4)
 
-[node name="AnimatedSprite2D" parent="portal/portal3" index="0" unique_id=1354108998]
-position = Vector2(2667.5, -75)
-scale = Vector2(2.5, 2.22222)
-
-[node name="CollisionShape2D" parent="portal/portal3" index="1" unique_id=1437842086]
-position = Vector2(2665, -85)
-
-[node name="DestinationPoint" parent="portal/portal3" index="2" unique_id=1640399178]
-position = Vector2(3820, -565)
-
-[node name="portal2" parent="portal" unique_id=1725998965 instance=ExtResource("5_yic1l")]
-position = Vector2(622, 332)
-scale = Vector2(0.4, 0.4)
-
 [node name="AnimatedSprite2D" parent="portal/portal2" index="0" unique_id=1354108998]
-position = Vector2(240, 225)
+position = Vector2(332.49994, 282.49994)
 scale = Vector2(2.5, 2.22222)
 
 [node name="CollisionShape2D" parent="portal/portal2" index="1" unique_id=1437842086]
-position = Vector2(245, 225)
+position = Vector2(337.49994, 282.49994)
 
 [node name="DestinationPoint" parent="portal/portal2" index="2" unique_id=1640399178]
-position = Vector2(-695, 409.99997)
+position = Vector2(-699.99994, -537.5)
+
+[node name="portal3" parent="portal" unique_id=1725998965 instance=ExtResource("5_yic1l")]
+position = Vector2(1954.9999, 224)
+scale = Vector2(0.4, 0.4)
+activation_delay = 20.0
+
+[node name="AnimatedSprite2D" parent="portal/portal3" index="0" unique_id=1354108998]
+position = Vector2(-789.9996, 307.5)
+scale = Vector2(2.5, 2.22222)
+
+[node name="CollisionShape2D" parent="portal/portal3" index="1" unique_id=1437842086]
+position = Vector2(-789.9999, 305)
+
+[node name="DestinationPoint" parent="portal/portal3" index="2" unique_id=1640399178]
+position = Vector2(410.00024, -142.49998)
 
 [node name="portal4" parent="portal" unique_id=1182555781 instance=ExtResource("5_yic1l")]
 position = Vector2(2048, 415)
 scale = Vector2(0.4, 0.4)
+activation_delay = 20.0
 
 [node name="AnimatedSprite2D" parent="portal/portal4" index="0" unique_id=1354108998]
 position = Vector2(75.0001, -55)
@@ -1357,8 +1359,6 @@ position = Vector2(75, -57.5)
 
 [node name="DestinationPoint" parent="portal/portal4" index="2" unique_id=1640399178]
 position = Vector2(-2707.5, -242.50006)
-
-[node name="Timer" type="Timer" parent="portal" unique_id=1598800679]
 
 [node name="MenuLayer" type="CanvasLayer" parent="." unique_id=1193878069]
 
@@ -1430,6 +1430,6 @@ text = "退出游戏"
 [connection signal="timeout" from="shilaimushengchengTimer" to="." method="_on_enemyspown_timer_timeout"]
 
 [editable path="portal/portal"]
-[editable path="portal/portal3"]
 [editable path="portal/portal2"]
+[editable path="portal/portal3"]
 [editable path="portal/portal4"]

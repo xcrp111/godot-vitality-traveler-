@@ -58,4 +58,6 @@ shape = SubResource("RectangleShape2D_svtls")
 [node name="DestinationPoint" type="Marker2D" parent="." unique_id=1640399178]
 position = Vector2(399, -6)
 
+[node name="Timer" type="Timer" parent="."]
+
 [connection signal="body_entered" from="." to="." method="_on_body_entered"]
