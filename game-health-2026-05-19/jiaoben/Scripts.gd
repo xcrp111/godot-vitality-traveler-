@@ -11,6 +11,9 @@ var is_game_over : bool = false
 @export var hanbingjian_scene :PackedScene
 @export var shilaimu_scene : PackedScene
 # Called every frame. 'delta' is the elapsed time since the previous frame.
+
+
+
 func _physics_process(delta: float) -> void:
 	if not is_game_over:
 		velocity = Input.get_vector("left","right","up","down") * move_speed

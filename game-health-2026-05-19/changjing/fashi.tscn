@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://bnismjitymiib"]
+[gd_scene load_steps=27 format=3 uid="uid://bnismjitymiib"]
 
 [ext_resource type="Script" uid="uid://sj5bio6im08g" path="res://jiaoben/Scripts.gd" id="1_0ycyx"]
 [ext_resource type="PackedScene" uid="uid://b0xmh8dr2s6yp" path="res://zidan.tscn" id="2_msri1"]
@@ -9,7 +9,7 @@
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_msri1"]
 radius = 29.0
-height = 71.99997
+height = 72.0
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_8nm75"]
 atlas = ExtResource("4_lkj6h")
@@ -147,9 +147,9 @@ animations = [{
 radius = 22.5
 height = 55.0
 
-[node name="wanjia" type="CharacterBody2D" unique_id=1666786488 groups=["player"]]
+[node name="wanjia" type="CharacterBody2D" groups=["player"]]
 z_index = 5
-position = Vector2(4.2351647e-22, 9)
+position = Vector2(4.23516e-22, 9)
 scale = Vector2(0.4, 0.4)
 script = ExtResource("1_0ycyx")
 zidan_scene = ExtResource("2_msri1")
@@ -157,22 +157,22 @@ hanbingjian_scene = ExtResource("3_vhy2e")
 shilaimu_scene = ExtResource("4_k6cw2")
 metadata/_edit_group_ = true
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1699687125]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 position = Vector2(181, 155)
 scale = Vector2(0.8, 0.8)
 shape = SubResource("CapsuleShape2D_msri1")
 metadata/_edit_group_ = true
 
-[node name="Timer" type="Timer" parent="." unique_id=114481936]
+[node name="Timer" type="Timer" parent="."]
 autostart = true
 
-[node name="Marker2D" type="Marker2D" parent="." unique_id=1229609996]
+[node name="Marker2D" type="Marker2D" parent="."]
 position = Vector2(151, 145)
 metadata/_edit_group_ = true
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Marker2D" unique_id=734368568]
-position = Vector2(8.111324, 19.202597)
-scale = Vector2(0.18792799, 0.2662536)
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Marker2D"]
+position = Vector2(8.11132, 19.2026)
+scale = Vector2(0.187928, 0.266254)
 sprite_frames = SubResource("SpriteFrames_n7sjj")
 animation = &"death"
 autoplay = "move"
@@ -180,7 +180,7 @@ frame = 7
 frame_progress = 1.0
 metadata/_edit_group_ = true
 
-[node name="Camera2D" type="Camera2D" parent="." unique_id=636996209]
+[node name="Camera2D" type="Camera2D" parent="."]
 zoom = Vector2(1.4, 1.4)
 position_smoothing_enabled = true
 drag_horizontal_enabled = true
@@ -190,11 +190,11 @@ drag_top_margin = 0.25
 drag_right_margin = 0.23
 drag_bottom_margin = 0.22
 
-[node name="Area2D" type="Area2D" parent="." unique_id=520755324]
+[node name="Area2D" type="Area2D" parent="."]
 metadata/_edit_group_ = true
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=767256517]
-position = Vector2(180, 154.99998)
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D"]
+position = Vector2(180, 155)
 shape = SubResource("CapsuleShape2D_k6cw2")
 metadata/_edit_group_ = true
 

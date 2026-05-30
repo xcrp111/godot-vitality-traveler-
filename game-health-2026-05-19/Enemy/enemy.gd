@@ -1,7 +1,7 @@
 extends CharacterBody2D
 # 导出变量，方便在编辑器中调整
 @export var speed: float = 70.0
-@export var hp_e: float = 15
+@export var hp: float = 15
 @export var death_duration: float = 0.6
 var mouse_pos: Vector2 = get_global_mouse_position()
 # 内部状态
@@ -59,14 +59,14 @@ func _on_area_2d_area_entered(area: Area2D) -> void:
 	if is_dead:
 		return
 	if area.is_in_group("zidan"):
-		hp_e -= 10
+		hp -= 10
 		area.queue_free() # 子弹销毁
 	elif area.is_in_group("hanbingjian"):
-		hp_e -= 10
+		hp -= 10
 		# 减速效果
 		speed *= 0.75
 		velocity.x = speed * direction
-	if hp_e <= 0:
+	if hp <= 0:
 		is_dead = true
 		$AnimatedSprite2D.play("siwang")
 		# 增加分数
