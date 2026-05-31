@@ -282,7 +282,7 @@ func _ready():
 	quit_button.pressed.connect(_on_quit_game)
 	dialog_close_btn.pressed.connect(_close_dialog)
 	interact_btn.pressed.connect(_on_interact)
-	interact_btn1.pressed.connect(_on_interact)
+	# 传送门按钮由编辑器信号连接，见 _on_interact_btn_1_button_down()
 
 	# 菜单按钮绑定
 	menu_btn.pressed.connect(_open_menu)      
@@ -379,7 +379,7 @@ func _on_door_body_exited(body):
 	if body.name == "wanjia":
 		hide_interact_button1()
 func _on_interact_btn_1_button_down() -> void:
-	get_tree().change_scene_to_file("res://changjing/beijing1 caodi.tscn")
+	get_tree().change_scene_to_file("res://changjing/第一关.tscn")
 	pass # Replace with function body.
 # ------------------------------
 # 下面全部是你原来的逻辑，不动

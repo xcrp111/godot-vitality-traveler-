@@ -3,7 +3,6 @@ extends CharacterBody2D
 @export var speed: float = 50.0
 @export var hp: float = 20
 @export var death_duration: float = 0.6
-var mouse_pos: Vector2 = get_global_mouse_position()
 # 内部状态
 var is_dead: bool = false
 var direction: int = -1 # -1 向左, 1 向右
@@ -32,9 +31,10 @@ func _physics_process(delta: float) -> void:
 			$AnimatedSprite2D.flip_h = false
 # 检测墙壁碰撞并转向
 func check_wall_collision():
-	if position.x < mouse_pos.x - 1000:
+	var mp := get_global_mouse_position()
+	if position.x < mp.x - 1000:
 		queue_free() # 超出左边界销毁
-	elif position.x > mouse_pos.x + 1000: # 假设右边界
+	elif position.x > mp.x + 1000: # 假设右边界
 		queue_free()
 	# 基于 RayCast2D 或 get_slide_collision 的更精确转向
 	# 这里使用 move_and_slide 后的碰撞信息来判断是否撞墙

@@ -1,6 +1,8 @@
 extends Node2D
-@export var shilaimu_scene : PackedScene
-@export var enemy_scene : PackedScene
+## 第一关场景管理器 — 负责菜单、重新开始、分数等关卡逻辑。
+## 敌人生成已迁移到 EnemySpawner 组件（res://jiaoben/enemy_spawner.gd），
+## 请在编辑器中给场景添加 EnemySpawner 节点并配置房间区域和敌人类型。
+
 @export var score : int = 0
 
 @onready var menu_layer = $MenuLayer
@@ -10,9 +12,10 @@ extends Node2D
 @onready var close_btn = $MenuLayer/MenuPanel/VBoxContainer/CloseBtn
 @onready var quit_btn = $MenuLayer/MenuPanel/VBoxContainer/QuitBtn
 @onready var 角色 = $wanjia
+
 func _ready():
 	# 菜单按钮绑定
-	menu_btn.pressed.connect(_open_menu)      
+	menu_btn.pressed.connect(_open_menu)
 	restart_btn.pressed.connect(_on_restart)
 	quit_btn.pressed.connect(_on_quit_game)
 	close_btn.pressed.connect(_close_menu)
@@ -23,7 +26,7 @@ func _open_menu():
 
 func _close_menu():
 	menu_panel.visible = false
-	
+
 func _on_restart():
 	_close_menu()
 	角色.global_position = Vector2(-100, 200)
@@ -31,20 +34,7 @@ func _on_restart():
 func _on_quit_game():
 	get_tree().quit()
 
-# Called when the node enters the scene tree for the first time.
 
-
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-func _process(delta: float) -> void:
-	pass
-
-
-func _on_shilaimushengcheng_timer_timeout() -> void:
-	var shilaimu_node = shilaimu_scene.instantiate()
-	shilaimu_node.position = Vector2(randf_range(-700,650),randf_range(50,300))
-	get_tree().current_scene.add_child(shilaimu_node)
-func _on_enemyspown_timer_timeout() -> void:
-	var enemy_node = enemy_scene.instantiate()
-	enemy_node.position = Vector2(randf_range(-700,650),randf_range(50,300))
-	get_tree().current_scene.add_child(enemy_node)
+## 加分方法（供敌人死亡时调用）
+func add_score(amount: int) -> void:
+	score += amount
