@@ -5,9 +5,10 @@ var is_game_over : bool = false
 @export var hanbingjian_scene :PackedScene
 @export var shilaimu_scene : PackedScene
 
+
 # Called when the node enters the scene tree for the first time.
 func _ready() -> void:
-	pass # Replace with function body.
+	pass
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
@@ -24,7 +25,9 @@ func _on_fire() -> void:
 		zidan_node.position = zidan_node.global_position
 		#get_tree().root.add_child(zidan_node)
 		fire_bullet()
+	
 	if Input.is_action_pressed("hanbingjian"):
+				
 		var hanbingjian_node = hanbingjian_scene.instantiate()
 		hanbingjian_node.position = position + Vector2(60,60)
 		get_tree().current_scene.add_child(hanbingjian_node)

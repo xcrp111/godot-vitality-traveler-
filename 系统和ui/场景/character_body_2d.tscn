@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://belijoxaivwcj"]
+[gd_scene format=3 uid="uid://belijoxaivwcj"]
 
 [ext_resource type="Texture2D" uid="uid://c48levhhq7ad6" path="res://资源/待机.png" id="1_42ju3"]
 [ext_resource type="Script" uid="uid://b2750plei1jps" path="res://脚本/character_body_2d.gd" id="1_ah2pr"]
@@ -57,14 +57,22 @@ animations = [{
 "speed": 5.0
 }]
 
-[node name="player" type="CharacterBody2D"]
+[sub_resource type="LabelSettings" id="LabelSettings_ah2pr"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_38p74"]
+bg_color = Color(1, 0.34375846, 0.27245858, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nujpe"]
+bg_color = Color(0.14994177, 0.6179683, 0.99999994, 1)
+
+[node name="player" type="CharacterBody2D" unique_id=153594119]
 script = ExtResource("1_ah2pr")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=794063539]
 position = Vector2(11, 2)
 shape = SubResource("CapsuleShape2D_ah2pr")
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1312983045]
 scale = Vector2(0.5, 0.5)
 sprite_frames = SubResource("SpriteFrames_t34ck")
 animation = &"idle"
@@ -72,4 +80,42 @@ autoplay = "idle"
 frame_progress = 0.0396068
 flip_h = true
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1917247733]
+
+[node name="HUD_Layer" type="CanvasLayer" parent="." unique_id=1364152781]
+
+[node name="StatusUI" type="VBoxContainer" parent="HUD_Layer" unique_id=974219911]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 48.0
+offset_bottom = 66.0
+theme_override_constants/separation = 6
+
+[node name="HP_Bar_Container" type="HBoxContainer" parent="HUD_Layer/StatusUI" unique_id=2035461231]
+layout_mode = 2
+
+[node name="HP_Bar" type="Label" parent="HUD_Layer/StatusUI/HP_Bar_Container" unique_id=1087646944]
+layout_mode = 2
+text = "❤️"
+label_settings = SubResource("LabelSettings_ah2pr")
+
+[node name="HP_Icon" type="ProgressBar" parent="HUD_Layer/StatusUI/HP_Bar_Container" unique_id=576403166]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 16
+theme_override_styles/fill = SubResource("StyleBoxFlat_38p74")
+value = 100.0
+
+[node name="MP_Bar_Container" type="HBoxContainer" parent="HUD_Layer/StatusUI" unique_id=711130023]
+layout_mode = 2
+
+[node name="MP_Bar" type="Label" parent="HUD_Layer/StatusUI/MP_Bar_Container" unique_id=858343654]
+layout_mode = 2
+text = "💧"
+
+[node name="MP_Icon" type="ProgressBar" parent="HUD_Layer/StatusUI/MP_Bar_Container" unique_id=359227406]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+theme_override_styles/fill = SubResource("StyleBoxFlat_nujpe")
+value = 100.0

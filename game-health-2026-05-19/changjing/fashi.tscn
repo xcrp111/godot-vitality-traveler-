@@ -1,4 +1,4 @@
-[gd_scene load_steps=27 format=3 uid="uid://bnismjitymiib"]
+[gd_scene format=3 uid="uid://bnismjitymiib"]
 
 [ext_resource type="Script" uid="uid://sj5bio6im08g" path="res://jiaoben/Scripts.gd" id="1_0ycyx"]
 [ext_resource type="PackedScene" uid="uid://b0xmh8dr2s6yp" path="res://zidan.tscn" id="2_msri1"]
@@ -147,7 +147,15 @@ animations = [{
 radius = 22.5
 height = 55.0
 
-[node name="wanjia" type="CharacterBody2D" groups=["player"]]
+[sub_resource type="LabelSettings" id="LabelSettings_k6cw2"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8nm75"]
+bg_color = Color(1, 0.34375846, 0.27245858, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_rp16c"]
+bg_color = Color(0.14994177, 0.6179683, 0.99999994, 1)
+
+[node name="wanjia" type="CharacterBody2D" unique_id=110782726 groups=["player"]]
 z_index = 5
 position = Vector2(4.23516e-22, 9)
 scale = Vector2(0.4, 0.4)
@@ -157,20 +165,20 @@ hanbingjian_scene = ExtResource("3_vhy2e")
 shilaimu_scene = ExtResource("4_k6cw2")
 metadata/_edit_group_ = true
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=766480296]
 position = Vector2(181, 155)
 scale = Vector2(0.8, 0.8)
 shape = SubResource("CapsuleShape2D_msri1")
 metadata/_edit_group_ = true
 
-[node name="Timer" type="Timer" parent="."]
+[node name="Timer" type="Timer" parent="." unique_id=1229625377]
 autostart = true
 
-[node name="Marker2D" type="Marker2D" parent="."]
+[node name="Marker2D" type="Marker2D" parent="." unique_id=927545476]
 position = Vector2(151, 145)
 metadata/_edit_group_ = true
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Marker2D"]
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Marker2D" unique_id=667477696]
 position = Vector2(8.11132, 19.2026)
 scale = Vector2(0.187928, 0.266254)
 sprite_frames = SubResource("SpriteFrames_n7sjj")
@@ -180,7 +188,7 @@ frame = 7
 frame_progress = 1.0
 metadata/_edit_group_ = true
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=294813863]
 zoom = Vector2(1.4, 1.4)
 position_smoothing_enabled = true
 drag_horizontal_enabled = true
@@ -190,13 +198,51 @@ drag_top_margin = 0.25
 drag_right_margin = 0.23
 drag_bottom_margin = 0.22
 
-[node name="Area2D" type="Area2D" parent="."]
+[node name="Area2D" type="Area2D" parent="." unique_id=236360198]
 metadata/_edit_group_ = true
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=1929854473]
 position = Vector2(180, 155)
 shape = SubResource("CapsuleShape2D_k6cw2")
 metadata/_edit_group_ = true
+
+[node name="HUD_Layer" type="CanvasLayer" parent="." unique_id=15947301]
+
+[node name="StatusUI" type="VBoxContainer" parent="HUD_Layer" unique_id=277487546]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 48.0
+offset_bottom = 66.0
+theme_override_constants/separation = 6
+
+[node name="HP_Bar_Container" type="HBoxContainer" parent="HUD_Layer/StatusUI" unique_id=1550038758]
+layout_mode = 2
+
+[node name="HP_Icon" type="Label" parent="HUD_Layer/StatusUI/HP_Bar_Container" unique_id=1252859454]
+layout_mode = 2
+text = "❤️"
+label_settings = SubResource("LabelSettings_k6cw2")
+
+[node name="HP_Bar" type="ProgressBar" parent="HUD_Layer/StatusUI/HP_Bar_Container" unique_id=196195886]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+theme_override_constants/outline_size = 0
+theme_override_font_sizes/font_size = 16
+theme_override_styles/fill = SubResource("StyleBoxFlat_8nm75")
+value = 100.0
+
+[node name="MP_Bar_Container" type="HBoxContainer" parent="HUD_Layer/StatusUI" unique_id=1214435373]
+layout_mode = 2
+
+[node name="MP_Icon" type="Label" parent="HUD_Layer/StatusUI/MP_Bar_Container" unique_id=442768627]
+layout_mode = 2
+text = "💧"
+
+[node name="MP_Bar" type="ProgressBar" parent="HUD_Layer/StatusUI/MP_Bar_Container" unique_id=1775535270]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+theme_override_styles/fill = SubResource("StyleBoxFlat_rp16c")
+value = 100.0
 
 [connection signal="timeout" from="Timer" to="." method="_on_fire"]
 [connection signal="body_entered" from="Area2D" to="." method="_on_area_2d_body_entered"]
