@@ -1,12 +1,8 @@
 class_name EnemySpawner
 extends Node2D
-## 房间敌人生成器 — 玩家在哪个房间，就在哪个房间生成敌人。
-##
-## 编辑器中操作：
-## 1. 添加 Area2D 子节点(Room1, Room2, Room3...)
-## 2. 每个 Area2D 里放一个 CollisionShape2D，shape 选 RectangleShape2D
-## 3. 拖动 CollisionShape2D 的矩形四角来框出房间范围（对齐墙壁内侧）
-## 4. 在 enemy_scenes 中拖入敌人 .tscn
+## 房间敌人生成器 + 传送门触发器。
+## - 玩家在哪个房间，就在哪个房间生成敌人
+## - 玩家首次进入某房间时，触发该房间对应的传送门开始倒计时
 
 @export var spawn_interval: float = 1.0
 @export var max_enemies_per_room: int = 10
@@ -16,10 +12,11 @@ var _zones: Array[Area2D] = []
 var _timer: Timer
 var _player: Node2D
 var _tick_count: int = 0
+var _current_room: int = -1
+var _entered: Array[bool] = [false, false, false]  # 记录首次进入
 
 
 func _ready() -> void:
-	# 查找真正的玩家（CharacterBody2D + group "player"，避免拿到地图层等误标节点）
 	for node in get_tree().get_nodes_in_group("player"):
 		if node is CharacterBody2D:
 			_player = node
@@ -36,13 +33,11 @@ func _ready() -> void:
 		push_warning("EnemySpawner: 没有 Area2D 子节点！")
 		return
 
-	# 打印每个房间的边界信息
 	print("========== EnemySpawner 初始化 ==========")
 	for z in _zones:
 		var r := _get_room_rect(z)
 		print("  %s: %s (中心: %s)" % [z.name, r, r.get_center()])
 	print("  玩家初始位置: %s" % _player.global_position)
-	print("  玩家所在房间: %s" % _find_room_name())
 	print("==========================================")
 
 	_timer = Timer.new()
@@ -63,31 +58,37 @@ func _get_room_rect(zone: Area2D) -> Rect2:
 	return Rect2()
 
 
-func _find_room_name() -> String:
+func _find_room_index() -> int:
 	for i in range(_zones.size() - 1, -1, -1):
 		if _get_room_rect(_zones[i]).has_point(_player.global_position):
-			return _zones[i].name
-	return "无"
+			return i
+	return -1
 
 
 func _tick() -> void:
 	_tick_count += 1
-	if enemy_scenes.is_empty() or _zones.is_empty():
+	if _zones.is_empty():
 		return
 
-	# 从后往前找玩家所在房间
-	var target: Area2D = null
-	for i in range(_zones.size() - 1, -1, -1):
-		if _get_room_rect(_zones[i]).has_point(_player.global_position):
-			target = _zones[i]
-			break
+	# 检测当前房间
+	var room_idx := _find_room_index()
 
-	if not target:
+	# 首次进入房间 → 触发传送门
+	if room_idx >= 0 and room_idx != _current_room:
+		_current_room = room_idx
+		if not _entered[room_idx]:
+			_entered[room_idx] = true
+			_on_first_enter(room_idx)
+
+	if enemy_scenes.is_empty():
+		return
+
+	if room_idx < 0:
 		if _tick_count <= 3 or _tick_count % 10 == 0:
 			print("[EnemySpawner #%d] 玩家(%s) 不在任何房间！" % [_tick_count, _player.global_position])
 		return
 
-	# 统计目标房间内现存敌人数量
+	var target := _zones[room_idx]
 	var count := 0
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if is_instance_valid(e) and _get_room_rect(target).has_point(e.global_position):
@@ -96,7 +97,6 @@ func _tick() -> void:
 	if count >= max_enemies_per_room:
 		return
 
-	# 生成敌人
 	var scene: PackedScene = enemy_scenes[randi() % enemy_scenes.size()]
 	var enemy: Node2D = scene.instantiate()
 	var r := _get_room_rect(target)
@@ -107,3 +107,27 @@ func _tick() -> void:
 	)
 	get_tree().current_scene.add_child(enemy)
 	print("[EnemySpawner #%d] %s 生成敌人 (存活: %d/%d)  玩家坐标: %s" % [_tick_count, target.name, count + 1, max_enemies_per_room, _player.global_position])
+
+
+# ============================================================
+# 传送门触发
+# ============================================================
+
+func _on_first_enter(room_idx: int) -> void:
+	print("[EnemySpawner] 玩家首次进入 %s！" % _zones[room_idx].name)
+	match room_idx:
+		0:  # Room1 — 传送门1/2 已 auto_start，无需操作
+			pass
+		1:  # Room2 — 启动传送门3（Room2→Room3）
+			_start_portal("portal3")
+		2:  # Room3 — 启动传送门4（Room3→Room2）+ 传送门5（Room3→家园）
+			_start_portal("portal4")
+			_start_portal("portal5")
+
+
+func _start_portal(p_name: String) -> void:
+	var p := get_parent().get_node_or_null("portal/" + p_name)
+	if p and p.has_method("start_countdown"):
+		p.start_countdown()
+	else:
+		push_warning("EnemySpawner: 找不到传送门 " + p_name)

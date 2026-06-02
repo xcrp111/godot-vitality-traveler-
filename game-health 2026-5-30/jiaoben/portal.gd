@@ -1,49 +1,59 @@
 extends Area2D
 
-# 导出变量：在编辑器中设置倒计时时长（秒）
-# 前两个传送门设为 10.0，后两个设为 20.0（比前两个晚 10 秒开启）
-@export var activation_delay: float = 10.0
+## 传送门 — 激活后玩家走进来即可传送。
+## auto_start=true:  进入场景自动倒计时（用于房间1的传送门）
+## auto_start=false: 等待外部调用 start_countdown()（玩家进入某房间后触发）
+## target_scene 非空: 传送时切换到目标场景而非同场景位移
 
-# 内部状态：标记传送门是否已激活
+@export var activation_delay: float = 10.0
+@export var auto_start: bool = true
+@export var target_scene: String = ""  # 例: "res://场景/control.tscn"
+
 var is_active: bool = false
 
-# 每个传送门使用自己内部的子节点（不再引用父节点或兄弟节点的共享资源）
 @onready var timer: Timer = $Timer
 @onready var destination: Node2D = $DestinationPoint
 @onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
 
+
 func _ready() -> void:
-	# 激活前隐形：隐藏传送门动画和碰撞体
 	sprite.visible = false
 
-	# 初始化定时器
 	if timer:
 		timer.wait_time = activation_delay
-		timer.one_shot = true  # 只触发一次
+		timer.one_shot = true
 		timer.timeout.connect(_on_timer_timeout)
-		start_countdown()
+		if auto_start:
+			start_countdown()
 	else:
-		push_error("Portal script requires a child Timer node named 'Timer'")
+		push_error("Portal: 缺少 Timer 子节点")
 
-# 开始倒计时的公共方法
+
+## 开始倒计时（外部可调用）
 func start_countdown() -> void:
-	if not is_active and timer:
-		is_active = false  # 确保状态为关闭
-		timer.start()
+	if is_active or not timer:
+		return
+	timer.start()
+	print("[Portal] %s 开始 %ds 倒计时" % [name, activation_delay])
 
-# 倒计时结束回调 —— 传送门激活，变为可见
+
 func _on_timer_timeout() -> void:
 	is_active = true
-	sprite.visible = true  # 激活后显示传送门
+	sprite.visible = true
+	print("[Portal] %s 已激活" % name)
 
-# 身体进入区域信号处理
+
 func _on_body_entered(body: Node2D) -> void:
-	# 只有当传送门处于激活状态时才执行传送
 	if not is_active:
-		return  # 如果未激活，直接返回，不执行任何操作
+		return
 
 	if body.is_in_group("player"):
-		if destination:
+		if target_scene != "":
+			# 跨场景传送 — 设置标记让目标场景跳过主菜单
+			print("[Portal] %s → 切换场景: %s" % [name, target_scene])
+			get_tree().change_scene_to_file(target_scene)
+		elif destination:
+			# 同场景瞬移
 			body.global_position = destination.global_position
 		else:
-			push_warning("DestinationPoint node not found!")
+			push_warning("Portal: 无目标场景也无 DestinationPoint!")
