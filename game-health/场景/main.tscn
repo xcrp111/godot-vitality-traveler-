@@ -1,10 +1,10 @@
-[gd_scene format=3 uid="uid://8yslhnjpfqdj"]
+[gd_scene load_steps=2 format=3 uid="uid://8yslhnjpfqdj"]
 
 [ext_resource type="Texture2D" uid="uid://dv7pfl3t0skw8" path="res://资源/豆包(1).jpg" id="1_xclim"]
 
-[node name="Main" type="Node2D" unique_id=1730315855]
+[node name="Main" type="Node2D"]
 
-[node name="TextureRect" type="TextureRect" parent="." unique_id=1735554864]
+[node name="TextureRect" type="TextureRect" parent="."]
 offset_left = -808.0
 offset_top = -1052.0
 offset_right = 1922.0

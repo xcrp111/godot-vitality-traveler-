@@ -235,10 +235,10 @@ extends Control
 @onready var quit_button = $MenuControl/VBoxContainer/Quit
 
 @onready var dialog_ui = $Main/DialogUI
-@onready var left_box = $Main/DialogUI/LeftBox
+@onready var left_box = $"Main/DialogUI/1"
 @onready var left_name = $Main/DialogUI/LeftName
 @onready var left_text = $Main/DialogUI/LeftText
-@onready var right_box = $Main/DialogUI/RightBox	
+@onready var right_box = $"Main/DialogUI/2"
 @onready var right_name = $Main/DialogUI/RightName
 @onready var right_text = $Main/DialogUI/RightText
 @onready var dialog_close_btn = $Main/DialogUI/CloseBtn
@@ -257,12 +257,17 @@ var coin := 0
 var can_move := true
 
 var dialogs = [
-	["left", "生命行者", "对对对"],
-	["right", "导师", "错错错"],
-	["left", "生命行者", "对对对"],
-	["right", "导师", "错错错"],
-	["left", "生命行者", "对对对"],
-	["right", "导师", "错错错"]
+	["left", "生命行者", "医生说查不出病因，现代医学…… 已经无能为力了。"],
+	["left", "生命行者", "身体还在呼吸，可意识像被什么东西拽进了无底的黑暗，再也醒不过来。"],
+	["right", "导师", "别放弃，孩子。你的意识从未消失，只是被困在了「内境」。"],
+	["left", "生命行者", "内境？那是什么？您是谁？"],
+	["right", "导师", "我是前任生命行者，你可以叫我导师。"],
+	["right", "导师", "而你，拥有罕见的「意识投射」体质 —— 这是成为生命行者的天赋。"],
+	["right", "导师", "只有踏入内境，净化那些滋生的病魔，才能把你的意识拉回现实。"],
+	["left", "生命行者", "生命行者？讨伐病魔？"],
+	["left", "生命行者", "我…… 我从来不知道自己有这样的能力，我该怎么做？"],
+	["right", "导师", "跟我来。我会带你前往生命行者的大本营，教你所有你需要知道的事。"],
+	["right", "导师", "你的救赎，从成为真正的生命行者开始。"]
 ]
 
 var current = 0
@@ -277,7 +282,7 @@ func _ready():
 	quit_button.pressed.connect(_on_quit_game)
 	dialog_close_btn.pressed.connect(_close_dialog)
 	interact_btn.pressed.connect(_on_interact)
-	interact_btn1.pressed.connect(_on_interact)
+	# 传送门按钮由编辑器信号连接，见 _on_interact_btn_1_button_down()
 
 	# 菜单按钮绑定
 	menu_btn.pressed.connect(_open_menu)      
@@ -374,7 +379,7 @@ func _on_door_body_exited(body):
 	if body.name == "wanjia":
 		hide_interact_button1()
 func _on_interact_btn_1_button_down() -> void:
-	get_tree().change_scene_to_file("res://changjing/beijing1 caodi.tscn")
+	get_tree().change_scene_to_file("res://changjing/第一关.tscn")
 	pass # Replace with function body.
 # ------------------------------
 # 下面全部是你原来的逻辑，不动

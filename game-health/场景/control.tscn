@@ -1,11 +1,13 @@
-[gd_scene format=3 uid="uid://3pvgsvwepvm8"]
+[gd_scene load_steps=12 format=3 uid="uid://3pvgsvwepvm8"]
 
 [ext_resource type="Script" uid="uid://dy7xias8v6dy2" path="res://脚本/control.gd" id="1_5ynmq"]
 [ext_resource type="PackedScene" uid="uid://8yslhnjpfqdj" path="res://场景/main.tscn" id="2_w7kai"]
+[ext_resource type="Texture2D" uid="uid://dote4hqs3270" path="res://资源/开头对话背景.jpg" id="3_v4bni"]
 [ext_resource type="PackedScene" uid="uid://b1gu7ntplalkn" path="res://场景/skill_book.tscn" id="3_y3n4o"]
 [ext_resource type="Script" uid="uid://16n7787noacw" path="res://脚本/skill_book.gd" id="4_y3n4o"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5ynmq"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_yik8t"]
+bg_color = Color(0.985631, 0.287199, 0.624772, 1)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
@@ -16,21 +18,7 @@ bg_color = Color(0.278238, 0.636608, 0.86284, 1)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_yik8t"]
-bg_color = Color(0.985631, 0.287199, 0.624772, 1)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5wjxh"]
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_v4bni"]
-bg_color = Color(0.278431, 0.635294, 0.862745, 1)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5ynmq"]
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
@@ -43,7 +31,20 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
-[node name="Main_ui" type="Control" unique_id=1312396098]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_v4bni"]
+bg_color = Color(0.278431, 0.635294, 0.862745, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5wjxh"]
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="Main_ui" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -52,17 +53,17 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_5ynmq")
 
-[node name="MenuControl" type="Control" parent="." unique_id=1906257802]
+[node name="MenuControl" type="Control" parent="."]
 anchors_preset = 0
 offset_right = 40.0
 offset_bottom = 40.0
 
-[node name="Label" type="Label" parent="MenuControl" unique_id=875337718]
+[node name="Label" type="Label" parent="MenuControl"]
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 23.0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MenuControl" unique_id=456336138]
+[node name="VBoxContainer" type="VBoxContainer" parent="MenuControl"]
 custom_minimum_size = Vector2(100, 300)
 layout_mode = 1
 anchors_preset = 8
@@ -70,72 +71,68 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = 506.0
-offset_top = 245.0
-offset_right = 606.0
-offset_bottom = 545.0
+offset_left = 872.0
+offset_top = 372.0
+offset_right = 972.0
+offset_bottom = 672.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Start" type="Button" parent="MenuControl/VBoxContainer" unique_id=891443415]
+[node name="Start" type="Button" parent="MenuControl/VBoxContainer"]
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
-theme_override_styles/normal = SubResource("StyleBoxFlat_5ynmq")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_y3n4o")
 theme_override_styles/hover = SubResource("StyleBoxFlat_yik8t")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_y3n4o")
+theme_override_styles/normal = SubResource("StyleBoxFlat_5ynmq")
 text = "Start"
 
-[node name="Quit" type="Button" parent="MenuControl/VBoxContainer" unique_id=1634211618]
+[node name="Quit" type="Button" parent="MenuControl/VBoxContainer"]
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
-theme_override_styles/normal = SubResource("StyleBoxFlat_5wjxh")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_v4bni")
 theme_override_styles/hover = SubResource("StyleBoxFlat_w7kai")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_v4bni")
+theme_override_styles/normal = SubResource("StyleBoxFlat_5wjxh")
 text = "Quit"
 
-[node name="Main" parent="." unique_id=612512831 instance=ExtResource("2_w7kai")]
+[node name="Main" parent="." instance=ExtResource("2_w7kai")]
 
-[node name="DialogUI" type="Control" parent="Main" unique_id=887363106]
+[node name="DialogUI" type="Control" parent="Main"]
 layout_mode = 3
 anchors_preset = 0
 offset_right = 40.0
 offset_bottom = 40.0
 metadata/_edit_group_ = true
 
-[node name="LeftBox" type="ColorRect" parent="Main/DialogUI" unique_id=762260213]
+[node name="LeftText" type="Label" parent="Main/DialogUI"]
+z_index = 1
 layout_mode = 0
-offset_right = 1179.0
-offset_bottom = 670.0
-color = Color(0.188373, 0.142956, 0.557507, 1)
+offset_left = 800.0
+offset_top = 160.0
+offset_right = 1108.0
+offset_bottom = 272.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+autowrap_mode = 2
+clip_text = true
 
-[node name="LeftText" type="Label" parent="Main/DialogUI" unique_id=1196029136]
+[node name="RightText" type="Label" parent="Main/DialogUI"]
+z_index = 1
 layout_mode = 0
-offset_left = 6.0
-offset_top = 32.0
-offset_right = 46.0
-offset_bottom = 55.0
+offset_left = 800.0
+offset_top = 160.0
+offset_right = 1115.0
+offset_bottom = 274.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+autowrap_mode = 2
+clip_text = true
 
-[node name="RightBox" type="ColorRect" parent="Main/DialogUI" unique_id=378285069]
-layout_mode = 0
-offset_right = 1182.0
-offset_bottom = 669.0
-color = Color(0.941519, 0.489608, 0.406754, 1)
-
-[node name="RightText" type="Label" parent="Main/DialogUI" unique_id=316906894]
-layout_mode = 0
-offset_left = 1102.0
-offset_top = 30.0
-offset_right = 1142.0
-offset_bottom = 53.0
-
-[node name="LeftName" type="Label" parent="Main/DialogUI" unique_id=519612256]
+[node name="LeftName" type="Label" parent="Main/DialogUI"]
 layout_mode = 0
 offset_left = 1083.0
 offset_right = 1147.0
 offset_bottom = 23.0
 text = "生命行者"
 
-[node name="RightName" type="Label" parent="Main/DialogUI" unique_id=493600300]
+[node name="RightName" type="Label" parent="Main/DialogUI"]
 layout_mode = 0
 offset_left = 7.0
 offset_top = 3.0
@@ -143,63 +140,75 @@ offset_right = 47.0
 offset_bottom = 26.0
 text = "导师"
 
-[node name="CloseBtn" type="Button" parent="Main/DialogUI" unique_id=154057850]
+[node name="CloseBtn" type="Button" parent="Main/DialogUI"]
 layout_mode = 0
 offset_left = 17.0
 offset_top = 539.0
 offset_right = 118.0
 offset_bottom = 636.0
 
-[node name="SkillBook" parent="Main" unique_id=732949864 instance=ExtResource("3_y3n4o")]
+[node name="1" type="TextureRect" parent="Main/DialogUI"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+texture = ExtResource("3_v4bni")
+
+[node name="2" type="TextureRect" parent="Main/DialogUI"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+texture = ExtResource("3_v4bni")
+
+[node name="SkillBook" parent="Main" instance=ExtResource("3_y3n4o")]
 script = ExtResource("4_y3n4o")
 metadata/_edit_group_ = true
 
-[node name="Sprite2D" parent="Main/SkillBook" index="1" unique_id=798295895]
+[node name="Sprite2D" parent="Main/SkillBook" index="1"]
 position = Vector2(748, 200)
 scale = Vector2(0.304688, 0.40625)
 
-[node name="door" parent="Main" unique_id=1745562697 instance=ExtResource("3_y3n4o")]
+[node name="door" parent="Main" instance=ExtResource("3_y3n4o")]
 position = Vector2(267, 327)
 script = ExtResource("4_y3n4o")
 metadata/_edit_group_ = true
 
-[node name="Sprite2D" parent="Main/door" index="1" unique_id=798295895]
+[node name="Sprite2D" parent="Main/door" index="1"]
 position = Vector2(748, 200)
 scale = Vector2(0.304688, 0.40625)
 
-[node name="InteractBtn" type="Button" parent="Main" unique_id=209314705]
+[node name="InteractBtn" type="Button" parent="Main"]
 offset_left = 777.0
 offset_top = 88.0
 offset_right = 864.0
 offset_bottom = 161.0
 text = "技能书"
 
-[node name="InteractBtn1" type="Button" parent="Main" unique_id=942748483]
+[node name="InteractBtn1" type="Button" parent="Main"]
 offset_left = 1052.0
 offset_top = 416.0
 offset_right = 1139.0
 offset_bottom = 489.0
 text = "传送门"
 
-[node name="CoinLabel" type="Label" parent="Main" unique_id=850525325]
+[node name="CoinLabel" type="Label" parent="Main"]
 offset_left = 395.0
 offset_top = 182.0
 offset_right = 491.0
 offset_bottom = 220.0
 
-[node name="SkillUI" type="Control" parent="Main" unique_id=936306145]
+[node name="SkillUI" type="Control" parent="Main"]
 layout_mode = 3
 anchors_preset = 0
 offset_right = 40.0
 offset_bottom = 40.0
 metadata/_edit_group_ = true
 
-[node name="Title" type="Label" parent="Main/SkillUI" unique_id=792379383]
+[node name="Title" type="Label" parent="Main/SkillUI"]
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 23.0
 
-[node name="CloseBtn" type="Button" parent="Main/SkillUI" unique_id=1706162118]
+[node name="CloseBtn" type="Button" parent="Main/SkillUI"]
 visible = false
 layout_mode = 0
 offset_left = 2.0
@@ -207,17 +216,17 @@ offset_top = 556.0
 offset_right = 95.0
 offset_bottom = 646.0
 
-[node name="MenuLayer" type="CanvasLayer" parent="." unique_id=1223880347]
+[node name="MenuLayer" type="CanvasLayer" parent="."]
 
-[node name="MenuButton" type="Button" parent="MenuLayer" unique_id=1041262313]
-offset_left = 1078.0
-offset_top = 614.0
-offset_right = 1150.0
-offset_bottom = 645.0
+[node name="MenuButton" type="Button" parent="MenuLayer"]
+offset_left = 1847.0
+offset_top = 1048.0
+offset_right = 1919.0
+offset_bottom = 1079.0
 text = "菜单"
 metadata/_edit_group_ = true
 
-[node name="MenuPanel" type="Control" parent="MenuLayer" unique_id=1585209996]
+[node name="MenuPanel" type="Control" parent="MenuLayer"]
 visible = false
 layout_mode = 3
 anchors_preset = 0
@@ -228,7 +237,7 @@ offset_bottom = 472.0
 size_flags_horizontal = 4
 metadata/_edit_group_ = true
 
-[node name="ColorRect" type="ColorRect" parent="MenuLayer/MenuPanel" unique_id=834808099]
+[node name="ColorRect" type="ColorRect" parent="MenuLayer/MenuPanel"]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -244,31 +253,31 @@ grow_vertical = 2
 scale = Vector2(86.7466, 84.4506)
 color = Color(1, 1, 1, 0.717647)
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MenuLayer/MenuPanel" unique_id=1156570221]
+[node name="VBoxContainer" type="VBoxContainer" parent="MenuLayer/MenuPanel"]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -61.0
-offset_top = -81.0
-offset_right = 139.0
-offset_bottom = 119.0
+offset_left = 294.0
+offset_top = 95.0
+offset_right = 494.0
+offset_bottom = 295.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="RestartBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=2126440293]
+[node name="RestartBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer"]
 custom_minimum_size = Vector2(180, 60)
 layout_mode = 2
 text = "重新开始"
 
-[node name="CloseBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=233435921]
+[node name="CloseBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer"]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 text = "关闭菜单"
 
-[node name="QuitBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1750534288]
+[node name="QuitBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer"]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 text = "退出游戏"
