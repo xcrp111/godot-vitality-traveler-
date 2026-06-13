@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://bowh0hm3srhd8"]
 
 [ext_resource type="Script" uid="uid://dbj0x6e8e0a8e" path="res://hanbingjian.gd" id="1_7au5x"]
-[ext_resource type="Texture2D" uid="uid://b2ryj53pmqcfa" path="res://godot/Bullet.png" id="2_d7wcn"]
+[ext_resource type="Texture2D" uid="uid://cnomkwhh4vtw" path="res://godot/hbj.png" id="2_7au5x"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_dc3m0"]
 size = Vector2(32, 12)
@@ -10,8 +10,9 @@ size = Vector2(32, 12)
 script = ExtResource("1_7au5x")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=1221110032]
-scale = Vector2(5.3333335, 4)
-texture = ExtResource("2_d7wcn")
+position = Vector2(16.500008, -17.624996)
+scale = Vector2(0.877551, 0.39528304)
+texture = ExtResource("2_7au5x")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1013700070]
 shape = SubResource("RectangleShape2D_dc3m0")

@@ -4,11 +4,12 @@ extends CharacterBody2D
 @export var speed: float = 50.0
 @export var hp: float = 20
 @export var death_duration: float = 0.6
-@export var bounce_force: float = 60.0
 @export var contact_damage: float = 8.0
 
 var is_dead: bool = false
 var direction: int = -1
+var flip_count: int = 0          # 方向切换计数
+var flip_reset_timer: float = 0.0 # 切换计数重置倒计时
 @export var shilaimu_scene: PackedScene
 
 
@@ -18,19 +19,39 @@ func _ready() -> void:
 	add_to_group("enemy")
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
 
 	move_and_slide()
 	_process_collisions()
 
+	# 被阻挡后速度归零 → 恢复巡逻
 	if velocity.x == 0:
-		direction *= -1
+		_reverse_direction()
+
+	# 频繁来回反弹 → 加随机扰动跳出死循环
+	if flip_count > 4:
+		direction = 1 if randf() > 0.5 else -1
 		velocity.x = speed * direction
+		position.y += randf_range(-8, 8)   # 上下随机偏移，打破对称
+		flip_count = 0
+
+	# 重置切换计数（每秒递减）
+	if flip_reset_timer > 0.0:
+		flip_reset_timer -= delta
+	else:
+		flip_count = 0
 
 	if $AnimatedSprite2D:
 		$AnimatedSprite2D.flip_h = direction == -1
+
+
+func _reverse_direction() -> void:
+	direction *= -1
+	velocity.x = speed * direction
+	flip_count += 1
+	flip_reset_timer = 2.0  # 2秒内累计计数
 
 
 func _process_collisions() -> void:
@@ -38,16 +59,20 @@ func _process_collisions() -> void:
 		var col := get_slide_collision(i)
 		var col_obj: Node2D = col.get_collider()
 
-		if col_obj is TileMap or col_obj is StaticBody2D:
+		# 撞墙 / 玩家 → 视为墙壁反弹，沿碰撞法线推开
+		if col_obj is TileMap or col_obj is StaticBody2D or col_obj.is_in_group("player"):
 			if not col_obj.is_in_group("zidan"):
-				direction *= -1
-				velocity.x = speed * direction
-				position.x += direction * 2
+				var normal := col.get_normal()
+				position += normal * 5
+				_reverse_direction()
 				break
 
-		if col_obj.is_in_group("player"):
-			var push_dir := (global_position - col_obj.global_position).normalized()
-			velocity = push_dir * bounce_force
+		# 撞到其他敌人 → 沿法线推开，各自反转方向
+		if col_obj.is_in_group("enemy") and col_obj != self:
+			var normal := col.get_normal()
+			position += normal * 6
+			_reverse_direction()
+			break
 
 
 # ============================================================
@@ -71,7 +96,7 @@ func _on_area_2d_area_entered(area: Area2D) -> void:
 
 func die() -> void:
 	is_dead = true
-	$AnimatedSprite2D.play("siwang")
+	$AnimatedSprite2D.play("death")
 	if get_tree().current_scene.has_method("add_score"):
 		get_tree().current_scene.add_score(1)
 	velocity = Vector2.ZERO

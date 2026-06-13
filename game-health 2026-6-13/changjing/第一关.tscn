@@ -7,6 +7,7 @@
 [ext_resource type="Texture2D" uid="uid://div45fmlf5o45" path="res://bg map/Walls_street.png" id="4_824vl"]
 [ext_resource type="PackedScene" uid="uid://dyq165u8ehfsf" path="res://changjing/portal.tscn" id="5_yic1l"]
 [ext_resource type="Script" uid="uid://bhsnvy7kfjron" path="res://jiaoben/enemy_spawner.gd" id="6_spawner"]
+[ext_resource type="PackedScene" uid="uid://beef7c63poqra" path="res://langr.tscn" id="8_x7m7m"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_824vl"]
 texture = ExtResource("4_824vl")
@@ -1502,6 +1503,9 @@ position = Vector2(2050, 290)
 [node name="CollisionShape2D" type="CollisionShape2D" parent="EnemySpawner/Room3" unique_id=789687595]
 position = Vector2(374, 8)
 shape = SubResource("RectangleShape2D_room3")
+
+[node name="langr" parent="." unique_id=868604569 instance=ExtResource("8_x7m7m")]
+position = Vector2(-23, 115)
 
 [editable path="portal/portal"]
 [editable path="portal/portal2"]
