@@ -4,7 +4,7 @@ extends Node2D
 ## - 玩家在哪个房间，就在哪个房间生成敌人
 ## - 玩家首次进入某房间时，触发该房间对应的传送门开始倒计时
 
-@export var spawn_interval: float = 1.0
+@export var spawn_interval: float = 2.0
 @export var max_enemies_per_room: int = 10
 @export var enemy_scenes: Array[PackedScene] = []
 @export var min_spawn_distance_from_player: float = 180.0  # 生成点离玩家的最小距离
