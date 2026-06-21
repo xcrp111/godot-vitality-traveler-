@@ -1,12 +1,13 @@
-[gd_scene load_steps=2 format=3 uid="uid://8yslhnjpfqdj"]
+[gd_scene format=3 uid="uid://8yslhnjpfqdj"]
 
-[ext_resource type="Texture2D" uid="uid://dv7pfl3t0skw8" path="res://资源/豆包(1).jpg" id="1_xclim"]
+[ext_resource type="Texture2D" uid="uid://yq5fyx8eay25" path="res://资源/主城.jpg" id="1_xclim"]
 
-[node name="Main" type="Node2D"]
+[node name="Main" type="Node2D" unique_id=370932589]
 
-[node name="TextureRect" type="TextureRect" parent="."]
-offset_left = -808.0
-offset_top = -1052.0
-offset_right = 1922.0
-offset_bottom = 1488.0
+[node name="TextureRect" type="TextureRect" parent="." unique_id=657529388]
+offset_left = -280.0
+offset_top = -127.0
+offset_right = 1464.1956
+offset_bottom = 851.0
 texture = ExtResource("1_xclim")
+expand_mode = 1

@@ -6,6 +6,14 @@
 [ext_resource type="PackedScene" uid="uid://4qhwpj63bq56" path="res://changjing/shilaimu.tscn" id="3_upvhi"]
 [ext_resource type="Texture2D" uid="uid://div45fmlf5o45" path="res://bg map/Walls_street.png" id="4_824vl"]
 [ext_resource type="PackedScene" uid="uid://dyq165u8ehfsf" path="res://changjing/portal.tscn" id="5_yic1l"]
+<<<<<<< Updated upstream:game-health-2026-05-19/changjing/beijing1 caodi.tscn
+=======
+[ext_resource type="Script" uid="uid://bhsnvy7kfjron" path="res://jiaoben/enemy_spawner.gd" id="6_spawner"]
+[ext_resource type="PackedScene" uid="uid://beef7c63poqra" path="res://langr.tscn" id="8_x7m7m"]
+[ext_resource type="Texture2D" uid="uid://d3v1d4801nb1m" path="res://资源/加血.jpg" id="9_nrp5e"]
+[ext_resource type="Texture2D" uid="uid://my8p6aweak1u" path="res://资源/加蓝.jpg" id="10_6ukf5"]
+[ext_resource type="Script" uid="uid://ckm05v3wvtdbc" path="res://脚本/加蓝.gd" id="12_ng3lr"]
+>>>>>>> Stashed changes:game-health 2026-6-13/changjing/第一关.tscn
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_824vl"]
 texture = ExtResource("4_824vl")
@@ -1256,6 +1264,27 @@ texture = ExtResource("4_824vl")
 [sub_resource type="TileSet" id="TileSet_5tyv2"]
 sources/0 = SubResource("TileSetAtlasSource_lpe0m")
 
+<<<<<<< Updated upstream:game-health-2026-05-19/changjing/beijing1 caodi.tscn
+=======
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_room1"]
+size = Vector2(1032, 681)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_room2"]
+size = Vector2(1022, 691)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_room3"]
+size = Vector2(1030, 674)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_e03xw"]
+bg_color = Color(0.22339565, 0.6486483, 0.92177147, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_om12h"]
+bg_color = Color(1, 0.9098039, 0.27058825, 1)
+
+[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_wr2qm"]
+load_path = "res://.godot/imported/加移速.jpg-231a1524dc8a8e550ef5b38161c02d92.ctex"
+
+>>>>>>> Stashed changes:game-health 2026-6-13/changjing/第一关.tscn
 [node name="Node2D" type="Node2D" unique_id=1843477565 groups=["map"]]
 y_sort_enabled = true
 script = ExtResource("1_824vl")
@@ -1302,9 +1331,13 @@ drag_bottom_margin = 0.22
 
 [node name="portal" type="Node2D" parent="." unique_id=469578448]
 
-[node name="portal" parent="portal" unique_id=1446289216 instance=ExtResource("5_yic1l")]
+[node name="portal" parent="portal" unique_id=1446289216 node_paths=PackedStringArray("select_panel", "btn_effect1", "btn_effect2", "btn_effect3") instance=ExtResource("5_yic1l")]
 position = Vector2(416, 320)
 scale = Vector2(0.4, 0.4)
+select_panel = NodePath("../../增益/Panel")
+btn_effect1 = NodePath("../../增益/Panel/加血")
+btn_effect2 = NodePath("../../增益/Panel/加蓝")
+btn_effect3 = NodePath("../../增益/Panel/加移速")
 
 [node name="AnimatedSprite2D" parent="portal/portal" index="0" unique_id=1354108998]
 position = Vector2(40.0001, 9.53674e-07)
@@ -1320,6 +1353,23 @@ position = Vector2(965, -215)
 position = Vector2(582, 325)
 scale = Vector2(0.4, 0.4)
 
+<<<<<<< Updated upstream:game-health-2026-05-19/changjing/beijing1 caodi.tscn
+=======
+[node name="AnimatedSprite2D" parent="portal/portal2" index="0" unique_id=1354108998]
+position = Vector2(334.99994, 47.50003)
+scale = Vector2(2.5, 2.22222)
+
+[node name="CollisionShape2D" parent="portal/portal2" index="1" unique_id=1437842086]
+position = Vector2(332.49994, 47.50003)
+
+[node name="DestinationPoint" parent="portal/portal2" index="2" unique_id=1640399178]
+position = Vector2(-780, -105.00012)
+
+[node name="portal3" parent="portal" unique_id=1725998965 instance=ExtResource("5_yic1l")]
+position = Vector2(1943.9999, 214)
+scale = Vector2(0.4, 0.4)
+
+>>>>>>> Stashed changes:game-health 2026-6-13/changjing/第一关.tscn
 [node name="AnimatedSprite2D" parent="portal/portal3" index="0" unique_id=1354108998]
 position = Vector2(2667.5, -75)
 scale = Vector2(2.5, 2.22222)
@@ -1358,19 +1408,44 @@ position = Vector2(75, -57.5)
 [node name="DestinationPoint" parent="portal/portal4" index="2" unique_id=1640399178]
 position = Vector2(-2707.5, -242.50006)
 
+<<<<<<< Updated upstream:game-health-2026-05-19/changjing/beijing1 caodi.tscn
 [node name="Timer" type="Timer" parent="portal" unique_id=1598800679]
+=======
+[node name="portal5" parent="portal" unique_id=676918521 instance=ExtResource("5_yic1l")]
+position = Vector2(2300, 550)
+scale = Vector2(0.4, 0.4)
 
-[node name="MenuLayer" type="CanvasLayer" parent="." unique_id=1193878069]
+[node name="AnimatedSprite2D" parent="portal/portal5" index="0" unique_id=1354108998]
+position = Vector2(1475, -469.99997)
+scale = Vector2(2.5, 2.22222)
 
+[node name="CollisionShape2D" parent="portal/portal5" index="1" unique_id=1437842086]
+position = Vector2(1479.9999, -469.99997)
+
+[node name="DestinationPoint" parent="portal/portal5" index="2" unique_id=1640399178]
+position = Vector2(0, 0)
+>>>>>>> Stashed changes:game-health 2026-6-13/changjing/第一关.tscn
+
+[node name="菜单" type="CanvasLayer" parent="." unique_id=1193878069]
+layer = 10
+
+<<<<<<< Updated upstream:game-health-2026-05-19/changjing/beijing1 caodi.tscn
 [node name="MenuButton" type="Button" parent="MenuLayer" unique_id=2098146933]
 offset_left = 1847.0
 offset_top = 1048.0
 offset_right = 1919.0
 offset_bottom = 1079.0
+=======
+[node name="MenuButton" type="Button" parent="菜单" unique_id=2098146933]
+offset_left = 1844.0
+offset_top = 1047.0
+offset_right = 1916.0
+offset_bottom = 1078.0
+>>>>>>> Stashed changes:game-health 2026-6-13/changjing/第一关.tscn
 text = "菜单"
 metadata/_edit_group_ = true
 
-[node name="MenuPanel" type="Control" parent="MenuLayer" unique_id=1029862076]
+[node name="MenuPanel" type="Control" parent="菜单" unique_id=1029862076]
 visible = false
 layout_mode = 3
 anchors_preset = 0
@@ -1381,7 +1456,7 @@ offset_bottom = 472.0
 size_flags_horizontal = 4
 metadata/_edit_group_ = true
 
-[node name="ColorRect" type="ColorRect" parent="MenuLayer/MenuPanel" unique_id=151843947]
+[node name="ColorRect" type="ColorRect" parent="菜单/MenuPanel" unique_id=151843947]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -1397,7 +1472,7 @@ grow_vertical = 2
 scale = Vector2(86.7466, 84.4506)
 color = Color(1, 1, 1, 0.717647)
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MenuLayer/MenuPanel" unique_id=398893463]
+[node name="VBoxContainer" type="VBoxContainer" parent="菜单/MenuPanel" unique_id=398893463]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -1411,23 +1486,76 @@ offset_bottom = 295.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="RestartBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1779013089]
+[node name="RestartBtn" type="Button" parent="菜单/MenuPanel/VBoxContainer" unique_id=1779013089]
 custom_minimum_size = Vector2(180, 60)
 layout_mode = 2
 text = "重新开始"
 
-[node name="CloseBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1388655455]
+[node name="CloseBtn" type="Button" parent="菜单/MenuPanel/VBoxContainer" unique_id=1388655455]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 text = "关闭菜单"
 
-[node name="QuitBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1560552083]
+[node name="QuitBtn" type="Button" parent="菜单/MenuPanel/VBoxContainer" unique_id=1560552083]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 text = "退出游戏"
 
 [connection signal="timeout" from="shilaimushengchengTimer" to="." method="_on_shilaimushengcheng_timer_timeout"]
 [connection signal="timeout" from="shilaimushengchengTimer" to="." method="_on_enemyspown_timer_timeout"]
+
+[node name="增益" type="CanvasLayer" parent="." unique_id=1430137582]
+layer = 9
+
+[node name="Panel" type="Panel" parent="增益" unique_id=218893215]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -278.5
+offset_top = -152.5
+offset_right = 278.5
+offset_bottom = 152.5
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(2, 2)
+
+[node name="加血" type="Button" parent="增益/Panel" unique_id=1037234594]
+layout_mode = 0
+offset_left = 82.0
+offset_top = 112.0
+offset_right = 132.0
+offset_bottom = 162.0
+theme_override_icons/icon = ExtResource("9_nrp5e")
+theme_override_styles/normal = SubResource("StyleBoxFlat_e03xw")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_om12h")
+expand_icon = true
+script = ExtResource("12_ng3lr")
+
+[node name="加蓝" type="Button" parent="增益/Panel" unique_id=54459187]
+layout_mode = 0
+offset_left = 257.0
+offset_top = 112.0
+offset_right = 307.0
+offset_bottom = 162.0
+theme_override_icons/icon = ExtResource("10_6ukf5")
+theme_override_styles/normal = SubResource("StyleBoxFlat_e03xw")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_om12h")
+expand_icon = true
+script = ExtResource("12_ng3lr")
+
+[node name="加移速" type="Button" parent="增益/Panel" unique_id=1347788180]
+layout_mode = 0
+offset_left = 437.0
+offset_top = 112.0
+offset_right = 487.0
+offset_bottom = 162.0
+theme_override_icons/icon = SubResource("CompressedTexture2D_wr2qm")
+theme_override_styles/normal = SubResource("StyleBoxFlat_e03xw")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_om12h")
+expand_icon = true
+script = ExtResource("12_ng3lr")
 
 [editable path="portal/portal"]
 [editable path="portal/portal3"]

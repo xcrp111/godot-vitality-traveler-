@@ -3,12 +3,12 @@ extends Node2D
 @export var enemy_scene : PackedScene
 @export var score : int = 0
 
-@onready var menu_layer = $MenuLayer
-@onready var menu_btn = $MenuLayer/MenuButton
-@onready var menu_panel = $MenuLayer/MenuPanel
-@onready var restart_btn = $MenuLayer/MenuPanel/VBoxContainer/RestartBtn
-@onready var close_btn = $MenuLayer/MenuPanel/VBoxContainer/CloseBtn
-@onready var quit_btn = $MenuLayer/MenuPanel/VBoxContainer/QuitBtn
+@onready var menu_layer = $"菜单"
+@onready var menu_btn = $"菜单/MenuButton"
+@onready var menu_panel = $"菜单/MenuPanel"
+@onready var restart_btn = $"菜单/MenuPanel/VBoxContainer/RestartBtn"
+@onready var close_btn = $菜单/MenuPanel/VBoxContainer/CloseBtn
+@onready var quit_btn = $菜单/MenuPanel/VBoxContainer/QuitBtn
 @onready var 角色 = $wanjia
 func _ready():
 	# 菜单按钮绑定

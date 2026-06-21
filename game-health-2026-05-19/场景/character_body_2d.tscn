@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://belijoxaivwcj"]
+[gd_scene format=3 uid="uid://belijoxaivwcj"]
 
 [ext_resource type="Texture2D" uid="uid://c48levhhq7ad6" path="res://资源/待机.png" id="1_42ju3"]
 [ext_resource type="Script" uid="uid://b2750plei1jps" path="res://脚本/character_body_2d.gd" id="1_ah2pr"]
@@ -57,19 +57,19 @@ animations = [{
 "speed": 5.0
 }]
 
-[node name="player" type="CharacterBody2D"]
+[node name="player" type="CharacterBody2D" unique_id=2056451013]
 script = ExtResource("1_ah2pr")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=869078479]
 position = Vector2(11, 2)
 shape = SubResource("CapsuleShape2D_ah2pr")
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
-scale = Vector2(0.5, 0.5)
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1374322867]
+scale = Vector2(2, 2)
 sprite_frames = SubResource("SpriteFrames_t34ck")
 animation = &"idle"
 autoplay = "idle"
 frame_progress = 0.0396068
 flip_h = true
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1970641370]
