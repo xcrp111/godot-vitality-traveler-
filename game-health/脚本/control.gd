@@ -282,7 +282,7 @@ func _ready():
 	quit_button.pressed.connect(_on_quit_game)
 	dialog_close_btn.pressed.connect(_close_dialog)
 	interact_btn.pressed.connect(_on_interact)
-	# 传送门按钮由编辑器信号连接，见 _on_interact_btn_1_button_down()
+	interact_btn1.pressed.connect(_on_interact)
 
 	# 菜单按钮绑定
 	menu_btn.pressed.connect(_open_menu)      

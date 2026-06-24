@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://yq5fyx8eay25"
-path="res://.godot/imported/路线.png-0b8b07f74f460defd00604220d37c6a2.ctex"
+uid="uid://crtw34vwgsrj5"
+path="res://.godot/imported/加移速.jpg-231a1524dc8a8e550ef5b38161c02d92.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://资源/路线.png"
-dest_files=["res://.godot/imported/路线.png-0b8b07f74f460defd00604220d37c6a2.ctex"]
+source_file="res://资源/加移速.jpg"
+dest_files=["res://.godot/imported/加移速.jpg-231a1524dc8a8e550ef5b38161c02d92.ctex"]
 
 [params]
 

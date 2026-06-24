@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://yq5fyx8eay25"
-path="res://.godot/imported/路线.png-0b8b07f74f460defd00604220d37c6a2.ctex"
+path="res://.godot/imported/主城.jpg-85a0e659636dca3afe240a7bd6bf2d7f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://资源/路线.png"
-dest_files=["res://.godot/imported/路线.png-0b8b07f74f460defd00604220d37c6a2.ctex"]
+source_file="res://资源/主城.jpg"
+dest_files=["res://.godot/imported/主城.jpg-85a0e659636dca3afe240a7bd6bf2d7f.ctex"]
 
 [params]
 

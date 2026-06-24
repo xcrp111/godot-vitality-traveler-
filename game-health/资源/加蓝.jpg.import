@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://yq5fyx8eay25"
-path="res://.godot/imported/路线.png-0b8b07f74f460defd00604220d37c6a2.ctex"
+uid="uid://my8p6aweak1u"
+path="res://.godot/imported/加蓝.jpg-35bb99e24634147bb2689d144bf7dfa4.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://资源/路线.png"
-dest_files=["res://.godot/imported/路线.png-0b8b07f74f460defd00604220d37c6a2.ctex"]
+source_file="res://资源/加蓝.jpg"
+dest_files=["res://.godot/imported/加蓝.jpg-35bb99e24634147bb2689d144bf7dfa4.ctex"]
 
 [params]
 
