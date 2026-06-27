@@ -1,7 +1,7 @@
 extends CharacterBody2D
 
 # 导出变量，方便在编辑器中调整
-@export var move_speed: float = 20.0
+@export var move_speed: float = 100.0
 @export var detection_range: float = 400.0
 
 # 引用玩家节点

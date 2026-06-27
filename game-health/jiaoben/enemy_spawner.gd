@@ -4,9 +4,11 @@ extends Node2D
 ## - 玩家在哪个房间，就在哪个房间生成敌人
 ## - 玩家首次进入某房间时，触发该房间对应的传送门开始倒计时
 
-@export var spawn_interval: float = 1.0
+@export var spawn_interval: float = 2.0
 @export var max_enemies_per_room: int = 10
 @export var enemy_scenes: Array[PackedScene] = []
+@export var min_spawn_distance_from_player: float = 180.0  # 生成点离玩家的最小距离
+@export var min_spawn_distance_between_enemies: float = 60.0  # 敌人之间的最小生成距离
 
 var _zones: Array[Area2D] = []
 var _timer: Timer
@@ -101,12 +103,39 @@ func _tick() -> void:
 	var enemy: Node2D = scene.instantiate()
 	var r := _get_room_rect(target)
 	const M := 40.0
-	enemy.global_position = Vector2(
-		randf_range(r.position.x + M, r.end.x - M),
-		randf_range(r.position.y + M, r.end.y - M)
-	)
+
+	# 尝试在安全位置生成（远离玩家和其他敌人）
+	var spawn_pos: Vector2
+	var is_safe := false
+	const MAX_RETRIES := 15
+
+	for attempt in range(MAX_RETRIES):
+		spawn_pos = Vector2(
+			randf_range(r.position.x + M, r.end.x - M),
+			randf_range(r.position.y + M, r.end.y - M)
+		)
+
+		# 检查离玩家是否足够远
+		if _player and spawn_pos.distance_to(_player.global_position) < min_spawn_distance_from_player:
+			continue
+
+		# 检查离其他敌人是否足够远
+		var too_close_to_enemy := false
+		for e in get_tree().get_nodes_in_group("enemy"):
+			if is_instance_valid(e) and spawn_pos.distance_to(e.global_position) < min_spawn_distance_between_enemies:
+				too_close_to_enemy = true
+				break
+
+		if not too_close_to_enemy:
+			is_safe = true
+			break
+
+	if not is_safe:
+		print("[EnemySpawner #%d] 警告：%d 次重试后未找到安全位置，使用最后位置" % [_tick_count, MAX_RETRIES])
+
+	enemy.global_position = spawn_pos
 	get_tree().current_scene.add_child(enemy)
-	print("[EnemySpawner #%d] %s 生成敌人 (存活: %d/%d)  玩家坐标: %s" % [_tick_count, target.name, count + 1, max_enemies_per_room, _player.global_position])
+	print("[EnemySpawner #%d] %s 生成敌人 (存活: %d/%d)  pos: %s  玩家: %s" % [_tick_count, target.name, count + 1, max_enemies_per_room, spawn_pos, _player.global_position])
 
 
 # ============================================================

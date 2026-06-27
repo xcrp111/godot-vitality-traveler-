@@ -166,12 +166,14 @@ offset_right = 118.0
 offset_bottom = 636.0
 
 [node name="1" type="TextureRect" parent="Main/DialogUI" unique_id=1696545897]
+visible = false
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 40.0
 texture = ExtResource("5_m2y48")
 
 [node name="2" type="TextureRect" parent="Main/DialogUI" unique_id=2025946252]
+visible = false
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 40.0

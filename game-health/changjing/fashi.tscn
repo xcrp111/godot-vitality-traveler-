@@ -8,9 +8,8 @@
 [ext_resource type="Texture2D" uid="uid://vg6t5jcvpa7u" path="res://godot/fashi.png" id="5_k6cw2"]
 [ext_resource type="Texture2D" uid="uid://cmidtpynrc08d" path="res://godot/fs_ss.png" id="6_rp16c"]
 
-[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_msri1"]
-radius = 37.5
-height = 150.0
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_8nm75"]
+size = Vector2(65.625015, 150.00009)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_i0j5y"]
 atlas = ExtResource("5_8nm75")
@@ -156,9 +155,8 @@ animations = [{
 "speed": 8.0
 }]
 
-[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_k6cw2"]
-radius = 27.5
-height = 120.0
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_rp16c"]
+size = Vector2(52.500023, 120.00006)
 
 [sub_resource type="LabelSettings" id="LabelSettings_k6cw2"]
 
@@ -178,9 +176,9 @@ hanbingjian_scene = ExtResource("3_vhy2e")
 shilaimu_scene = ExtResource("4_k6cw2")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=766480296]
-position = Vector2(182.5, 302.5)
-scale = Vector2(0.8, 0.8)
-shape = SubResource("CapsuleShape2D_msri1")
+position = Vector2(183.74997, 302.49988)
+scale = Vector2(0.79999983, 0.79999983)
+shape = SubResource("RectangleShape2D_8nm75")
 metadata/_edit_group_ = true
 
 [node name="Timer" type="Timer" parent="." unique_id=1229625377]
@@ -210,8 +208,9 @@ drag_bottom_margin = 0.22
 [node name="Area2D" type="Area2D" parent="." unique_id=236360198]
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=1929854473]
-position = Vector2(182.5, 297.5)
-shape = SubResource("CapsuleShape2D_k6cw2")
+position = Vector2(183.74997, 302.49988)
+scale = Vector2(0.99999976, 0.99999976)
+shape = SubResource("RectangleShape2D_rp16c")
 metadata/_edit_group_ = true
 
 [node name="HUD_Layer" type="CanvasLayer" parent="." unique_id=15947301]
