@@ -1482,7 +1482,7 @@ text = "退出游戏"
 
 [node name="EnemySpawner" type="Node2D" parent="." unique_id=534975775]
 script = ExtResource("6_spawner")
-enemy_scenes = Array[PackedScene]([ExtResource("3_824vl"), ExtResource("3_upvhi")])
+enemy_scenes = Array[PackedScene]([ExtResource("3_824vl"), ExtResource("3_upvhi"), ExtResource("8_x7m7m")])
 
 [node name="Room1" type="Area2D" parent="EnemySpawner" unique_id=160921280]
 position = Vector2(225, 225)
@@ -1504,9 +1504,6 @@ position = Vector2(2050, 290)
 [node name="CollisionShape2D" type="CollisionShape2D" parent="EnemySpawner/Room3" unique_id=789687595]
 position = Vector2(374, 8)
 shape = SubResource("RectangleShape2D_room3")
-
-[node name="langr" parent="." unique_id=868604569 instance=ExtResource("8_x7m7m")]
-position = Vector2(-23, 115)
 
 [editable path="portal/portal"]
 [editable path="portal/portal2"]
