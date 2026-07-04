@@ -1,12 +1,12 @@
 extends Area2D
 
-## 传送门 — 激活后玩家走进来即可传送。
-## auto_start=true:  进入场景自动倒计时（用于房间1的传送门）
-## auto_start=false: 等待外部调用 start_countdown()（玩家进入某房间后触发）
+## 传送门 — 由 EnemySpawner 在房间清空后调用 start_countdown() 激活。
+## auto_start=true:  进入场景自动倒计时（已废弃，现由生成器统一控制）
+## auto_start=false: 等待外部调用 start_countdown()（默认）
 ## target_scene 非空: 传送时切换到目标场景而非同场景位移
 
-@export var activation_delay: float = 10.0
-@export var auto_start: bool = true
+@export var activation_delay: float = 1.0
+@export var auto_start: bool = false
 @export var target_scene: String = ""  # 例: "res://场景/control.tscn"
 
 var is_active: bool = false

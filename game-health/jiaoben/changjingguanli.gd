@@ -29,7 +29,7 @@ func _close_menu():
 
 func _on_restart():
 	_close_menu()
-	角色.global_position = Vector2(-100, 200)
+	get_tree().reload_current_scene()
 
 func _on_quit_game():
 	get_tree().quit()

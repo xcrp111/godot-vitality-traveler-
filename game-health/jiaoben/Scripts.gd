@@ -139,13 +139,13 @@ func shake_hp_bar() -> void:
 
 
 func _on_area_2d_body_entered(body: Node2D) -> void:
+	# 伤害已在 _physics_process 的 get_slide_collision_count 中处理（使用碰撞法线更精准）
+	# 这里只负责播放受伤动画
 	if body is CharacterBody2D and body.is_in_group("enemy"):
-		# Area2D 没有碰撞法线，用位置差做近似
-		var dir := (global_position - body.global_position).normalized()
-		take_damage(5, dir)
-		$Marker2D/AnimatedSprite2D.play("hurt")
-		await get_tree().create_timer(1).timeout
-		$Marker2D/AnimatedSprite2D.play("move")
+		if $Marker2D/AnimatedSprite2D.animation != "hurt":
+			$Marker2D/AnimatedSprite2D.play("hurt")
+			await get_tree().create_timer(0.5).timeout
+			$Marker2D/AnimatedSprite2D.play("move")
 
 # ============================================================
 # 攻击
