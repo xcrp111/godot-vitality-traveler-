@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" uid="uid://dyq165u8ehfsf" path="res://changjing/portal.tscn" id="5_yic1l"]
 [ext_resource type="Script" uid="uid://bhsnvy7kfjron" path="res://jiaoben/enemy_spawner.gd" id="6_spawner"]
 [ext_resource type="PackedScene" uid="uid://beef7c63poqra" path="res://langr.tscn" id="8_x7m7m"]
+[ext_resource type="Script" uid="uid://fru7o5dqeufm" path="res://jiaoben/room_waves.gd" id="9_rw"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_824vl"]
 texture = ExtResource("4_824vl")
@@ -1481,7 +1482,7 @@ text = "退出游戏"
 script = ExtResource("6_spawner")
 wave_1_enemies = Array[PackedScene]([ExtResource("3_upvhi"), ExtResource("3_824vl")])
 wave_2_enemies = Array[PackedScene]([ExtResource("3_upvhi"), ExtResource("8_x7m7m")])
-wave_3_enemies = Array[PackedScene]([ExtResource("8_x7m7m"), ExtResource("8_x7m7m")])
+wave_3_enemies = Array[PackedScene]([ExtResource("8_x7m7m"), ExtResource("8_x7m7m"), ExtResource("8_x7m7m"), ExtResource("8_x7m7m")])
 wave_label_x = 1700.0
 
 [node name="Room1" type="Area2D" parent="EnemySpawner" unique_id=160921280]
@@ -1491,6 +1492,12 @@ position = Vector2(225, 225)
 position = Vector2(-276, 78.5)
 shape = SubResource("RectangleShape2D_room1")
 
+[node name="RoomWaves" type="Node" parent="EnemySpawner/Room1" unique_id=-1294966295]
+script = ExtResource("9_rw")
+wave_1 = Array[PackedScene]([ExtResource("3_upvhi"), ExtResource("3_824vl")])
+wave_2 = Array[PackedScene]([ExtResource("3_upvhi"), ExtResource("8_x7m7m")])
+wave_3 = Array[PackedScene]([ExtResource("8_x7m7m"), ExtResource("8_x7m7m")])
+
 [node name="Room2" type="Area2D" parent="EnemySpawner" unique_id=1315998301]
 position = Vector2(1350, 190)
 
@@ -1498,12 +1505,24 @@ position = Vector2(1350, 190)
 position = Vector2(-180, 108.5)
 shape = SubResource("RectangleShape2D_room2")
 
+[node name="RoomWaves" type="Node" parent="EnemySpawner/Room2" unique_id=-1294965295]
+script = ExtResource("9_rw")
+wave_1 = Array[PackedScene]([ExtResource("3_824vl"), ExtResource("3_824vl")])
+wave_2 = Array[PackedScene]([ExtResource("3_upvhi"), ExtResource("3_upvhi")])
+wave_3 = Array[PackedScene]([ExtResource("8_x7m7m"), ExtResource("8_x7m7m"), ExtResource("8_x7m7m")])
+
 [node name="Room3" type="Area2D" parent="EnemySpawner" unique_id=196703084]
 position = Vector2(2050, 290)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="EnemySpawner/Room3" unique_id=789687595]
 position = Vector2(374, 8)
 shape = SubResource("RectangleShape2D_room3")
+
+[node name="RoomWaves" type="Node" parent="EnemySpawner/Room3" unique_id=-1294964295]
+script = ExtResource("9_rw")
+wave_1 = Array[PackedScene]([ExtResource("3_upvhi"), ExtResource("3_824vl")])
+wave_2 = Array[PackedScene]([ExtResource("3_upvhi"), ExtResource("8_x7m7m")])
+wave_3 = Array[PackedScene]([ExtResource("8_x7m7m"), ExtResource("8_x7m7m")])
 
 [editable path="portal/portal"]
 [editable path="portal/portal2"]

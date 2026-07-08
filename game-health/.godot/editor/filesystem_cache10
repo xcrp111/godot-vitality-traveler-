@@ -1,5 +1,5 @@
 78098b89c88a74ebe8c20117b8754620
-::res://::1783171249
+::res://::1783506878
 hanbingjian.gd::GDScript::7249590928491617934::1782566744::0::1::::<>Area2D<><>0<>0<><>::
 hanbingjian.tscn::PackedScene::3414950856509883467::1782566744::0::1::::<><><>0<>0<><>::uid://dbj0x6e8e0a8e::::res://hanbingjian.gd<>uid://cnomkwhh4vtw::::res://godot/hbj.png
 icon.svg::CompressedTexture2D::4730636617398130197::1782566744::1782566872::1::::<><><>0<>0<>bc5f2a7589117a5d657f6d4659dbcdf3<>res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex::
@@ -9,11 +9,11 @@ zidan.tscn::PackedScene::4189365306172012763::1782566744::0::1::::<><><>0<>0<><>
 ::res://bg map/::1782566872
 Walls_interior.png::CompressedTexture2D::1482730361887835646::1782566744::1782566872::1::::<><><>0<>0<>716f39147c5916d76443748540cbe75b<>res://.godot/imported/Walls_interior.png-0a727b6219071d17ded2a13a3ed0bc54.ctex::
 Walls_street.png::CompressedTexture2D::7765939381288263248::1782566744::1782566872::1::::<><><>0<>0<>77e7a7f9f6a80128c641ff0f56202e1f<>res://.godot/imported/Walls_street.png-6b16a15f25abb94eb90ee4352cd3545b.ctex::
-::res://changjing/::1783171233
+::res://changjing/::1783250804
 fashi.tscn::PackedScene::3316505494381068273::1783170302::0::1::::<><><>0<>0<><>::uid://sj5bio6im08g::::res://jiaoben/Scripts.gd<>uid://b0xmh8dr2s6yp::::res://zidan.tscn<>uid://bowh0hm3srhd8::::res://hanbingjian.tscn<>uid://4qhwpj63bq56::::res://changjing/shilaimu.tscn<>uid://cny86avgufjka::::res://godot/hbj_dz.png<>uid://vg6t5jcvpa7u::::res://godot/fashi.png<>uid://cmidtpynrc08d::::res://godot/fs_ss.png
 portal.tscn::PackedScene::8878459951981605141::1782566744::0::1::::<><><>0<>0<><>::uid://veil8n62gdhe::::res://bg map/Walls_interior.png<>uid://cwhyydsfd6lsr::::res://jiaoben/portal.gd
 shilaimu.tscn::PackedScene::2068971619182634819::1782566744::0::1::::<><><>0<>0<><>::uid://cf8qw8lhwsd2g::::res://godot/Slimer.png<>uid://b11blodfv555w::::res://jiaoben/shilaimu.gd<>uid://whi8f71oe8rp::::res://godot/SlimerDeath.png
-第一关.tscn::PackedScene::7775544763358124820::1783171233::0::1::::<><><>0<>0<><>::uid://bb8cmqdmfwx51::::res://jiaoben/changjingguanli.gd<>uid://bnismjitymiib::::res://changjing/fashi.tscn<>uid://b1ferf5bp6pbg::::res://Enemy/enemy.tscn<>uid://4qhwpj63bq56::::res://changjing/shilaimu.tscn<>uid://div45fmlf5o45::::res://bg map/Walls_street.png<>uid://dyq165u8ehfsf::::res://changjing/portal.tscn<>uid://bhsnvy7kfjron::::res://jiaoben/enemy_spawner.gd<>uid://beef7c63poqra::::res://langr.tscn
+第一关.tscn::PackedScene::7775544763358124820::1783250804::0::1::::<><><>0<>0<><>::uid://bb8cmqdmfwx51::::res://jiaoben/changjingguanli.gd<>uid://bnismjitymiib::::res://changjing/fashi.tscn<>uid://b1ferf5bp6pbg::::res://Enemy/enemy.tscn<>uid://4qhwpj63bq56::::res://changjing/shilaimu.tscn<>uid://div45fmlf5o45::::res://bg map/Walls_street.png<>uid://dyq165u8ehfsf::::res://changjing/portal.tscn<>uid://bhsnvy7kfjron::::res://jiaoben/enemy_spawner.gd<>uid://beef7c63poqra::::res://langr.tscn
 ::res://daochu/::1782566836
 ::res://Enemy/::1783168209
 enemy.gd::GDScript::3138023807525966027::1782566559::0::1::::<>CharacterBody2D<><>0<>0<><>::
@@ -66,8 +66,8 @@ zidan.gdc::GDScript::8750577781055401747::1782566744::0::1::::<>RefCounted<><>0<
 control.tscn::PackedScene::1997540038654062789::1782566744::0::1::::<><><>0<>0<><>::uid://dy7xias8v6dy2::::res://脚本/control.gd<>uid://8yslhnjpfqdj::::res://场景/main.tscn<>uid://dote4hqs3270::::res://资源/开头对话背景.jpg<>uid://b1gu7ntplalkn::::res://场景/skill_book.tscn<>uid://16n7787noacw::::res://脚本/skill_book.gd<>uid://cn3kya0w5hlvg::::res://资源/对话2.jpg<>uid://dvryrs6shwy0l::::res://资源/背景.jpg<>uid://c0dlhr106gull::::res://资源/传送.png
 main.tscn::PackedScene::2366889843930340903::1782566744::0::1::::<><><>0<>0<><>::uid://df35qw1h5opvq::::res://家园.jpg
 skill_book.tscn::PackedScene::4224989082917667549::1782566744::0::1::::<><><>0<>0<><>::uid://b8ns5nngbhf62::::res://icon.svg
-::res://脚本/::1783168209
-control.gd::GDScript::8911265193041995327::1782566744::0::1::::<>Control<><>0<>0<><>::
+::res://脚本/::1783250143
+control.gd::GDScript::8911265193041995327::1783250143::0::1::::<>Control<><>0<>0<><>::
 skill_book.gd::GDScript::1889753844473222362::1782566744::0::1::::<>Area2D<><>0<>0<><>::
 ::res://资源/::1782566875
 主城.jpg::CompressedTexture2D::1719394027725900084::1782566744::1782566873::1::::<><><>0<>0<>9b97fdd5dd4a5d69888b9f0045ca58f5<>res://.godot/imported/主城.jpg-85a0e659636dca3afe240a7bd6bf2d7f.ctex::
