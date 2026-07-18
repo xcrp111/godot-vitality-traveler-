@@ -1,8 +1,8 @@
 extends CharacterBody2D
 # 狼人 — 追击玩家，受击死亡，超出范围返回出生点
-# 碰撞：墙壁反弹 + 敌人互斥（不反弹玩家，避免追击时抽搐）
+# 碰撞处理遵循6.13规范：碰撞法线推开、敌人互斥、玩家视为墙壁
 
-@export var move_speed: float = 100.0
+@export var move_speed: float = 60.0
 @export var hp: float = 30
 @export var death_duration: float = 0.6
 @export var contact_damage: float = 12.0
@@ -33,12 +33,9 @@ func _physics_process(_delta: float) -> void:
 	var distance_from_spawn = global_position.distance_to(spawn_position)
 
 	if distance_to_player < detection_range and distance_from_spawn < max_roam_distance:
-		# 追击玩家（留 30px 停步距离，避免碰撞体推挤抖动）
-		if distance_to_player > 30.0:
-			var direction := (player.global_position - global_position).normalized()
-			velocity = direction * move_speed
-		else:
-			velocity = Vector2.ZERO
+		# 追击玩家
+		var direction := (player.global_position - global_position).normalized()
+		velocity = direction * move_speed
 	else:
 		# 超出侦测范围或离出生点太远 → 返回出生点
 		if distance_from_spawn > 10.0:
@@ -50,15 +47,12 @@ func _physics_process(_delta: float) -> void:
 	move_and_slide()
 	_process_collisions()
 
-	# 更新朝向：加 3px 死区，避免正上方时左右乱翻
+	# 更新朝向：追逐时面向玩家，返回时面向移动方向
 	if $AnimatedSprite2D:
 		if distance_to_player < detection_range and distance_from_spawn < max_roam_distance:
-			var dx := player.global_position.x - global_position.x
-			if abs(dx) > 3.0:
-				$AnimatedSprite2D.flip_h = dx < 0
+			$AnimatedSprite2D.flip_h = player.global_position.x < global_position.x
 		elif distance_from_spawn > 10.0:
-			if abs(velocity.x) > 3.0:
-				$AnimatedSprite2D.flip_h = velocity.x < 0
+			$AnimatedSprite2D.flip_h = velocity.x < 0
 
 
 func _process_collisions() -> void:
@@ -66,11 +60,12 @@ func _process_collisions() -> void:
 		var col := get_slide_collision(i)
 		var col_obj: Node2D = col.get_collider()
 
-		# 撞墙 → 沿碰撞法线推开（狼人不反弹玩家，避免抽搐）
-		if col_obj is TileMapLayer or col_obj is StaticBody2D:
-			var normal := col.get_normal()
-			position += normal * 5
-			break
+		# 撞墙 / 玩家 → 沿碰撞法线推开（6.13规范）
+		if col_obj is TileMap or col_obj is StaticBody2D or col_obj.is_in_group("player"):
+			if not col_obj.is_in_group("zidan"):
+				var normal := col.get_normal()
+				position += normal * 5
+				break
 
 		# 撞到其他敌人 → 沿法线推开，互斥分离（6.13规范）
 		if col_obj.is_in_group("enemy") and col_obj != self:

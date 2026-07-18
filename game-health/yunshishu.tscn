@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://ckjn12uw1thrv"]
+
+[ext_resource type="Script" uid="uid://dnf33w8ltgewe" path="res://yunshishu.gd" id="1_e4gog"]
+[ext_resource type="Texture2D" uid="uid://clunov3avemps" path="res://godot/fashi.yunshishu.png" id="1_sl7kk"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_yps4j"]
+size = Vector2(643, 227)
+
+[node name="yunshishu" type="Area2D" unique_id=1690238035]
+script = ExtResource("1_e4gog")
+yunshishu_scene = null
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=423988203]
+texture = ExtResource("1_sl7kk")
+vframes = 9
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1703762031]
+position = Vector2(1, -81)
+shape = SubResource("RectangleShape2D_yps4j")

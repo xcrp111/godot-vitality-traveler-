@@ -1,9 +1,12 @@
 extends Area2D
 
-## 传送门 — 由 EnemySpawner 在房间清空后调用 start_countdown() 激活。
-## auto_start=true:  进入场景自动倒计时（已废弃，现由生成器统一控制）
-## auto_start=false: 等待外部调用 start_countdown()（默认）
+## 传送门 — 激活后玩家走进来即可传送。
+## auto_start=true:  进入场景自动倒计时（用于房间1的传送门）
+## auto_start=false: 等待外部调用 start_countdown()（玩家进入某房间后触发）
 ## target_scene 非空: 传送时切换到目标场景而非同场景位移
+signal open_ui()
+var already_trigger: bool = true
+
 
 @export var activation_delay: float = 1.0
 @export var auto_start: bool = false
@@ -46,8 +49,12 @@ func _on_timer_timeout() -> void:
 func _on_body_entered(body: Node2D) -> void:
 	if not is_active:
 		return
-
+	
 	if body.is_in_group("player"):
+		
+		if already_trigger :
+			emit_signal("open_ui")
+			already_trigger = false
 		if target_scene != "":
 			# 跨场景传送 — 设置标记让目标场景跳过主菜单
 			print("[Portal] %s → 切换场景: %s" % [name, target_scene])
@@ -57,3 +64,8 @@ func _on_body_entered(body: Node2D) -> void:
 			body.global_position = destination.global_position
 		else:
 			push_warning("Portal: 无目标场景也无 DestinationPoint!")
+			
+
+func _on_body_exited(body: Node2D):
+	if body.is_in_group("player"):
+		emit_signal("close_ui")
