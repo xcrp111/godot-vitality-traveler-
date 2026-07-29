@@ -1384,6 +1384,30 @@ icon_alignment = 1
 expand_icon = true
 script = ExtResource("9_e03xw")
 
+[node name="撕裂普攻" type="Button" parent="wanjia/CanvasLayer/HBoxContainer" unique_id=2819475631]
+layout_mode = 2
+size_flags_horizontal = 3
+flat = true
+theme_override_font_sizes/font_size = 28
+text = "撕裂普攻"
+script = ExtResource("9_e03xw")
+
+[node name="野性蓄力" type="Button" parent="wanjia/CanvasLayer/HBoxContainer" unique_id=3920586742]
+layout_mode = 2
+size_flags_horizontal = 3
+flat = true
+theme_override_font_sizes/font_size = 28
+text = "野性蓄力"
+script = ExtResource("9_e03xw")
+
+[node name="嗜血" type="Button" parent="wanjia/CanvasLayer/HBoxContainer" unique_id=1638497853]
+layout_mode = 2
+size_flags_horizontal = 3
+flat = true
+theme_override_font_sizes/font_size = 28
+text = "嗜血"
+script = ExtResource("9_e03xw")
+
 [node name="portal" type="Node2D" parent="." unique_id=469578448]
 
 [node name="portal" parent="portal" unique_id=1446289216 instance=ExtResource("5_yic1l")]
@@ -1557,6 +1581,12 @@ shape = SubResource("RectangleShape2D_room3")
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/加血" to="wanjia/CanvasLayer" method="heal_player"]
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/加移速" to="wanjia" method="加移速"]
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/加移速" to="wanjia/CanvasLayer" method="speed_up"]
+[connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/撕裂普攻" to="wanjia" method="撕裂普攻"]
+[connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/撕裂普攻" to="wanjia/CanvasLayer" method="rending_attack"]
+[connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/野性蓄力" to="wanjia" method="野性蓄力"]
+[connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/野性蓄力" to="wanjia/CanvasLayer" method="wild_charge"]
+[connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/嗜血" to="wanjia" method="嗜血"]
+[connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/嗜血" to="wanjia/CanvasLayer" method="bloodthirst"]
 [connection signal="open_ui" from="portal/portal" to="wanjia/CanvasLayer" method="show_ui"]
 [connection signal="open_ui" from="portal/portal3" to="wanjia/CanvasLayer" method="show_ui"]
 

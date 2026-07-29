@@ -12,6 +12,31 @@ var flip_count: int = 0          # 方向切换计数
 var flip_reset_timer: float = 0.0 # 切换计数重置倒计时
 @export var shilaimu_scene: PackedScene
 
+# ============================================================
+# 流血系统
+# ============================================================
+var _bleeding: bool = false
+var _bleed_timer: float = 0.0
+var _bleed_damage: float = 0.0
+var _bleed_interval: float = 0.5
+var _bleed_remaining: float = 0.0
+
+func apply_bleed(damage: float, interval: float, duration: float) -> void:
+	_bleeding = true
+	_bleed_damage = damage
+	_bleed_interval = interval
+	_bleed_remaining = duration
+	_bleed_timer = 0.0
+
+# 击退支持（供野性蓄力调用）
+var _knockback_velocity: Vector2 = Vector2.ZERO
+var _knockback_timer: float = 0.0
+
+func apply_knockback(force: Vector2) -> void:
+	_knockback_velocity = force
+	_knockback_timer = 0.3
+	velocity = force
+
 func _ready() -> void:
 	direction = -1
 	velocity.x = speed * direction
@@ -21,6 +46,29 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
+
+	# 击退处理
+	if _knockback_timer > 0.0:
+		_knockback_timer -= delta
+		velocity = _knockback_velocity
+		_knockback_velocity = _knockback_velocity.move_toward(Vector2.ZERO, speed * 3 * delta)
+		move_and_slide()
+		if _knockback_timer <= 0.0:
+			velocity.x = speed * direction
+		return
+
+	# 流血 tick
+	if _bleeding:
+		_bleed_timer += delta
+		_bleed_remaining -= delta
+		if _bleed_timer >= _bleed_interval:
+			_bleed_timer = 0.0
+			hp -= _bleed_damage
+			if hp <= 0:
+				die()
+				return
+		if _bleed_remaining <= 0.0:
+			_bleeding = false
 
 	move_and_slide()        # 先移动，产生碰撞
 	_process_collisions()   # 再处理碰撞结果

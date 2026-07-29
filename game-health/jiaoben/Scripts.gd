@@ -13,6 +13,29 @@ extends CharacterBody2D
 @export var hanbingjian_scene: PackedScene
 @export var shilaimu_scene: PackedScene
 
+# ============================================================
+# 增益状态
+# ============================================================
+var has_rending_attack: bool = false
+var has_wild_charge: bool = false
+var has_bloodthirst: bool = false
+
+# 野性蓄力
+var is_charging: bool = false
+var charge_time: float = 0.0
+@export var charge_threshold: float = 1.2
+@export var charge_speed_mult: float = 3.0
+var charge_dashing: bool = false
+var charge_dash_timer: float = 0.0
+@export var charge_dash_duration: float = 0.4
+@export var charge_knockback_force: float = 600.0
+
+# 撕裂普攻参数
+@export var bleed_dmg_per_tick: float = 3.0
+@export var bleed_tick_interval: float = 0.5
+@export var bleed_duration: float = 3.0
+@export var werewolf_damage_mult: float = 2.0
+
 @onready var marker2d := $Marker2D
 @onready var hp_bar: ProgressBar = $HUD_Layer/StatusUI/HP_Bar_Container/HP_Bar
 @onready var mp_bar: ProgressBar = $HUD_Layer/StatusUI/MP_Bar_Container/MP_Bar
@@ -45,6 +68,25 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if is_game_over:
+		return
+
+	# 冲锋冲刺计时
+	if charge_dashing:
+		charge_dash_timer -= delta
+		if charge_dash_timer <= 0.0:
+			charge_dashing = false
+			velocity = Vector2.ZERO
+		move_and_slide()
+		# 冲锋期间碰撞检测——巨量击退
+		for i in range(get_slide_collision_count()):
+			var col := get_slide_collision(i)
+			var col_obj: Node2D = col.get_collider()
+			if col_obj.is_in_group("enemy"):
+				var knockback_dir := (col_obj.global_position - global_position).normalized()
+				if col_obj is CharacterBody2D:
+					col_obj.velocity = knockback_dir * charge_knockback_force
+					if col_obj.has_method("apply_knockback"):
+						col_obj.apply_knockback(knockback_dir * charge_knockback_force)
 		return
 
 	# 击退倒计时：击退期间跳过输入覆盖，让击退速度完全生效
@@ -154,6 +196,34 @@ func _on_area_2d_body_entered(body: Node2D) -> void:
 func _on_fire() -> void:
 	if is_game_over:
 		return
+	if charge_dashing:
+		return
+
+	# 野性蓄力：长按攻击蓄力
+	if has_wild_charge and Input.is_action_pressed("attack"):
+		charge_time += get_physics_process_delta_time()
+		if charge_time >= charge_threshold and not is_charging:
+			is_charging = true
+			$Marker2D/AnimatedSprite2D.play("hbj")  # 蓄力特效
+		return
+
+	# 松开攻击键——如果蓄满则触发冲锋
+	if is_charging:
+		var dir := Vector2(marker2d.scale.x, 0).normalized()
+		if dir == Vector2.ZERO:
+			dir = Vector2(1, 0)
+		velocity = dir * move_speed * charge_speed_mult
+		charge_dashing = true
+		charge_dash_timer = charge_dash_duration
+		is_charging = false
+		charge_time = 0.0
+		$Marker2D/AnimatedSprite2D.play("move")
+		return
+
+	# 没蓄力或没野性蓄力——轻点攻击则正常射击
+	charge_time = 0.0
+	is_charging = false
+
 	if Input.is_action_pressed("attack"):
 		fire_bullet()
 	if Input.is_action_pressed("hanbingjian"):
@@ -175,6 +245,9 @@ func fire_bullet() -> void:
 	zidan.global_position = global_position + Vector2(60, 60)
 	var target_dir := get_global_mouse_position() - zidan.global_position
 	zidan.rotation = target_dir.angle()
+	# 撕裂普攻——子弹标记
+	if has_rending_attack:
+		zidan.set("can_rend", true)
 	get_parent().add_child(zidan)
 
 
@@ -191,5 +264,24 @@ func 加蓝() -> void:
 	max_mp += 50
 	current_mp += 50
 	
-func 加移速() -> void:	
+func 加移速() -> void:
 	move_speed += 200
+
+# ============================================================
+# 新增益
+# ============================================================
+
+func 撕裂普攻() -> void:
+	has_rending_attack = true
+
+func 野性蓄力() -> void:
+	has_wild_charge = true
+
+func 嗜血() -> void:
+	has_bloodthirst = true
+
+# 由狼人死亡时回调
+func on_werewolf_killed() -> void:
+	if has_bloodthirst:
+		hp_p = hp_bar.max_value
+		hp_bar.value = hp_p

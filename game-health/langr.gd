@@ -20,6 +20,7 @@ func _ready() -> void:
 	if not player:
 		push_warning("Wolf: Player node not found!")
 	add_to_group("enemy")
+	add_to_group("werewolf")
 
 
 func _physics_process(_delta: float) -> void:
@@ -97,6 +98,10 @@ func die() -> void:
 	$AnimatedSprite2D.play("siwang")
 	if get_tree().current_scene.has_method("add_score"):
 		get_tree().current_scene.add_score(1)
+	# 嗜血回调：通知玩家击杀狼人
+	var p = get_tree().get_first_node_in_group("player")
+	if p and p.has_method("on_werewolf_killed"):
+		p.on_werewolf_killed()
 	velocity = Vector2.ZERO
 	await get_tree().create_timer(death_duration).timeout
 	queue_free()
