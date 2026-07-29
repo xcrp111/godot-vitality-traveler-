@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://cn3kya0w5hlvg" path="res://资源/对话2.jpg" id="5_m2y48"]
 [ext_resource type="Texture2D" uid="uid://dvryrs6shwy0l" path="res://资源/背景.jpg" id="6_1lgyb"]
 [ext_resource type="Texture2D" uid="uid://c0dlhr106gull" path="res://资源/传送.png" id="8_kt4vn"]
+[ext_resource type="Script" uid="uid://cxrc1leqw5tg4" path="res://脚本/area_2d.gd" id="9_m4agt"]
 
 [sub_resource type="SystemFont" id="SystemFont_1lgyb"]
 
@@ -45,6 +46,9 @@ corner_radius_top_right = 20
 corner_radius_bottom_right = 20
 corner_radius_bottom_left = 20
 corner_detail = 12
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_3owqy"]
+size = Vector2(111, 125)
 
 [node name="Main_ui" type="Control" unique_id=494949046]
 layout_mode = 3
@@ -188,7 +192,7 @@ position = Vector2(748, 200)
 scale = Vector2(0.304688, 0.40625)
 
 [node name="door" parent="Main" unique_id=1061488592 instance=ExtResource("3_y3n4o")]
-position = Vector2(-1900, 261)
+position = Vector2(-1892, 269)
 script = ExtResource("4_y3n4o")
 metadata/_edit_group_ = true
 
@@ -307,11 +311,30 @@ custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 text = "退出游戏"
 
+[node name="Area2D" type="Area2D" parent="." unique_id=1527205962]
+script = ExtResource("9_m4agt")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=739606666]
+position = Vector2(389.5, 416.5)
+shape = SubResource("RectangleShape2D_3owqy")
+
+[node name="Button" type="Button" parent="Area2D" unique_id=752493450]
+visible = false
+offset_left = 270.0
+offset_top = 279.0
+offset_right = 528.0
+offset_bottom = 342.0
+theme_override_font_sizes/font_size = 40
+text = "打开人物面板 "
+
 [connection signal="body_entered" from="Main/SkillBook" to="Main/SkillBook" method="_on_body_entered"]
 [connection signal="body_exited" from="Main/SkillBook" to="Main/SkillBook" method="_on_body_exited"]
 [connection signal="body_entered" from="Main/door" to="Main/door" method="_on_body_entered"]
 [connection signal="body_exited" from="Main/door" to="Main/door" method="_on_body_exited"]
 [connection signal="button_down" from="Main/InteractBtn1" to="." method="_on_interact_btn_1_button_down"]
+[connection signal="body_entered" from="Area2D" to="Area2D" method="_on_body_entered"]
+[connection signal="body_exited" from="Area2D" to="Area2D" method="_on_body_exited"]
+[connection signal="pressed" from="Area2D/Button" to="Area2D" method="_on_button_pressed"]
 
 [editable path="Main/SkillBook"]
 [editable path="Main/door"]
