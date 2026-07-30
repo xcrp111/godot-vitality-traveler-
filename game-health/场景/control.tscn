@@ -213,7 +213,14 @@ offset_left = 732.0
 offset_top = 663.0
 offset_right = 819.0
 offset_bottom = 736.0
-text = "传送门"
+text = "第一关"
+
+[node name="InteractBtn2" type="Button" parent="Main" unique_id=3100006001]
+offset_left = 850.0
+offset_top = 663.0
+offset_right = 937.0
+offset_bottom = 736.0
+text = "第二关"
 
 [node name="CoinLabel" type="Label" parent="Main" unique_id=334578259]
 offset_left = 395.0
@@ -312,6 +319,7 @@ text = "退出游戏"
 [connection signal="body_entered" from="Main/door" to="Main/door" method="_on_body_entered"]
 [connection signal="body_exited" from="Main/door" to="Main/door" method="_on_body_exited"]
 [connection signal="button_down" from="Main/InteractBtn1" to="." method="_on_interact_btn_1_button_down"]
+[connection signal="button_down" from="Main/InteractBtn2" to="." method="_on_interact_btn_2_button_down"]
 
 [editable path="Main/SkillBook"]
 [editable path="Main/door"]

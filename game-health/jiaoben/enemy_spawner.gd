@@ -222,10 +222,25 @@ func _check_room_clear_for_portal(room_idx: int) -> void:
 	_portal_triggered[room_idx] = true
 	if _wave_label:
 		_wave_label.text = "✓ 已清空"
-	match room_idx:
-		0: _start_portal("portal");  _start_portal("portal2")
-		1: _start_portal("portal3")
-		2: _start_portal("portal4"); _start_portal("portal5")
+	# 房间清空 → 激活该房间所有出口传送门
+	if _zones.size() == 3:
+		# 第一关（3 房间线性）
+		match room_idx:
+			0: _start_portal("portal");  _start_portal("portal2")
+			1: _start_portal("portal3")
+			2: _start_portal("portal4"); _start_portal("portal5")
+	else:
+		# 第二关（9 房间 3×3）—— 清空后打开通往相邻房间的门
+		match room_idx:
+			0: _start_portal("p00R"); _start_portal("p00D")
+			1: _start_portal("p10L"); _start_portal("p10R"); _start_portal("p10D")
+			2: _start_portal("p20L"); _start_portal("p20D")
+			3: _start_portal("p01U"); _start_portal("p01R"); _start_portal("p01D")
+			4: _start_portal("p11U"); _start_portal("p11L"); _start_portal("p11R"); _start_portal("p11D")
+			5: _start_portal("p21U"); _start_portal("p21L"); _start_portal("p21D")
+			6: _start_portal("p02U"); _start_portal("p02R")
+			7: _start_portal("p12U"); _start_portal("p12L"); _start_portal("p12R")
+			8: _start_portal("p22U"); _start_portal("p22L")
 
 
 func _start_portal(p_name: String) -> void:
