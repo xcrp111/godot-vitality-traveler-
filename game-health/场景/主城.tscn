@@ -7,6 +7,7 @@
 [ext_resource type="Script" uid="uid://16n7787noacw" path="res://脚本/skill_book.gd" id="5_pdxka"]
 [ext_resource type="Texture2D" uid="uid://c0dlhr106gull" path="res://资源/传送.png" id="6_owgkk"]
 [ext_resource type="Script" uid="uid://cxrc1leqw5tg4" path="res://脚本/area_2d.gd" id="7_pdxka"]
+[ext_resource type="PackedScene" uid="uid://5gp5kwt1wjpq" path="res://场景/men.tscn" id="8_owgkk"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_owgkk"]
 size = Vector2(111, 125)
@@ -108,7 +109,6 @@ scale = Vector2(0.12348065, 0.11921697)
 texture = ExtResource("6_owgkk")
 
 [node name="传送门" type="Button" parent="." unique_id=1387444709]
-visible = false
 layout_mode = 0
 offset_left = 714.0
 offset_top = 666.0
@@ -132,6 +132,14 @@ offset_right = 528.0
 offset_bottom = 342.0
 theme_override_font_sizes/font_size = 40
 text = "打开人物面板 "
+
+[node name="door to gonhui" parent="." unique_id=617389358 instance=ExtResource("8_owgkk")]
+position = Vector2(1412, 419)
+target_scene = "uid://b4mxiqc01nu1o"
+spawn_target = "spawn_From zhucheng"
+
+[node name="spawn_From gonghui" type="Marker2D" parent="." unique_id=1795281605]
+position = Vector2(1398, 422)
 
 [connection signal="body_entered" from="door" to="." method="_on_door_body_entered"]
 [connection signal="body_exited" from="door" to="." method="_on_door_body_exited"]

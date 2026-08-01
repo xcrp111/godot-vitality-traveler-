@@ -14,7 +14,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
-config/name="Game Health (Copy530)"
+config/name="Game Health 2026 08 01"
 run/main_scene="uid://3pvgsvwepvm8"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"

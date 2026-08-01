@@ -583,7 +583,7 @@ position = Vector2(745, 343)
 [node name="spawn_From zhucheng" type="Marker2D" parent="." unique_id=1730706532]
 position = Vector2(746, 403)
 
-[node name="door to main" parent="." unique_id=617389358 instance=ExtResource("4_p4f5p")]
+[node name="door to zhucheng" parent="." unique_id=617389358 instance=ExtResource("4_p4f5p")]
 position = Vector2(745, 407)
 target_scene = "uid://2kj2y3w65fe6"
 spawn_target = "spawn_From gonghui"
