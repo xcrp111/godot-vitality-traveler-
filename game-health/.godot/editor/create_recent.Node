@@ -1,0 +1,12 @@
+TextureRect
+TextureProgressBar
+Button
+CollisionShape2D
+Area2D
+HBoxContainer
+Label
+ProgressBar
+CharacterBody2D
+StaticBody2D
+VBoxContainer
+CanvasLayer

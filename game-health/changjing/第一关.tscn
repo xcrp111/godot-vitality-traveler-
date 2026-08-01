@@ -15,6 +15,12 @@
 [ext_resource type="Texture2D" uid="uid://crtw34vwgsrj5" path="res://资源/加移速.jpg" id="8_ivrim"]
 [ext_resource type="PackedScene" uid="uid://beef7c63poqra" path="res://langr.tscn" id="8_x7m7m"]
 [ext_resource type="Script" uid="uid://b6852wu4lalpf" path="res://脚本/加移速.gd" id="9_e03xw"]
+<<<<<<< Updated upstream:game-health/changjing/第一关.tscn
+=======
+[ext_resource type="Script" uid="uid://fru7o5dqeufm" path="res://jiaoben/room_waves.gd" id="10_rw"]
+[ext_resource type="PackedScene" uid="uid://b32rsh000ifie" path="res://boss_1_shitouren.tscn" id="16_boss"]
+[ext_resource type="Script" uid="uid://dsvmdnr1lnfvb" path="res://脚本/menu.gd" id="18_menu"]
+>>>>>>> Stashed changes:game-health-2026-08-01/changjing/第一关.tscn
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_824vl"]
 texture = ExtResource("4_824vl")
@@ -1485,6 +1491,7 @@ position = Vector2(0, 0)
 
 [node name="MenuLayer" type="CanvasLayer" parent="." unique_id=1193878069]
 layer = 20
+script = ExtResource("18_menu")
 
 [node name="MenuButton" type="Button" parent="MenuLayer" unique_id=2098146933]
 offset_left = 1844.0
