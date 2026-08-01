@@ -1,6 +1,6 @@
 extends CharacterBody2D
 
-@export var move_speed: float = 300
+@export var move_speed: float = 200
 @export var hp_p: float = 20
 @export var max_mp: float = 100
 @export var current_mp: float = 100
@@ -26,7 +26,7 @@ var is_knocked_back: bool = false
 var knockback_timer: float = 0.0
 const KNOCKBACK_DURATION: float = 0.15
 
-@export var dash_speed: float = move_speed+100      # 闪避速度
+@export var dash_speed: float = 400      # 闪避速度
 @export var dash_duration: float = 0.4     # 闪避持续时间 (秒)
 @export var dash_cooldown: float = 5.0     # 闪避冷却时间 (秒)
 @onready var dash_timer: Timer = $dash_timer
@@ -54,7 +54,6 @@ func _ready() -> void:
 
 	if dash_timer:
 		dash_timer.one_shot = true
-		dash_timer.wait_time = dash_duration
 
 func _physics_process(delta: float) -> void:
 	if is_game_over:
@@ -70,17 +69,16 @@ func _physics_process(delta: float) -> void:
 		velocity = Input.get_vector("left", "right", "up", "down") * move_speed
 
 	if Input.is_action_pressed("right"):
-		marker2d.scale = Vector2(1, 1)
-		$CollisionShape2D.scale = Vector2(1,1)
+		$Marker2D/AnimatedSprite2D.flip_h = false
 	elif Input.is_action_pressed("left"):
-		marker2d.scale = Vector2(-1, 1)
-		$CollisionShape2D.scale = Vector2(-1,1)
+		$Marker2D/AnimatedSprite2D.flip_h = true
 	move_and_slide()
 	if Input.is_action_just_pressed("dash") and can_dash :
 		start_dash(direction)
 	if is_dashing:
 		# 冲刺期间强制移动
-		velocity = dash_direction * dash_speed
+		velocity = Input.get_vector("left", "right", "up", "down") * dash_speed
+		print(velocity) #我用来检测速度的变化 
 		$Marker2D/AnimatedSprite2D.play("dash")
 		await get_tree().create_timer(0.4).timeout
 		_on_dash_finished()
@@ -164,6 +162,7 @@ func start_dash(input_direction: Vector2):
 func _on_dash_finished():
 	is_dashing = false
 	is_invincible = false # 关闭无敌
+	velocity = move_speed * direction
 	
 func shake_hp_bar() -> void:
 	if hp_shake_tween:

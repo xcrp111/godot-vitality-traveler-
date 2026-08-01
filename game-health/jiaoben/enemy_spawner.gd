@@ -1,21 +1,39 @@
 class_name EnemySpawner
 extends Node2D
-## 房间敌人生成器 + 传送门触发器。
-## - 玩家在哪个房间，就在哪个房间生成敌人
-## - 玩家首次进入某房间时，触发该房间对应的传送门开始倒计时
+## 房间波次敌人生成器 + 传送门触发器。
+## - 每个房间可挂 RoomWaves 子节点独立配置波次
+## - 没挂 RoomWaves 的房间使用全局默认波次
+## - 当前波敌人全部击杀后才进入下一波
+## - 全部波次清空后激活传送门
 
+@export var wave_1_enemies: Array[PackedScene] = []
+@export var wave_2_enemies: Array[PackedScene] = []
+@export var wave_3_enemies: Array[PackedScene] = []
 @export var spawn_interval: float = 2.0
-@export var max_enemies_per_room: int = 10
-@export var enemy_scenes: Array[PackedScene] = []
-@export var min_spawn_distance_from_player: float = 180.0  # 生成点离玩家的最小距离
-@export var min_spawn_distance_between_enemies: float = 60.0  # 敌人之间的最小生成距离
+@export var wave_interval: float = 2.0
+@export var min_spawn_distance_from_player: float = 180.0
+@export var min_spawn_distance_between_enemies: float = 60.0
+@export var wave_label_x: float = 1700.0
+@export var wave_label_y: float = 8.0
+
+const STATE_SPAWNING  := 0
+const STATE_FIGHTING  := 1
+const STATE_WAITING   := 2
+const STATE_COMPLETED := 3
 
 var _zones: Array[Area2D] = []
-var _timer: Timer
 var _player: Node2D
-var _tick_count: int = 0
+var _waves: Array = []
+var _wave_label: Label = null
+
+var _wave_idx: Array[int] = []
+var _spawn_count: Array[int] = []
+var _state: Array[int] = []
+var _timer: Array[float] = []
+var _entered: Array[bool] = []
+var _portal_triggered: Array[bool] = []
 var _current_room: int = -1
-var _entered: Array[bool] = [false, false, false]  # 记录首次进入
+var _tick_count: int = 0
 
 
 func _ready() -> void:
@@ -24,30 +42,161 @@ func _ready() -> void:
 			_player = node
 			break
 	if not _player:
-		push_error("EnemySpawner: 找不到 group='player' 的 CharacterBody2D！")
+		push_error("EnemySpawner: 找不到 player！")
 		return
 
 	for child in get_children():
 		if child is Area2D:
 			_zones.append(child)
-
 	if _zones.is_empty():
-		push_warning("EnemySpawner: 没有 Area2D 子节点！")
 		return
 
+	var global_waves: Array = []
+	for w in [wave_1_enemies, wave_2_enemies, wave_3_enemies]:
+		if not w.is_empty():
+			global_waves.append(w)
+
+	for zone in _zones:
+		var room_waves: Array = []
+		var cfg := _find_room_waves(zone)
+		if cfg:
+			for arr in [cfg.wave_1, cfg.wave_2, cfg.wave_3]:
+				if not arr.is_empty():
+					room_waves.append(arr)
+		else:
+			room_waves = global_waves.duplicate(true)
+		_waves.append(room_waves)
+
+	for _i in range(_zones.size()):
+		_wave_idx.append(-1)
+		_spawn_count.append(0)
+		_state.append(STATE_SPAWNING)
+		_timer.append(0.0)
+		_entered.append(false)
+		_portal_triggered.append(false)
+
 	print("========== EnemySpawner 初始化 ==========")
-	for z in _zones:
-		var r := _get_room_rect(z)
-		print("  %s: %s (中心: %s)" % [z.name, r, r.get_center()])
-	print("  玩家初始位置: %s" % _player.global_position)
+	for i in range(_zones.size()):
+		var rw := _waves[i] as Array
+		print("  %s: %d 波" % [_zones[i].name, rw.size()])
 	print("==========================================")
 
-	_timer = Timer.new()
-	_timer.wait_time = spawn_interval
-	_timer.one_shot = false
-	_timer.timeout.connect(_tick)
-	add_child(_timer)
-	_timer.start()
+	var canvas := CanvasLayer.new()
+	canvas.name = "WaveCanvas"
+	add_child(canvas)
+	_wave_label = Label.new()
+	_wave_label.name = "WaveLabel"
+	_wave_label.position = Vector2(wave_label_x, wave_label_y)
+	_wave_label.size = Vector2(200, 36)
+	_wave_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_wave_label.add_theme_font_size_override("font_size", 22)
+	_wave_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3, 1))
+	canvas.add_child(_wave_label)
+
+
+func _find_room_waves(zone: Area2D) -> RoomWaves:
+	for c in zone.get_children():
+		if c is RoomWaves:
+			return c
+	return null
+
+
+func _process(delta: float) -> void:
+	if _zones.is_empty():
+		return
+	var room_idx := _find_room_index()
+	if room_idx >= 0 and room_idx != _current_room:
+		_current_room = room_idx
+		if not _entered[room_idx]:
+			_entered[room_idx] = true
+	if room_idx < 0:
+		return
+	var room_waves: Array = _waves[room_idx] as Array
+	if room_waves.is_empty():
+		return
+	if _state[room_idx] == STATE_COMPLETED:
+		if not _portal_triggered[room_idx]:
+			_check_room_clear_for_portal(room_idx)
+		return
+	if _wave_idx[room_idx] == -1:
+		_start_wave(room_idx, 0)
+	match _state[room_idx]:
+		STATE_SPAWNING:  _process_spawning(room_idx, delta)
+		STATE_FIGHTING:  _process_fighting(room_idx)
+		STATE_WAITING:   _process_waiting(room_idx, delta)
+
+
+func _process_spawning(room_idx: int, delta: float) -> void:
+	_timer[room_idx] -= delta
+	if _timer[room_idx] > 0.0:
+		return
+	var room_waves: Array = _waves[room_idx] as Array
+	var wave_enemies: Array = room_waves[_wave_idx[room_idx]] as Array
+	if _spawn_count[room_idx] < wave_enemies.size():
+		_spawn_enemy(room_idx, wave_enemies[_spawn_count[room_idx]] as PackedScene)
+		_spawn_count[room_idx] += 1
+		_timer[room_idx] = spawn_interval
+	else:
+		_state[room_idx] = STATE_FIGHTING
+
+
+func _process_fighting(room_idx: int) -> void:
+	if _room_has_enemies(room_idx):
+		return
+	var room_waves: Array = _waves[room_idx] as Array
+	if _wave_idx[room_idx] + 1 < room_waves.size():
+		_state[room_idx] = STATE_WAITING
+		_timer[room_idx] = wave_interval
+	else:
+		_state[room_idx] = STATE_COMPLETED
+
+
+func _process_waiting(room_idx: int, delta: float) -> void:
+	_timer[room_idx] -= delta
+	if _timer[room_idx] > 0.0:
+		return
+	_start_wave(room_idx, _wave_idx[room_idx] + 1)
+
+
+func _start_wave(room_idx: int, wave: int) -> void:
+	_wave_idx[room_idx] = wave
+	_spawn_count[room_idx] = 0
+	_state[room_idx] = STATE_SPAWNING
+	_timer[room_idx] = 0.0
+	var room_waves: Array = _waves[room_idx] as Array
+	if _wave_label:
+		_wave_label.text = "第 %d / %d 波" % [wave + 1, room_waves.size()]
+
+
+func _spawn_enemy(room_idx: int, scene: PackedScene) -> void:
+	_tick_count += 1
+	var target := _zones[room_idx]
+	var enemy: Node2D = scene.instantiate()
+	var r := _get_room_rect(target)
+	const MARGIN := 40.0
+	const MAX_RETRIES := 15
+	var spawn_pos: Vector2
+	for _attempt in range(MAX_RETRIES):
+		spawn_pos = Vector2(randf_range(r.position.x + MARGIN, r.end.x - MARGIN), randf_range(r.position.y + MARGIN, r.end.y - MARGIN))
+		if _player and spawn_pos.distance_to(_player.global_position) < min_spawn_distance_from_player:
+			continue
+		var too_close := false
+		for e in get_tree().get_nodes_in_group("enemy"):
+			if is_instance_valid(e) and spawn_pos.distance_to(e.global_position) < min_spawn_distance_between_enemies:
+				too_close = true
+				break
+		if not too_close:
+			break
+	enemy.global_position = spawn_pos
+	get_tree().current_scene.add_child(enemy)
+
+
+func _room_has_enemies(room_idx: int) -> bool:
+	var r := _get_room_rect(_zones[room_idx])
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if is_instance_valid(e) and r.has_point(e.global_position):
+			return true
+	return false
 
 
 func _get_room_rect(zone: Area2D) -> Rect2:
@@ -67,96 +216,34 @@ func _find_room_index() -> int:
 	return -1
 
 
-func _tick() -> void:
-	_tick_count += 1
-	if _zones.is_empty():
+func _check_room_clear_for_portal(room_idx: int) -> void:
+	if _room_has_enemies(room_idx):
 		return
-
-	# 检测当前房间
-	var room_idx := _find_room_index()
-
-	# 首次进入房间 → 触发传送门
-	if room_idx >= 0 and room_idx != _current_room:
-		_current_room = room_idx
-		if not _entered[room_idx]:
-			_entered[room_idx] = true
-			_on_first_enter(room_idx)
-
-	if enemy_scenes.is_empty():
-		return
-
-	if room_idx < 0:
-		if _tick_count <= 3 or _tick_count % 10 == 0:
-			print("[EnemySpawner #%d] 玩家(%s) 不在任何房间！" % [_tick_count, _player.global_position])
-		return
-
-	var target := _zones[room_idx]
-	var count := 0
-	for e in get_tree().get_nodes_in_group("enemy"):
-		if is_instance_valid(e) and _get_room_rect(target).has_point(e.global_position):
-			count += 1
-
-	if count >= max_enemies_per_room:
-		return
-
-	var scene: PackedScene = enemy_scenes[randi() % enemy_scenes.size()]
-	var enemy: Node2D = scene.instantiate()
-	var r := _get_room_rect(target)
-	const M := 40.0
-
-	# 尝试在安全位置生成（远离玩家和其他敌人）
-	var spawn_pos: Vector2
-	var is_safe := false
-	const MAX_RETRIES := 15
-
-	for attempt in range(MAX_RETRIES):
-		spawn_pos = Vector2(
-			randf_range(r.position.x + M, r.end.x - M),
-			randf_range(r.position.y + M, r.end.y - M)
-		)
-
-		# 检查离玩家是否足够远
-		if _player and spawn_pos.distance_to(_player.global_position) < min_spawn_distance_from_player:
-			continue
-
-		# 检查离其他敌人是否足够远
-		var too_close_to_enemy := false
-		for e in get_tree().get_nodes_in_group("enemy"):
-			if is_instance_valid(e) and spawn_pos.distance_to(e.global_position) < min_spawn_distance_between_enemies:
-				too_close_to_enemy = true
-				break
-
-		if not too_close_to_enemy:
-			is_safe = true
-			break
-
-	if not is_safe:
-		print("[EnemySpawner #%d] 警告：%d 次重试后未找到安全位置，使用最后位置" % [_tick_count, MAX_RETRIES])
-
-	enemy.global_position = spawn_pos
-	get_tree().current_scene.add_child(enemy)
-	print("[EnemySpawner #%d] %s 生成敌人 (存活: %d/%d)  pos: %s  玩家: %s" % [_tick_count, target.name, count + 1, max_enemies_per_room, spawn_pos, _player.global_position])
-
-
-# ============================================================
-# 传送门触发
-# ============================================================
-
-func _on_first_enter(room_idx: int) -> void:
-	print("[EnemySpawner] 玩家首次进入 %s！" % _zones[room_idx].name)
-	match room_idx:
-		0:  # Room1 — 传送门1/2 已 auto_start，无需操作
-			pass
-		1:  # Room2 — 启动传送门3（Room2→Room3）
-			_start_portal("portal3")
-		2:  # Room3 — 启动传送门4（Room3→Room2）+ 传送门5（Room3→家园）
-			_start_portal("portal4")
-			_start_portal("portal5")
+	_portal_triggered[room_idx] = true
+	if _wave_label:
+		_wave_label.text = "✓ 已清空"
+	# 房间清空 → 激活该房间所有出口传送门
+	if _zones.size() == 3:
+		# 第一关（3 房间线性）
+		match room_idx:
+			0: _start_portal("portal");  _start_portal("portal2")
+			1: _start_portal("portal3")
+			2: _start_portal("portal4"); _start_portal("portal5")
+	else:
+		# 第二关（9 房间 3×3）—— 清空后打开通往相邻房间的门
+		match room_idx:
+			0: _start_portal("p00R"); _start_portal("p00D")
+			1: _start_portal("p10L"); _start_portal("p10R"); _start_portal("p10D")
+			2: _start_portal("p20L"); _start_portal("p20D")
+			3: _start_portal("p01U"); _start_portal("p01R"); _start_portal("p01D")
+			4: _start_portal("p11U"); _start_portal("p11L"); _start_portal("p11R"); _start_portal("p11D")
+			5: _start_portal("p21U"); _start_portal("p21L"); _start_portal("p21D")
+			6: _start_portal("p02U"); _start_portal("p02R")
+			7: _start_portal("p12U"); _start_portal("p12L"); _start_portal("p12R")
+			8: _start_portal("p22U"); _start_portal("p22L")
 
 
 func _start_portal(p_name: String) -> void:
 	var p := get_parent().get_node_or_null("portal/" + p_name)
 	if p and p.has_method("start_countdown"):
 		p.start_countdown()
-	else:
-		push_warning("EnemySpawner: 找不到传送门 " + p_name)

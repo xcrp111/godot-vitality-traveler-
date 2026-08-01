@@ -1,19 +1,26 @@
 [gd_scene format=3 uid="uid://ckjn12uw1thrv"]
 
 [ext_resource type="Script" uid="uid://dnf33w8ltgewe" path="res://yunshishu.gd" id="1_e4gog"]
-[ext_resource type="Texture2D" uid="uid://clunov3avemps" path="res://godot/fashi.yunshishu.png" id="1_sl7kk"]
+[ext_resource type="PackedScene" uid="uid://4qhwpj63bq56" path="res://changjing/shilaimu.tscn" id="2_cnn63"]
+[ext_resource type="Texture2D" uid="uid://mu78u7gw66e1" path="res://godot/yunshishu2.png" id="2_e4gog"]
+[ext_resource type="PackedScene" uid="uid://beef7c63poqra" path="res://langr.tscn" id="3_sl88k"]
+[ext_resource type="PackedScene" uid="uid://b1ferf5bp6pbg" path="res://Enemy/enemy.tscn" id="4_adjon"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_yps4j"]
 size = Vector2(643, 227)
 
-[node name="yunshishu" type="Area2D" unique_id=1690238035]
+[node name="yunshishu" type="Area2D" unique_id=1690238035 groups=["yunshishu"]]
 script = ExtResource("1_e4gog")
-yunshishu_scene = null
+shilaimu_scene = ExtResource("2_cnn63")
+langr_scene = ExtResource("3_sl88k")
+gebul_scene = ExtResource("4_adjon")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=423988203]
-texture = ExtResource("1_sl7kk")
-vframes = 9
+texture = ExtResource("2_e4gog")
+hframes = 9
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1703762031]
 position = Vector2(1, -81)
 shape = SubResource("RectangleShape2D_yps4j")
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]

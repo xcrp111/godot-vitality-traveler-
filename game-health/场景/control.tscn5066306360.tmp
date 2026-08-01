@@ -10,6 +10,7 @@
 [ext_resource type="Texture2D" uid="uid://c0dlhr106gull" path="res://资源/传送.png" id="8_kt4vn"]
 [ext_resource type="PackedScene" uid="uid://5gp5kwt1wjpq" path="res://场景/men.tscn" id="9_1nh6t"]
 [ext_resource type="PackedScene" uid="uid://c7ntnj6kprhit" path="res://场景/area_2d.tscn" id="9_m4agt"]
+[ext_resource type="Script" uid="uid://jhep4e5oma7k" path="res://脚本/men.gd" id="10_odvti"]
 
 [sub_resource type="SystemFont" id="SystemFont_1lgyb"]
 
@@ -255,11 +256,12 @@ offset_bottom = 646.0
 
 [node name="door to gonghui" parent="Main" unique_id=617389358 instance=ExtResource("9_1nh6t")]
 position = Vector2(1401, 411)
+script = ExtResource("10_odvti")
 target_scene = "uid://b4mxiqc01nu1o"
-spawn_target = "spawn_From zhucheng"
+spawn_target = null
 
-[node name="spawn_From gonghui" type="Marker2D" parent="Main" unique_id=1118639255]
-position = Vector2(1398, 422)
+[node name="spawn_From gonghui" type="Marker2D" parent="Main" unique_id=1438149751]
+position = Vector2(1404, 470)
 
 [node name="MenuLayer" type="CanvasLayer" parent="." unique_id=159954615]
 
@@ -328,6 +330,7 @@ layout_mode = 2
 text = "退出游戏"
 
 [node name="Area2D" parent="." unique_id=1772348773 instance=ExtResource("9_m4agt")]
+visible = false
 
 [node name="CollisionShape2D2" type="CollisionShape2D" parent="Area2D" unique_id=826150722]
 position = Vector2(389.5, 416.5)

@@ -8,8 +8,8 @@ signal open_ui()
 var already_trigger: bool = true
 
 
-@export var activation_delay: float = 10.0
-@export var auto_start: bool = true
+@export var activation_delay: float = 1.0
+@export var auto_start: bool = false
 @export var target_scene: String = ""  # 例: "res://场景/control.tscn"
 
 var is_active: bool = false

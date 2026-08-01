@@ -1,9 +1,4 @@
 extends Node2D
-## 第一关场景管理器 — 负责菜单、重新开始、分数等关卡逻辑。
-## 敌人生成已迁移到 EnemySpawner 组件（res://jiaoben/enemy_spawner.gd），
-## 请在编辑器中给场景添加 EnemySpawner 节点并配置房间区域和敌人类型。
-
-@export var score : int = 0
 
 @onready var menu_layer = $MenuLayer
 @onready var menu_btn = $MenuLayer/MenuButton
@@ -29,12 +24,7 @@ func _close_menu():
 
 func _on_restart():
 	_close_menu()
-	get_tree().reload_current_scene()
+	角色.global_position = Vector2(-100, 200)
 
 func _on_quit_game():
 	get_tree().quit()
-
-
-## 加分方法（供敌人死亡时调用）
-func add_score(amount: int) -> void:
-	score += amount
