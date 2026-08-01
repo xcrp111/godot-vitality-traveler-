@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream:game-health/changjing/beijing1 caodi.tscn
 [gd_scene format=4 uid="uid://di1sc6xh4ghrw"]
+=======
+[gd_scene format=4 uid="uid://c0ljhdg8lut2g"]
+>>>>>>> Stashed changes:game-health-2026-08-01/changjing/beijing1 caodi.tscn
 
 [ext_resource type="Script" uid="uid://bb8cmqdmfwx51" path="res://jiaoben/changjingguanli.gd" id="1_824vl"]
 [ext_resource type="PackedScene" uid="uid://bnismjitymiib" path="res://changjing/fashi.tscn" id="2_x4u0a"]

@@ -22,6 +22,9 @@ func _ready() -> void:
 	add_to_group("enemy")
 	add_to_group("werewolf")
 <<<<<<< Updated upstream:game-health/langr.gd
+<<<<<<< Updated upstream:game-health/langr.gd
+=======
+>>>>>>> Stashed changes:game-health-2026-08-01/langr.gd
 
 =======
 >>>>>>> Stashed changes:game-health-2026-08-01/langr.gd
@@ -102,9 +105,13 @@ func die() -> void:
 	if get_tree().current_scene.has_method("add_score"):
 		get_tree().current_scene.add_score(1)
 <<<<<<< Updated upstream:game-health/langr.gd
+<<<<<<< Updated upstream:game-health/langr.gd
 	# 嗜血回调：通知玩家击杀狼人
 =======
 	# 嗜血回调
+>>>>>>> Stashed changes:game-health-2026-08-01/langr.gd
+=======
+	# 嗜血回调：通知玩家击杀狼人
 >>>>>>> Stashed changes:game-health-2026-08-01/langr.gd
 	var p = get_tree().get_first_node_in_group("player")
 	if p and p.has_method("on_werewolf_killed"):

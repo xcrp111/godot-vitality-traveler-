@@ -1390,7 +1390,11 @@ icon_alignment = 1
 expand_icon = true
 script = ExtResource("9_e03xw")
 
+<<<<<<< Updated upstream:game-health/changjing/第一关.tscn
 [node name="撕裂普攻" type="Button" parent="wanjia/CanvasLayer/HBoxContainer" unique_id=2819475631]
+=======
+[node name="撕裂普攻" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+>>>>>>> Stashed changes:game-health-2026-08-01/changjing/第一关.tscn
 layout_mode = 2
 size_flags_horizontal = 3
 flat = true
@@ -1398,7 +1402,11 @@ theme_override_font_sizes/font_size = 28
 text = "撕裂普攻"
 script = ExtResource("9_e03xw")
 
+<<<<<<< Updated upstream:game-health/changjing/第一关.tscn
 [node name="野性蓄力" type="Button" parent="wanjia/CanvasLayer/HBoxContainer" unique_id=3920586742]
+=======
+[node name="野性蓄力" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+>>>>>>> Stashed changes:game-health-2026-08-01/changjing/第一关.tscn
 layout_mode = 2
 size_flags_horizontal = 3
 flat = true
@@ -1406,7 +1414,11 @@ theme_override_font_sizes/font_size = 28
 text = "野性蓄力"
 script = ExtResource("9_e03xw")
 
+<<<<<<< Updated upstream:game-health/changjing/第一关.tscn
 [node name="嗜血" type="Button" parent="wanjia/CanvasLayer/HBoxContainer" unique_id=1638497853]
+=======
+[node name="嗜血" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+>>>>>>> Stashed changes:game-health-2026-08-01/changjing/第一关.tscn
 layout_mode = 2
 size_flags_horizontal = 3
 flat = true

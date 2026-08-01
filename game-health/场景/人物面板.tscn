@@ -216,6 +216,10 @@ layout_mode = 2
 max_value = 10.0
 value = 1.0
 show_percentage = false
+<<<<<<< Updated upstream:game-health/场景/人物面板.tscn
+=======
+theme_override_styles/fill = SubResource("StyleBoxFlat_drsw1")
+>>>>>>> Stashed changes:game-health-2026-08-01/场景/人物面板.tscn
 
 [node name="Value" type="Label" parent="StatsPanel/攻击力行"]
 layout_mode = 2
@@ -242,6 +246,10 @@ layout_mode = 2
 max_value = 20.0
 value = 20.0
 show_percentage = false
+<<<<<<< Updated upstream:game-health/场景/人物面板.tscn
+=======
+theme_override_styles/fill = SubResource("StyleBoxFlat_drsw1")
+>>>>>>> Stashed changes:game-health-2026-08-01/场景/人物面板.tscn
 
 [node name="Value" type="Label" parent="StatsPanel/生命值行"]
 layout_mode = 2
@@ -295,6 +303,10 @@ layout_mode = 2
 max_value = 20.0
 value = 20.0
 show_percentage = false
+<<<<<<< Updated upstream:game-health/场景/人物面板.tscn
+=======
+theme_override_styles/fill = SubResource("StyleBoxFlat_drsw1")
+>>>>>>> Stashed changes:game-health-2026-08-01/场景/人物面板.tscn
 
 [node name="Value" type="Label" parent="StatsPanel/法力值行"]
 layout_mode = 2
