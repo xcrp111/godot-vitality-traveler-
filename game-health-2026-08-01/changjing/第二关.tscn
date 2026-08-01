@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" uid="uid://4qhwpj63bq56" path="res://changjing/shilaimu.tscn" id="7_slime"]
 [ext_resource type="PackedScene" uid="uid://beef7c63poqra" path="res://langr.tscn" id="8_wolf"]
 [ext_resource type="PackedScene" uid="uid://8rc53y0a681" path="res://场景/menu.tscn" id="17_menu"]
+<<<<<<< Updated upstream
 [ext_resource type="Script" uid="uid://148xhpjqqcgr" path="res://脚本/canvas_layer.gd" id="18_canvas"]
 [ext_resource type="Texture2D" uid="uid://my8p6aweak1u" path="res://资源/加蓝.jpg" id="19_jialan"]
 [ext_resource type="Script" uid="uid://ckm05v3wvtdbc" path="res://脚本/加蓝.gd" id="20_jialan_s"]
@@ -17,6 +18,18 @@
 [ext_resource type="Script" uid="uid://0dos0lg8ebcw" path="res://脚本/加血.gd" id="22_jiaxue_s"]
 [ext_resource type="Texture2D" uid="uid://crtw34vwgsrj5" path="res://资源/加移速.jpg" id="23_yisu"]
 [ext_resource type="Script" uid="uid://b6852wu4lalpf" path="res://脚本/加移速.gd" id="24_yisu_s"]
+=======
+[ext_resource type="Texture2D" uid="uid://my8p6aweak1u" path="res://资源/加蓝.jpg" id="13_jl"]
+[ext_resource type="Script" uid="uid://148xhpjqqcgr" path="res://脚本/canvas_layer.gd" id="14_cvs"]
+[ext_resource type="Script" uid="uid://ckm05v3wvtdbc" path="res://脚本/加蓝.gd" id="15_jl"]
+[ext_resource type="Texture2D" uid="uid://d3v1d4801nb1m" path="res://资源/加血.jpg" id="16_jx"]
+[ext_resource type="Script" uid="uid://0dos0lg8ebcw" path="res://脚本/加血.gd" id="17_jx"]
+[ext_resource type="Texture2D" uid="uid://crtw34vwgsrj5" path="res://资源/加移速.jpg" id="18_ys"]
+[ext_resource type="Script" uid="uid://b6852wu4lalpf" path="res://脚本/加移速.gd" id="19_ys"]
+[ext_resource type="Script" uid="uid://d4l2e7y8k9m1" path="res://脚本/撕裂普攻.gd" id="20_slpg"]
+[ext_resource type="Script" uid="uid://e5m3f8z9a0b2" path="res://脚本/野性蓄力.gd" id="21_ycxl"]
+[ext_resource type="Script" uid="uid://f6n4g0a1b2c3" path="res://脚本/嗜血.gd" id="22_sxue"]
+>>>>>>> Stashed changes
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_pepra"]
 texture = ExtResource("2_a2vuv")
@@ -733,6 +746,66 @@ limit_right = 3200
 limit_bottom = 2300
 position_smoothing_enabled = true
 
+[node name="CanvasLayer" type="CanvasLayer" parent="wanjia"]
+process_mode = 3
+visible = false
+script = ExtResource("14_cvs")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="wanjia/CanvasLayer"]
+offset_left = 496.0
+offset_top = 390.0
+offset_right = 1433.0
+offset_bottom = 617.0
+theme_override_constants/separation = 100
+
+[node name="加蓝" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+icon = ExtResource("13_jl")
+flat = true
+icon_alignment = 1
+expand_icon = true
+script = ExtResource("15_jl")
+
+[node name="加血" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+icon = ExtResource("16_jx")
+flat = true
+icon_alignment = 1
+expand_icon = true
+script = ExtResource("17_jx")
+
+[node name="加移速" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+icon = ExtResource("18_ys")
+flat = true
+icon_alignment = 1
+expand_icon = true
+script = ExtResource("19_ys")
+
+[node name="撕裂普攻" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "撕裂普攻"
+flat = true
+script = ExtResource("20_slpg")
+
+[node name="野性蓄力" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "野性蓄力"
+flat = true
+script = ExtResource("21_ycxl")
+
+[node name="嗜血" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "嗜血"
+flat = true
+script = ExtResource("22_sxue")
+
 [node name="portal" type="Node2D" parent="." unique_id=369859302]
 
 [node name="p00R" parent="portal" unique_id=1212925434 instance=ExtResource("3_portal")]
@@ -947,6 +1020,10 @@ wave_3 = Array[PackedScene]([ExtResource("8_wolf"), ExtResource("8_wolf"), ExtRe
 
 [node name="Menu" parent="." instance=ExtResource("17_menu")]
 
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/加蓝" to="wanjia" method="加蓝"]
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/加蓝" to="wanjia/CanvasLayer" method="add_mana"]
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/加血" to="wanjia" method="加血"]
@@ -959,6 +1036,7 @@ wave_3 = Array[PackedScene]([ExtResource("8_wolf"), ExtResource("8_wolf"), ExtRe
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/野性蓄力" to="wanjia/CanvasLayer" method="wild_charge"]
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/嗜血" to="wanjia" method="嗜血"]
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/嗜血" to="wanjia/CanvasLayer" method="bloodthirst"]
+<<<<<<< Updated upstream
 [connection signal="open_ui" from="portal/p00R" to="wanjia/CanvasLayer" method="show_ui"]
 [connection signal="open_ui" from="portal/p10L" to="wanjia/CanvasLayer" method="show_ui"]
 [connection signal="open_ui" from="portal/p10R" to="wanjia/CanvasLayer" method="show_ui"]
@@ -983,4 +1061,6 @@ wave_3 = Array[PackedScene]([ExtResource("8_wolf"), ExtResource("8_wolf"), ExtRe
 [connection signal="open_ui" from="portal/p12U" to="wanjia/CanvasLayer" method="show_ui"]
 [connection signal="open_ui" from="portal/p21D" to="wanjia/CanvasLayer" method="show_ui"]
 [connection signal="open_ui" from="portal/p22U" to="wanjia/CanvasLayer" method="show_ui"]
+=======
+>>>>>>> Stashed changes
 [editable path="wanjia"]

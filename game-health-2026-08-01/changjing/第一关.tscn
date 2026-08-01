@@ -15,8 +15,14 @@
 [ext_resource type="Texture2D" uid="uid://crtw34vwgsrj5" path="res://资源/加移速.jpg" id="8_ivrim"]
 [ext_resource type="PackedScene" uid="uid://beef7c63poqra" path="res://langr.tscn" id="8_x7m7m"]
 [ext_resource type="Script" uid="uid://b6852wu4lalpf" path="res://脚本/加移速.gd" id="9_e03xw"]
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream:game-health/changjing/第一关.tscn
 =======
+=======
+[ext_resource type="Script" uid="uid://d4l2e7y8k9m1" path="res://脚本/撕裂普攻.gd" id="10_slpg"]
+[ext_resource type="Script" uid="uid://e5m3f8z9a0b2" path="res://脚本/野性蓄力.gd" id="11_ycxl"]
+[ext_resource type="Script" uid="uid://f6n4g0a1b2c3" path="res://脚本/嗜血.gd" id="12_sxue"]
+>>>>>>> Stashed changes
 [ext_resource type="Script" uid="uid://fru7o5dqeufm" path="res://jiaoben/room_waves.gd" id="10_rw"]
 [ext_resource type="PackedScene" uid="uid://b32rsh000ifie" path="res://boss_1_shitouren.tscn" id="16_boss"]
 [ext_resource type="Script" uid="uid://dsvmdnr1lnfvb" path="res://脚本/menu.gd" id="18_menu"]
@@ -1389,6 +1395,26 @@ flat = true
 icon_alignment = 1
 expand_icon = true
 script = ExtResource("9_e03xw")
+[node name="撕裂普攻" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "撕裂普攻"
+flat = true
+script = ExtResource("10_slpg")
+
+[node name="野性蓄力" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "野性蓄力"
+flat = true
+script = ExtResource("11_ycxl")
+
+[node name="嗜血" type="Button" parent="wanjia/CanvasLayer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "嗜血"
+flat = true
+script = ExtResource("12_sxue")
 
 <<<<<<< Updated upstream:game-health/changjing/第一关.tscn
 [node name="撕裂普攻" type="Button" parent="wanjia/CanvasLayer/HBoxContainer" unique_id=2819475631]
@@ -1606,6 +1632,12 @@ shape = SubResource("RectangleShape2D_room3")
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/野性蓄力" to="wanjia/CanvasLayer" method="wild_charge"]
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/嗜血" to="wanjia" method="嗜血"]
 [connection signal="pressed" from="wanjia/CanvasLayer/HBoxContainer/嗜血" to="wanjia/CanvasLayer" method="bloodthirst"]
+<<<<<<< Updated upstream
+=======
+[connection signal="open_ui" from="portal/portal2" to="wanjia/CanvasLayer" method="show_ui"]
+[connection signal="open_ui" from="portal/portal4" to="wanjia/CanvasLayer" method="show_ui"]
+[connection signal="open_ui" from="portal/portal5" to="wanjia/CanvasLayer" method="show_ui"]
+>>>>>>> Stashed changes
 [connection signal="open_ui" from="portal/portal" to="wanjia/CanvasLayer" method="show_ui"]
 [connection signal="open_ui" from="portal/portal3" to="wanjia/CanvasLayer" method="show_ui"]
 
