@@ -1,6 +1,7 @@
 [gd_scene format=4 uid="uid://di1sc6xh4ghrw"]
 
 [ext_resource type="Script" uid="uid://bb8cmqdmfwx51" path="res://jiaoben/changjingguanli.gd" id="1_824vl"]
+[ext_resource type="PackedScene" uid="uid://8rc53y0a681" path="res://场景/menu.tscn" id="2_ivrim"]
 [ext_resource type="PackedScene" uid="uid://bnismjitymiib" path="res://jiaoben/fashi.tscn" id="2_x4u0a"]
 [ext_resource type="PackedScene" uid="uid://b1ferf5bp6pbg" path="res://Enemy/enemy.tscn" id="3_824vl"]
 [ext_resource type="PackedScene" uid="uid://4qhwpj63bq56" path="res://changjing/shilaimu.tscn" id="3_upvhi"]
@@ -1307,6 +1308,8 @@ size = Vector2(1030, 674)
 y_sort_enabled = true
 script = ExtResource("1_824vl")
 
+[node name="Menu" parent="." unique_id=947253432 instance=ExtResource("2_ivrim")]
+
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=261101852]
 
 [node name="TileMapLayer" type="TileMapLayer" parent="TileMapLayer" unique_id=1281242073 groups=["wall"]]
@@ -1458,73 +1461,6 @@ position = Vector2(1479.9999, -469.99997)
 
 [node name="DestinationPoint" parent="portal/portal5" index="2" unique_id=1640399178]
 position = Vector2(0, 0)
-
-[node name="MenuLayer" type="CanvasLayer" parent="." unique_id=1193878069]
-layer = 20
-
-[node name="MenuButton" type="Button" parent="MenuLayer" unique_id=2098146933]
-offset_left = 1844.0
-offset_top = 1047.0
-offset_right = 1916.0
-offset_bottom = 1078.0
-text = "菜单"
-metadata/_edit_group_ = true
-
-[node name="MenuPanel" type="Control" parent="MenuLayer" unique_id=1029862076]
-visible = false
-layout_mode = 3
-anchors_preset = 0
-offset_left = 421.0
-offset_top = 190.0
-offset_right = 683.0
-offset_bottom = 472.0
-size_flags_horizontal = 4
-metadata/_edit_group_ = true
-
-[node name="ColorRect" type="ColorRect" parent="MenuLayer/MenuPanel" unique_id=151843947]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -1360.0
-offset_top = -1383.0
-offset_right = -1320.0
-offset_bottom = -1343.0
-grow_horizontal = 2
-grow_vertical = 2
-scale = Vector2(86.7466, 84.4506)
-color = Color(1, 1, 1, 0.717647)
-
-[node name="VBoxContainer" type="VBoxContainer" parent="MenuLayer/MenuPanel" unique_id=398893463]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = 294.0
-offset_top = 95.0
-offset_right = 494.0
-offset_bottom = 295.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="RestartBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1779013089]
-custom_minimum_size = Vector2(180, 60)
-layout_mode = 2
-text = "重新开始"
-
-[node name="CloseBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1388655455]
-custom_minimum_size = Vector2(0, 60)
-layout_mode = 2
-text = "关闭菜单"
-
-[node name="QuitBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1560552083]
-custom_minimum_size = Vector2(0, 60)
-layout_mode = 2
-text = "退出游戏"
 
 [node name="EnemySpawner" type="Node2D" parent="." unique_id=534975775]
 script = ExtResource("6_spawner")

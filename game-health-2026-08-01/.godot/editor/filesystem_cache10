@@ -1,5 +1,5 @@
 78098b89c88a74ebe8c20117b8754620
-::res://::1785566130
+::res://::1785569620
 bg_map.tscn::PackedScene::6290563779726394251::1785561024::0::1::::<><><>0<>0<><>::uid://r0arsyigqfkf::::res://脚本/bg_map.gd<>uid://kfnbcnet1t8x::::res://godot/map1.png<>uid://dsqea755ovq1p::::res://Enemy/now_enemies.tscn<>uid://bnismjitymiib::::res://changjing/fashi.tscn
 boss_1_shitouren.gd::GDScript::2448570233248386569::1785561024::0::1::::<>CharacterBody2D<><>0<>0<><>::
 boss_1_shitouren.tscn::PackedScene::4408511245538115672::1785561024::0::1::::<><><>0<>0<><>::uid://ba5dugwu64tg0::::res://boss_1_shitouren.gd<>uid://dy4ld1805ek1x::::res://godot/boss1_jineng.png<>uid://4a2tmoesita2::::res://godot/boss1_siwang.png<>uid://dw88x05h71wh1::::res://godot/boss.png
