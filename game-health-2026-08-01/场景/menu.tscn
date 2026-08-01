@@ -1,0 +1,62 @@
+[gd_scene format=3 uid="uid://8rc53y0a681"]
+
+[ext_resource type="Script" uid="uid://dsvmdnr1lnfvb" path="res://脚本/menu.gd" id="1_script"]
+
+[node name="Menu" type="CanvasLayer" unique_id=947253432]
+script = ExtResource("1_script")
+
+[node name="MenuButton" type="Button" parent="." unique_id=1389708379]
+offset_left = 1848.0
+offset_top = 1044.0
+offset_right = 1908.0
+offset_bottom = 1080.0
+text = "菜单"
+
+[node name="MenuPanel" type="Control" parent="." unique_id=1421443490]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="MenuPanel" unique_id=251307951]
+layout_mode = 0
+offset_right = 1920.0
+offset_bottom = 1080.0
+color = Color(0, 0, 0, 0.5)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MenuPanel" unique_id=704422356]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -100.0
+offset_top = -80.0
+offset_right = 100.0
+offset_bottom = 80.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="RestartBtn" type="Button" parent="MenuPanel/VBoxContainer" unique_id=1232946300]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+text = "重新开始"
+
+[node name="HomeBtn" type="Button" parent="MenuPanel/VBoxContainer" unique_id=168751324]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+text = "返回主城"
+
+[node name="CloseBtn" type="Button" parent="MenuPanel/VBoxContainer" unique_id=1539286341]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+text = "关闭菜单"
+
+[node name="QuitBtn" type="Button" parent="MenuPanel/VBoxContainer" unique_id=1709121728]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+text = "退出游戏"
