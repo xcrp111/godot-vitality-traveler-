@@ -31,7 +31,7 @@ func _fix_collision() -> void:
 		return
 
 	var fixed := 0
-	var region := src.get_tile_size()
+	var region: Vector2i = src.get_tile_size()
 	var half := Vector2(region) / 2.0
 	var poly := PackedVector2Array([
 		-half,
