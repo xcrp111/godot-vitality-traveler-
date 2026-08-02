@@ -24,11 +24,7 @@ var has_bloodthirst: bool = false
 # 野性蓄力
 var is_charging: bool = false
 var charge_time: float = 0.0
-<<<<<<< Updated upstream
-@export var charge_threshold: float = 1.2
-=======
 @export var charge_threshold: float = 0.3
->>>>>>> Stashed changes
 @export var charge_speed_mult: float = 3.0
 var charge_dashing: bool = false
 var charge_dash_timer: float = 0.0
@@ -42,19 +38,12 @@ var charge_pulse_tween: Tween
 var attack_cooldown: float = 0.0
 const ATTACK_RATE: float = 0.25
 
-<<<<<<< Updated upstream
-@onready var marker2d := $Marker2D
-@onready var hp_bar: ProgressBar = $HUD_Layer/StatusUI/HP_Bar_Container/HP_Bar
-@onready var mp_bar: ProgressBar = $HUD_Layer/StatusUI/MP_Bar_Container/MP_Bar
-@onready var base_sprite_scale: Vector2 = $Marker2D/AnimatedSprite2D.scale
-=======
 @onready var marker2d = $Marker2D
 @onready var hp_bar: ProgressBar = $HUD_Layer/StatusUI/HP_Bar_Container/HP_Bar
 @onready var mp_bar: ProgressBar = $HUD_Layer/StatusUI/MP_Bar_Container/MP_Bar
 @onready var base_sprite_scale: Vector2 = $Marker2D/AnimatedSprite2D.scale
 var hp_label: Label
 var mp_label: Label
->>>>>>> Stashed changes
 
 var is_game_over: bool = false
 var is_invincible: bool = false
@@ -124,14 +113,11 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if is_game_over:
 		return
-<<<<<<< Updated upstream
-=======
 
 	# 更新 HP/MP 数值显示
 	hp_label.text = " %d / %d" % [int(hp_p), int(hp_bar.max_value)]
 	mp_label.text = " %d / %d" % [int(current_mp), int(max_mp)]
 
->>>>>>> Stashed changes
 	# 攻击冷却递减
 	if attack_cooldown > 0.0:
 		attack_cooldown -= delta
@@ -148,17 +134,10 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		# 冲锋期间碰撞检测——巨量击退
 		for i in range(get_slide_collision_count()):
-<<<<<<< Updated upstream
-			var col := get_slide_collision(i)
-			var col_obj: Node2D = col.get_collider()
-			if col_obj.is_in_group("enemy"):
-				var knockback_dir := (col_obj.global_position - global_position).normalized()
-=======
 			var col = get_slide_collision(i)
 			var col_obj = col.get_collider()
 			if col_obj.is_in_group("enemy"):
 				var knockback_dir = (col_obj.global_position - global_position).normalized()
->>>>>>> Stashed changes
 				if col_obj is CharacterBody2D:
 					col_obj.velocity = knockback_dir * charge_knockback_force
 					if col_obj.has_method("apply_knockback"):
@@ -186,6 +165,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("dash") and can_dash:
 		start_dash(direction)
 	if is_dashing:
+		# 冲刺期间强制移动
 		velocity = Input.get_vector("left", "right", "up", "down") * dash_speed
 		print(velocity)
 		$Marker2D/AnimatedSprite2D.play("dash")
@@ -199,20 +179,13 @@ func _physics_process(delta: float) -> void:
 			var col = get_slide_collision(i)
 			var col_obj = col.get_collider()
 			if col_obj.is_in_group("enemy"):
-<<<<<<< Updated upstream
-				var normal := col.get_normal()
-=======
 				# 用碰撞法线计算弹开方向（引擎真实碰撞方向，不受 shape 偏移影响）
 				var normal = col.get_normal()
 				# 立即物理分离：沿法线推开，杜绝粘连
->>>>>>> Stashed changes
 				global_position += normal * 8
+				# 玩家击退（速度 + 保护期）
 				take_damage(5, normal)
-<<<<<<< Updated upstream
-				break
-=======
 				break  # 一帧只触发一次
->>>>>>> Stashed changes
 
 	# 无敌倒计时
 	if is_invincible:
@@ -250,10 +223,12 @@ func take_damage(amount: float, knockback_normal: Vector2) -> void:
 	hp_bar.value = hp_p
 	shake_hp_bar()
 
+	# 击退：沿碰撞法线方向弹开（真实碰撞方向）
 	velocity = knockback_normal * knockback_force
 	is_knocked_back = true
 	knockback_timer = KNOCKBACK_DURATION
 
+	# 进入无敌
 	is_invincible = true
 	invincible_timer = invincible_duration
 
@@ -264,16 +239,18 @@ func take_damage(amount: float, knockback_normal: Vector2) -> void:
 func start_dash(input_direction: Vector2):
 	is_dashing = true
 	can_dash = false
-	is_invincible = true
+	is_invincible = true  # 开启无敌
 	dash_direction = input_direction.normalized()
+	# 启动翻滚计时器
 	if dash_timer:
 		dash_timer.start()
+	# 简单的冷却处理
 	await get_tree().create_timer(dash_cooldown).timeout
 	can_dash = true
 
 func _on_dash_finished():
 	is_dashing = false
-	is_invincible = false
+	is_invincible = false # 关闭无敌
 	velocity = move_speed * direction
 
 func shake_hp_bar() -> void:
@@ -312,19 +289,12 @@ func _update_charge_visuals(_delta: float) -> void:
 func _start_charge_pulse() -> void:
 	_stop_charge_pulse()
 	charge_pulse_tween = create_tween()
-<<<<<<< Updated upstream
-	charge_pulse_tween.set_loops()
-	var sprite = $Marker2D/AnimatedSprite2D
-	charge_pulse_tween.tween_property(sprite, "scale", base_sprite_scale * 1.25, 0.1).set_ease(Tween.EASE_OUT)
-	charge_pulse_tween.tween_property(sprite, "scale", base_sprite_scale, 0.1).set_ease(Tween.EASE_IN)
-=======
 	charge_pulse_tween.set_loops(0)
 	var sprite = $Marker2D/AnimatedSprite2D
 	var tw1 = charge_pulse_tween.tween_property(sprite, "scale", base_sprite_scale * 1.25, 0.1)
 	tw1.set_ease(Tween.EASE_OUT)
 	var tw2 = charge_pulse_tween.tween_property(sprite, "scale", base_sprite_scale, 0.1)
 	tw2.set_ease(Tween.EASE_IN)
->>>>>>> Stashed changes
 
 
 func _stop_charge_pulse() -> void:
@@ -334,11 +304,7 @@ func _stop_charge_pulse() -> void:
 
 
 func _trigger_camera_shake(strength: float, duration: float) -> void:
-<<<<<<< Updated upstream
-	var cam: Camera2D = $Camera2D
-=======
 	var cam = $Camera2D
->>>>>>> Stashed changes
 	if not cam:
 		return
 	var t = create_tween()
@@ -346,22 +312,14 @@ func _trigger_camera_shake(strength: float, duration: float) -> void:
 	var step = duration / 8.0
 	for _i in range(8):
 		t.tween_property(cam, "offset", orig + Vector2(randf_range(-strength, strength), randf_range(-strength, strength)), step)
-<<<<<<< Updated upstream
-	t.tween_property(cam, "offset", orig, step).set_ease(Tween.EASE_OUT)
-=======
 	var last = t.tween_property(cam, "offset", orig, step)
 	last.set_ease(Tween.EASE_OUT)
->>>>>>> Stashed changes
 
 
 func _on_area_2d_body_entered(body: Node2D) -> void:
 	if body is CharacterBody2D and body.is_in_group("enemy"):
-<<<<<<< Updated upstream
-		var dir := (global_position - body.global_position).normalized()
-=======
 		# Area2D 没有碰撞法线，用位置差做近似
 		var dir = (global_position - body.global_position).normalized()
->>>>>>> Stashed changes
 		take_damage(5, dir)
 		$Marker2D/AnimatedSprite2D.play("hurt")
 		await get_tree().create_timer(1).timeout
@@ -397,11 +355,7 @@ func _on_fire() -> void:
 	# 松开攻击键——如果蓄满则触发冲锋
 	if is_charging:
 		_stop_charge_pulse()
-<<<<<<< Updated upstream
-		var dir := Vector2($Marker2D/AnimatedSprite2D.flip_h and -1 or 1, 0).normalized()
-=======
 		var dir = Vector2($Marker2D/AnimatedSprite2D.flip_h and -1 or 1, 0).normalized()
->>>>>>> Stashed changes
 		if dir == Vector2.ZERO:
 			dir = Vector2(1, 0)
 		velocity = dir * move_speed * charge_speed_mult
@@ -438,13 +392,8 @@ func _on_fire() -> void:
 func fire_bullet() -> void:
 	if not zidan_scene:
 		return
-<<<<<<< Updated upstream
-	var zidan: Node2D = zidan_scene.instantiate()
-	var target_dir := get_global_mouse_position() - global_position
-=======
 	var zidan = zidan_scene.instantiate()
 	var target_dir = get_global_mouse_position() - global_position
->>>>>>> Stashed changes
 	zidan.global_position = global_position + target_dir.normalized() * 50
 	zidan.rotation = target_dir.angle()
 	if has_rending_attack:
@@ -488,12 +437,6 @@ func 野性蓄力() -> void:
 func 嗜血() -> void:
 	has_bloodthirst = true
 
-<<<<<<< Updated upstream
-# 由狼人死亡时回调
-func on_werewolf_killed() -> void:
-	if has_bloodthirst:
-		hp_p = hp_bar.max_value
-=======
 # 击杀普通怪物回血
 func on_enemy_killed() -> void:
 	if has_bloodthirst:
@@ -504,5 +447,4 @@ func on_enemy_killed() -> void:
 func on_werewolf_killed() -> void:
 	if has_bloodthirst:
 		hp_p = min(hp_p + 10, hp_bar.max_value)
->>>>>>> Stashed changes
 		hp_bar.value = hp_p

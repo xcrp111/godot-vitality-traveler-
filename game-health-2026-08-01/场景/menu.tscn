@@ -3,7 +3,6 @@
 [ext_resource type="Script" uid="uid://dsvmdnr1lnfvb" path="res://脚本/menu.gd" id="1_script"]
 
 [node name="Menu" type="CanvasLayer" unique_id=947253432]
-layer = 20
 script = ExtResource("1_script")
 
 [node name="MenuButton" type="Button" parent="." unique_id=1389708379]

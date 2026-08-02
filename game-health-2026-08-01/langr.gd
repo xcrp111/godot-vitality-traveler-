@@ -31,18 +31,9 @@ func _ready() -> void:
 		push_warning("Wolf: Player node not found!")
 	add_to_group("enemy")
 	add_to_group("werewolf")
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream:game-health/langr.gd
-<<<<<<< Updated upstream:game-health/langr.gd
-=======
->>>>>>> Stashed changes:game-health-2026-08-01/langr.gd
-=======
 	hp_max = hp
 	_create_hp_bar()
->>>>>>> Stashed changes
 
-=======
->>>>>>> Stashed changes:game-health-2026-08-01/langr.gd
 
 func _create_hp_bar() -> void:
 	hp_bar = ProgressBar.new()
@@ -206,23 +197,8 @@ func die() -> void:
 	$AnimatedSprite2D.play("siwang")
 	if get_tree().current_scene.has_method("add_score"):
 		get_tree().current_scene.add_score(1)
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream:game-health/langr.gd
-<<<<<<< Updated upstream:game-health/langr.gd
-	# 嗜血回调：通知玩家击杀狼人
-=======
-	# 嗜血回调
->>>>>>> Stashed changes:game-health-2026-08-01/langr.gd
-=======
-	# 嗜血回调：通知玩家击杀狼人
->>>>>>> Stashed changes:game-health-2026-08-01/langr.gd
-	var p = get_tree().get_first_node_in_group("player")
-	if p and p.has_method("on_werewolf_killed"):
-		p.on_werewolf_killed()
-=======
 	if player and player.has_method("on_werewolf_killed"):
 		player.on_werewolf_killed()
->>>>>>> Stashed changes
 	velocity = Vector2.ZERO
 	await get_tree().create_timer(death_duration).timeout
 	queue_free()

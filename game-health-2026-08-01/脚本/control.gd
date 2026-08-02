@@ -1,15 +1,7 @@
 extends Control
 
-# 菜单 CanvasLayer（固定右下角）
-# 菜单相关
-@onready var menu_layer = $MenuLayer
-@onready var menu_btn = $MenuLayer/MenuButton
-@onready var menu_panel = $MenuLayer/MenuPanel
-@onready var restart_btn = $MenuLayer/MenuPanel/VBoxContainer/RestartBtn
-@onready var close_btn = $MenuLayer/MenuPanel/VBoxContainer/CloseBtn
-@onready var quit_btn = $MenuLayer/MenuPanel/VBoxContainer/QuitBtn
+# 菜单已迁移到 res://场景/menu.tscn（全局复用）
 
-# 你原来的引用
 @onready var menu_control = $MenuControl
 @onready var main_node = $Main
 @onready var start_button = $MenuControl/VBoxContainer/Start
@@ -25,11 +17,8 @@ extends Control
 @onready var dialog_close_btn = $Main/DialogUI/CloseBtn
 
 @onready var interact_btn = $Main/InteractBtn
-@onready var interact_btn1 =$Main/InteractBtn1
-@onready var coin_label = $MenuLayer/MenuButton
-
-
-
+@onready var interact_btn1 = $Main/InteractBtn1
+@onready var interact_btn2 = $Main/InteractBtn2
 
 var character_path = "res://changjing/fashi.tscn"
 var character: CharacterBody2D = null
@@ -55,77 +44,36 @@ var current = 0
 var is_typing = false
 var type_speed = 0.02
 
-# ------------------------------
-# 初始化
-# ------------------------------
 func _ready():
 	start_button.pressed.connect(_on_start_game)
 	quit_button.pressed.connect(_on_quit_game)
 	dialog_close_btn.pressed.connect(_close_dialog)
 	interact_btn.pressed.connect(_on_interact)
-	interact_btn1.pressed.connect(_on_interact)
+	interact_btn1.pressed.connect(_on_interact1)
+	interact_btn2.pressed.connect(_on_interact2)
 
-	# 菜单按钮绑定
-	menu_btn.pressed.connect(_open_menu)      
-	restart_btn.pressed.connect(_on_restart)
-	quit_btn.pressed.connect(_on_quit_game)
-	close_btn.pressed.connect(_close_menu)
-
-	# 初始状态
 	main_node.visible = false
 	menu_control.visible = true
 	dialog_ui.visible = false
 	interact_btn.visible = false
 	interact_btn1.visible = false
+	interact_btn2.visible = false
 	$Main/SkillBook.visible = false
 	$Main/CoinLabel.visible = false
 	$Main/door.visible = false
-	menu_panel.visible = false  # 菜单默认隐藏
 
-	# 技能书碰撞
 	var skill_book = $Main/SkillBook
 	skill_book.body_entered.connect(_on_skill_book_body_entered)
 	skill_book.body_exited.connect(_on_skill_book_body_exited)
 
-	# 传送门碰撞
 	var door = $Main/door
 	door.body_entered.connect(_on_door_body_entered)
 	door.body_exited.connect(_on_door_body_exited)
-	
 
 
-# ------------------------------
-# 打开 / 关闭菜单（CanvasLayer）
-# ------------------------------
-func _open_menu():
-	menu_panel.visible = true
-	can_move = false
-
-func _close_menu():
-	menu_panel.visible = false
-	can_move = true
-
-# ------------------------------
-# 重新开始 → 回到游戏主界面
-# ------------------------------
-func _on_restart():
-	_close_menu()
-	dialog_ui.visible = false
-	$Main/SkillBook.visible = true
-	$Main/CoinLabel.visible = true
-	$Main/door.visible = true
-	can_move = true
-	current = dialogs.size()
-
-	if not is_instance_valid(character):
-		spawn_character()
-	character.global_position = Vector2(640, 360)
-
-# ------------------------------
-# 技能书交互
-# ------------------------------
+# --- 技能书 ---
 func show_interact_button():
-	if dialog_ui.visible or menu_panel.visible:
+	if dialog_ui.visible:
 		return
 	interact_btn.visible = true
 
@@ -140,17 +88,16 @@ func _on_skill_book_body_exited(body):
 	if body.name == "wanjia":
 		hide_interact_button()
 
-
-# ------------------------------
-# 传送门交互
-# ------------------------------
+# --- 传送门 ---
 func show_interact_button1():
-	if dialog_ui.visible or menu_panel.visible:
+	if dialog_ui.visible:
 		return
 	interact_btn1.visible = true
+	interact_btn2.visible = true
 
 func hide_interact_button1():
 	interact_btn1.visible = false
+	interact_btn2.visible = false
 
 func _on_door_body_entered(body):
 	if body.name == "wanjia":
@@ -159,20 +106,20 @@ func _on_door_body_entered(body):
 func _on_door_body_exited(body):
 	if body.name == "wanjia":
 		hide_interact_button1()
+
 func _on_interact_btn_1_button_down() -> void:
 	get_tree().change_scene_to_file("res://changjing/第一关.tscn")
-	pass # Replace with function body.
-# ------------------------------
-# 下面全部是你原来的逻辑，不动
-# ------------------------------
+
+func _on_interact_btn_2_button_down() -> void:
+	get_tree().change_scene_to_file("res://changjing/第二关.tscn")
+
+# --- 对话 ---
 func _on_start_game():
 	menu_control.visible = false
 	main_node.visible = true
 	dialog_ui.visible = true
-
 	dialog_ui.modulate = Color(1,1,1,0)
 	main_node.modulate = Color(1,1,1,0)
-
 	var fade = create_tween()
 	fade.tween_property(dialog_ui, "modulate:a", 1, 0.4)
 	fade.tween_property(main_node, "modulate:a", 1, 0.4)
@@ -180,7 +127,6 @@ func _on_start_game():
 
 func show_next():
 	can_move = false
-
 	if current >= dialogs.size():
 		dialog_ui.visible = false
 		$Main/SkillBook.visible = true
@@ -188,15 +134,14 @@ func show_next():
 		$Main/CoinLabel.visible = true
 		$Main/InteractBtn.visible = false
 		$Main/InteractBtn1.visible = false
+		$Main/InteractBtn2.visible = false
 		can_move = true
 		spawn_character()
 		return
-
 	hide_all_dialog()
 	var side = dialogs[current][0]
 	var name = dialogs[current][1]
 	var text = dialogs[current][2]
-
 	is_typing = true
 	if side == "left":
 		left_box.visible = true
@@ -210,7 +155,6 @@ func show_next():
 		right_text.text = ""
 		await get_tree().create_timer(0.05)
 		type_text(right_text, text)
-
 	is_typing = false
 	current += 1
 
@@ -255,6 +199,12 @@ func _on_interact():
 	dialogs = [["left", "技能书", "你获得了新能力！"]]
 	current = 0
 	show_next()
+
+func _on_interact1():
+	hide_interact_button1()
+
+func _on_interact2():
+	hide_interact_button1()
 
 func _on_quit_game():
 	get_tree().quit()

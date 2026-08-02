@@ -1,12 +1,14 @@
 [gd_scene format=3 uid="uid://2kj2y3w65fe6"]
 
-[ext_resource type="PackedScene" uid="uid://bnismjitymiib" path="res://changjing/fashi.tscn" id="1_5jevw"]
+[ext_resource type="PackedScene" uid="uid://bnismjitymiib" path="res://jiaoben/fashi.tscn" id="1_5jevw"]
 [ext_resource type="Script" uid="uid://cts3he2wl2fno" path="res://jiaoben/主城.gd" id="1_w8oiw"]
 [ext_resource type="PackedScene" uid="uid://8yslhnjpfqdj" path="res://场景/main.tscn" id="3_sg8q4"]
 [ext_resource type="PackedScene" uid="uid://b1gu7ntplalkn" path="res://场景/skill_book.tscn" id="4_s4is3"]
 [ext_resource type="Script" uid="uid://16n7787noacw" path="res://脚本/skill_book.gd" id="5_pdxka"]
 [ext_resource type="Texture2D" uid="uid://c0dlhr106gull" path="res://资源/传送.png" id="6_owgkk"]
+[ext_resource type="PackedScene" uid="uid://8rc53y0a681" path="res://场景/menu.tscn" id="17_menu"]
 [ext_resource type="Script" uid="uid://cxrc1leqw5tg4" path="res://脚本/area_2d.gd" id="7_pdxka"]
+[ext_resource type="PackedScene" uid="uid://5gp5kwt1wjpq" path="res://场景/men.tscn" id="8_owgkk"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_owgkk"]
 size = Vector2(111, 125)
@@ -21,75 +23,12 @@ grow_vertical = 2
 script = ExtResource("1_w8oiw")
 
 [node name="wanjia" parent="." unique_id=110782726 instance=ExtResource("1_5jevw")]
-position = Vector2(648.99994, 415.99997)
+position = Vector2(685, 526)
 
 [node name="Main" parent="." unique_id=370932589 instance=ExtResource("3_sg8q4")]
+metadata/_edit_lock_ = true
 
-[node name="MenuLayer" type="CanvasLayer" parent="." unique_id=2130664544]
-
-[node name="MenuButton" type="Button" parent="MenuLayer" unique_id=1051146881]
-offset_left = 1847.0
-offset_top = 1048.0
-offset_right = 1919.0
-offset_bottom = 1079.0
-text = "菜单"
-metadata/_edit_group_ = true
-
-[node name="MenuPanel" type="Control" parent="MenuLayer" unique_id=1448146493]
-visible = false
-layout_mode = 3
-anchors_preset = 0
-offset_left = 421.0
-offset_top = 190.0
-offset_right = 683.0
-offset_bottom = 472.0
-size_flags_horizontal = 4
-metadata/_edit_group_ = true
-
-[node name="ColorRect" type="ColorRect" parent="MenuLayer/MenuPanel" unique_id=1682576550]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -1360.0
-offset_top = -1383.0
-offset_right = -1320.0
-offset_bottom = -1343.0
-grow_horizontal = 2
-grow_vertical = 2
-scale = Vector2(86.7466, 84.4506)
-color = Color(1, 1, 1, 0.717647)
-
-[node name="VBoxContainer" type="VBoxContainer" parent="MenuLayer/MenuPanel" unique_id=1176144251]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = 294.0
-offset_top = 95.0
-offset_right = 494.0
-offset_bottom = 295.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="RestartBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=721388686]
-custom_minimum_size = Vector2(180, 60)
-layout_mode = 2
-text = "重新开始"
-
-[node name="CloseBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1981526241]
-custom_minimum_size = Vector2(0, 60)
-layout_mode = 2
-text = "关闭菜单"
-
-[node name="QuitBtn" type="Button" parent="MenuLayer/MenuPanel/VBoxContainer" unique_id=1210191731]
-custom_minimum_size = Vector2(0, 60)
-layout_mode = 2
-text = "退出游戏"
+[node name="Menu" parent="." instance=ExtResource("17_menu")]
 
 [node name="door" parent="." unique_id=2137785800 instance=ExtResource("4_s4is3")]
 position = Vector2(-1892, 269)
@@ -106,17 +45,25 @@ position = Vector2(2803.0002, 536)
 scale = Vector2(0.12348065, 0.11921697)
 texture = ExtResource("6_owgkk")
 
-[node name="传送门" type="Button" parent="." unique_id=1387444709]
-visible = false
+[node name="第一关" type="Button" parent="." unique_id=1387444709]
 layout_mode = 0
-offset_left = 714.0
+offset_left = 674.0
 offset_top = 666.0
-offset_right = 784.0
+offset_right = 744.0
 offset_bottom = 724.0
-text = "传送门"
+text = "第一关"
+
+[node name="第二关" type="Button" parent="." unique_id=3100007001]
+layout_mode = 0
+offset_left = 754.0
+offset_top = 666.0
+offset_right = 824.0
+offset_bottom = 724.0
+text = "第二关"
 
 [node name="Area2D" type="Area2D" parent="." unique_id=1880237375]
 script = ExtResource("7_pdxka")
+metadata/_edit_lock_ = true
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D" unique_id=207169053]
 position = Vector2(389.5, 416.5)
@@ -131,9 +78,18 @@ offset_bottom = 342.0
 theme_override_font_sizes/font_size = 40
 text = "打开人物面板 "
 
+[node name="door to gonhui" parent="." unique_id=617389358 instance=ExtResource("8_owgkk")]
+position = Vector2(1412, 419)
+target_scene = "uid://b4mxiqc01nu1o"
+spawn_target = "spawn_From zhucheng"
+
+[node name="spawn_From gonghui" type="Marker2D" parent="." unique_id=1795281605]
+position = Vector2(1398, 422)
+
 [connection signal="body_entered" from="door" to="." method="_on_door_body_entered"]
 [connection signal="body_exited" from="door" to="." method="_on_door_body_exited"]
-[connection signal="pressed" from="传送门" to="." method="_on_传送门_pressed"]
+[connection signal="pressed" from="第一关" to="." method="_on_第一关_pressed"]
+[connection signal="pressed" from="第二关" to="." method="_on_第二关_pressed"]
 [connection signal="body_entered" from="Area2D" to="Area2D" method="_on_body_entered"]
 [connection signal="body_exited" from="Area2D" to="Area2D" method="_on_body_exited"]
 [connection signal="pressed" from="Area2D/Button" to="Area2D" method="_on_button_pressed"]

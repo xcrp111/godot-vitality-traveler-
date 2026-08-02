@@ -11,8 +11,7 @@ extends CanvasLayer
 func _ready() -> void:
 	menu_btn.pressed.connect(_open)
 	restart_btn.pressed.connect(_on_restart)
-	if home_btn:
-		home_btn.pressed.connect(_on_home)
+	home_btn.pressed.connect(_on_home)
 	close_btn.pressed.connect(_close)
 	quit_btn.pressed.connect(_on_quit)
 	menu_panel.visible = false
