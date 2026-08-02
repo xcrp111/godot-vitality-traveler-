@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://c7ntnj6kprhit"]
+
+[ext_resource type="Script" uid="uid://cxrc1leqw5tg4" path="res://脚本/area_2d.gd" id="1_86agp"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_3owqy"]
+size = Vector2(111, 125)
+
+[node name="Area2D" type="Area2D" unique_id=1772348773]
+script = ExtResource("1_86agp")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1197171681]
+position = Vector2(389.5, 416.5)
+shape = SubResource("RectangleShape2D_3owqy")
+
+[node name="Button" type="Button" parent="." unique_id=1162136879]
+visible = false
+offset_left = 270.0
+offset_top = 279.0
+offset_right = 528.0
+offset_bottom = 342.0
+theme_override_font_sizes/font_size = 40
+text = "打开人物面板 "
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]
+[connection signal="body_exited" from="." to="." method="_on_body_exited"]
+[connection signal="pressed" from="Button" to="." method="_on_button_pressed"]
