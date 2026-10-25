@@ -1,0 +1,348 @@
+-- Save.lua
+-- 本地存档：金币 / 经验 / 职业等级 / 今日步数 / 关卡进度 / 技能配置
+
+local Config = require "Config"
+
+local Save = {}
+
+local SAVE_FILE = "save.json"
+local SAVE_VERSION = 1
+
+local function Defaults()
+    return {
+        version = SAVE_VERSION,
+        class = "swordsman",    -- 当前出战职业
+        gold = 0,
+        exp = 0,                -- 可分配经验池（所有职业共用，需要玩家自己分配）
+        levels = { swordsman = 1, spearman = 1, ranger = 1, mage = 1 },   -- 各职业等级
+        classExp = { swordsman = 0, spearman = 0, ranger = 0, mage = 0 }, -- 各职业已投入、尚未消耗的经验
+        unlocked = 1,           -- 已解锁最高关卡
+        dayKey = "",
+        todaySteps = 0,
+        claimed = false,
+        streak = 0,             -- 连续健康天数
+        lastActiveDay = 0,      -- 最近一次达标的日序号
+        dayOffset = 0,          -- 开发用：虚拟推进的天数
+        skillPoints = 0,        -- 技能点（v1 先积累，技能升级后续开放）
+        streakRewardIndex = 0,  -- 已领取到第几档连续奖励
+        musicOn = true,         -- 背景音乐开关
+        musicVolume = 0.32,     -- 背景音乐音量 0~1
+        loadouts = {
+            swordsman = { 1, 2, 3 },
+            spearman = { 1, 2, 4 },
+            ranger = { 1, 2, 5 },
+            mage = { 1, 2, 3 },
+        },
+    }
+end
+
+local CLASS_DEFAULT_LOADOUT = {
+    swordsman = { 1, 2, 3 },
+    spearman = { 1, 2, 4 },
+    ranger = { 1, 2, 5 },
+    mage = { 1, 2, 3 },
+}
+
+---@param data table
+---@return string
+function Save.ActiveClass(data)
+    return (data and data.class) or "swordsman"
+end
+
+local function EnsureMaps(data)
+    if type(data.levels) ~= "table" then data.levels = {} end
+    if type(data.classExp) ~= "table" then data.classExp = {} end
+    for id in pairs(Config.Classes) do
+        if type(data.levels[id]) ~= "number" then data.levels[id] = 1 end
+        if type(data.classExp[id]) ~= "number" then data.classExp[id] = 0 end
+    end
+end
+
+---@param data table
+---@return integer
+function Save.ClassLevel(data)
+    EnsureMaps(data)
+    return data.levels[Save.ActiveClass(data)] or 1
+end
+
+---@param data table
+---@param level integer
+function Save.SetClassLevel(data, level)
+    EnsureMaps(data)
+    data.levels[Save.ActiveClass(data)] = math.max(1, math.floor(level))
+end
+
+---@param data table
+---@return number
+function Save.ClassExp(data)
+    EnsureMaps(data)
+    return data.classExp[Save.ActiveClass(data)] or 0
+end
+
+-- 从可分配经验池投入当前职业
+---@param data table
+---@param amount number
+---@return number 实际投入
+function Save.AllocateExp(data, amount)
+    amount = math.floor(math.min(amount, data.exp))
+    if amount <= 0 then return 0 end
+    EnsureMaps(data)
+    data.exp = data.exp - amount
+    local class = Save.ActiveClass(data)
+    data.classExp[class] = (data.classExp[class] or 0) + amount
+    Save.Write(data)
+    return amount
+end
+
+---@param data table
+---@return integer[]
+function Save.Loadout(data)
+    local class = Save.ActiveClass(data)
+    data.loadouts = data.loadouts or {}
+    local lo = data.loadouts[class]
+    if type(lo) ~= "table" then
+        lo = {}
+        local def = CLASS_DEFAULT_LOADOUT[class] or { 1, 2, 3 }
+        for i = 1, 3 do lo[i] = def[i] or i end
+        data.loadouts[class] = lo
+    end
+    return lo
+end
+
+function Save.SetClass(data, id)
+    if Config.Classes[id] then
+        data.class = id
+        Config.SetClass(id)
+        Save.Loadout(data)
+        Save.Write(data)
+        return true
+    end
+    return false
+end
+
+local function MergeDefaults(data)
+    local def = Defaults()
+    for k, v in pairs(def) do
+        if data[k] == nil then
+            data[k] = v
+        end
+    end
+    if type(data.class) ~= "string" or not Config.Classes[data.class] then
+        data.class = "swordsman"
+    end
+    -- 旧存档：把单一 loadout 迁移到多职业结构
+    if type(data.loadouts) ~= "table" then data.loadouts = {} end
+    if type(data.loadout) == "table" and type(data.loadouts.swordsman) ~= "table" then
+        data.loadouts.swordsman = {
+            data.loadout[1] or 1, data.loadout[2] or 2, data.loadout[3] or 3,
+        }
+    end
+    for class, list in pairs(CLASS_DEFAULT_LOADOUT) do
+        local lo = data.loadouts[class]
+        if type(lo) ~= "table" then
+            lo = {}
+            data.loadouts[class] = lo
+        end
+        for i = 1, 3 do
+            if type(lo[i]) ~= "number" then lo[i] = list[i] or i end
+        end
+    end
+    -- 旧存档：单一等级迁移到当前职业
+    if type(data.levels) ~= "table" then data.levels = {} end
+    if type(data.classExp) ~= "table" then data.classExp = {} end
+    if type(data.level) == "number" then
+        data.levels[data.class] = math.max(1, data.level)
+        data.level = nil
+    end
+    if type(data.musicOn) ~= "boolean" then data.musicOn = true end
+    if type(data.musicVolume) ~= "number" then data.musicVolume = 0.32 end
+    data.musicVolume = math.max(0, math.min(1, data.musicVolume))
+    EnsureMaps(data)
+    data.loadout = nil
+    return data
+end
+
+function Save.TodayKey(data)
+    local offset = (data and data.dayOffset) or 0
+    return os.date("%Y-%m-%d", os.time() + offset * 86400)
+end
+
+---@return SaveData
+function Save.Load()
+    local data = nil
+    if fileSystem:FileExists(SAVE_FILE) then
+        local f = File(SAVE_FILE, FILE_READ)
+        if f:IsOpen() then
+            local text = f:ReadString()
+            f:Close()
+            local ok, decoded = pcall(cjson.decode, text)
+            if ok and type(decoded) == "table" then
+                data = decoded
+            end
+        end
+    end
+    data = MergeDefaults(data or {})
+    Save.RollDay(data)
+    return data
+end
+
+---@return boolean
+function Save.Write(data)
+    local f = File(SAVE_FILE, FILE_WRITE)
+    if f:IsOpen() then
+        f:WriteString(cjson.encode(data))
+        f:Close()
+        return true
+    end
+    return false
+end
+
+-- 跨天重置
+---@return SaveData
+function Save.RollDay(data)
+    local today = Save.TodayKey(data)
+    if data.dayKey ~= today then
+        data.dayKey = today
+        data.todaySteps = 0
+        data.claimed = false
+    end
+    return data
+end
+
+-- 领取今日步数：返回 获得金币, 解锁关卡数, 当前连续天数
+---@return number, number, number, number, number
+function Save.Claim(data, steps)
+    Save.RollDay(data)
+    data.todaySteps = steps
+    if data.claimed then
+        return 0, 0, data.streak, 0, 0
+    end
+
+    local gain, pct = Config.StepGold(steps)
+    data.gold = data.gold + gain
+    data.exp = data.exp + gain
+
+    local unlocks = 0
+    for _, need in ipairs(Config.StepUnlockThresholds) do
+        if steps >= need then
+            unlocks = unlocks + 1
+        end
+    end
+    local before = data.unlocked
+    data.unlocked = data.unlocked + unlocks
+    if data.unlocked > 20 then
+        data.unlocked = 20
+    end
+    local gotUnlocked = data.unlocked - before
+
+    local dayNum = math.floor(os.time() / 86400) + (data.dayOffset or 0)
+    if pct >= 10 then
+        if data.lastActiveDay == dayNum - 1 then
+            data.streak = data.streak + 1
+        elseif data.lastActiveDay ~= dayNum then
+            data.streak = 1
+        end
+        data.lastActiveDay = dayNum
+    else
+        data.streak = 0
+    end
+
+    local rewardGold, rewardSp = 0, 0
+    for i = data.streakRewardIndex + 1, #Config.StreakRewards do
+        local r = Config.StreakRewards[i]
+        if data.streak >= r.days then
+            data.streakRewardIndex = i
+            data.gold = data.gold + r.gold
+            data.skillPoints = data.skillPoints + r.sp
+            rewardGold = rewardGold + r.gold
+            rewardSp = rewardSp + r.sp
+        end
+    end
+
+    data.claimed = true
+    Save.Write(data)
+    return gain, gotUnlocked, data.streak, rewardGold, rewardSp
+end
+
+-- 开发用：重置今日领取
+function Save.ResetToday(data)
+    data.dayKey = Save.TodayKey(data)
+    data.todaySteps = 0
+    data.claimed = false
+    Save.Write(data)
+end
+
+-- 开发用：推进到下一天（用于测试连续健康天数 / 等级门槛）
+function Save.NextDay(data)
+    data.dayOffset = (data.dayOffset or 0) + 1
+    data.dayKey = Save.TodayKey(data)
+    data.todaySteps = 0
+    data.claimed = false
+    Save.Write(data)
+    return data.dayOffset
+end
+
+-- 开发用：把存档恢复成初始状态（等级 / 金币 / 经验 / 关卡 / 连续天数全部清空）
+function Save.Reset(data)
+    local def = Defaults()
+    for k in pairs(data) do data[k] = nil end
+    for k, v in pairs(def) do data[k] = v end
+    Save.RollDay(data)
+    Save.Write(data)
+    return data
+end
+
+-- 下一级消耗，满级返回 nil
+---@return number|nil
+function Save.NextCost(data)
+    local level = Save.ClassLevel(data)
+    if level >= 20 then return nil end
+    return Config.LevelCost[level]
+end
+
+-- 返回 ok, 失败原因
+---@return boolean, string
+function Save.LevelUp(data)
+    local level = Save.ClassLevel(data)
+    if level >= 20 then
+        return false, "已经满级"
+    end
+    local needGate, gateName = Config.LevelGate(level + 1)
+    if data.streak < needGate then
+        return false, "需要连续健康 " .. needGate .. " 天（" .. gateName .. "）"
+    end
+    local cost = Config.LevelCost[level]
+    if not cost then
+        return false, "已经满级"
+    end
+    local invested = Save.ClassExp(data)
+    if invested < cost then
+        return false, "本职业经验不足，还差 " .. math.floor(cost - invested)
+    end
+    local class = Save.ActiveClass(data)
+    data.classExp[class] = invested - cost
+    data.levels[class] = level + 1
+    Save.Write(data)
+    return true, Config.Class().name .. "升到 Lv." .. (level + 1)
+end
+
+-- 当前等级已解锁的技能 id 列表
+---@return integer[]
+function Save.UnlockedSkills(level)
+    local list = {}
+    for _, s in ipairs(Config.Skills) do
+        if level >= s.unlockLevel then
+            list[#list + 1] = s.id
+        end
+    end
+    return list
+end
+
+---@return boolean
+function Save.IsSkillUnlocked(level, id)
+    local s = Config.SkillByID(id)
+    return s ~= nil and level >= s.unlockLevel
+end
+
+return Save
+

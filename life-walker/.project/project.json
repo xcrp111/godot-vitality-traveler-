@@ -1,0 +1,11 @@
+{
+  "$schema": "../schemas/project.schema.json",
+  "project_id": "p_lifewalker",
+  "name": "生命行者",
+  "author": {
+    "name": "生命行者",
+    "id": "1b4a3096-b2cb-4981-a5b8-8b5b1eee8913"
+  },
+  "entry": "main.lua",
+  "version": "1.0.{x}"
+}
