@@ -631,7 +631,7 @@ Config.ClassBuffs = {
               mod = {}, flag = { boltKillCdr = 0.3 } },
         },
         purple = {
-            { id = "ma_p_lava", name = "熔岩之心", desc = "火系技能命中时额外生成一片余烬地面，持续 2 秒，可叠加。",
+            { id = "ma_p_lava", name = "熔岩之心", desc = "火系技能命中时额外生成一片余烬地面，持续 2 秒并造成持续灼烧；最多同时存在 6 片，可叠加。",
               mod = {}, flag = { emberOnFire = 1 } },
             { id = "ma_p_frozen", name = "永冻领域", desc = "暴风雪减速提升至 50%，范围内冰系伤害 +20%。",
               mod = {}, flag = { blizzardSlow = 0.5, blizzardIce = 0.2 } },

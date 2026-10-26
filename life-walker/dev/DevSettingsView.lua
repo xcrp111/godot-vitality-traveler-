@@ -21,7 +21,6 @@ function Start()
     S.data.exp = 640
     S.data.unlocked = 4
     S.data.streak = 5
-    S.data.classExp.ranger = 110
     S.data.musicOn = true
     S.data.musicVolume = 0.4
     S.settings = true

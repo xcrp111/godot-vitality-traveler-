@@ -67,6 +67,9 @@ CLAUDE.md
 /.codex
 /.opencode
 
+# Local screenshots & evidence
+screenshots/
+
 # >>> TapTap Maker AI dev kit (local only) >>>
 .DS_Store
 .agents\skills\custom-lobby/
@@ -97,5 +100,3 @@ templates/
 tools/
 urhox-libs/
 # <<< TapTap Maker AI dev kit (local only) <<<
-# Local screenshots & evidence
-screenshots/

@@ -7,6 +7,7 @@ local S = require "State"
 local Run = require "Run"
 local Combat = require "Combat"
 local Audio = require "Audio"
+local KbLayout = require "KbLayout"
 
 local Menu = {}
 
@@ -869,11 +870,10 @@ function Menu.DrawSettings()
     UI.Text(430, 382, 16, "当前状态", S.col.gold)
     local classLevel = Save.ClassLevel(data)
     local cost = Save.NextCost(data)
-    local classExp = Save.ClassExp(data)
     local rows = {
         { "职业", Config.Class().name, "等级", "Lv." .. classLevel },
         { "金币", UI.FormatNumber(data.gold), "可分配经验", UI.FormatNumber(data.exp) },
-        { "本职业经验", cost and (UI.FormatNumber(classExp) .. " / " .. UI.FormatNumber(cost)) or "已满级",
+        { "升级需要", cost and UI.FormatNumber(cost) or "已满级",
           "解锁关卡", "1 ~ " .. data.unlocked },
         { "连续健康", data.streak .. " 天", "音乐", (on and "开" or "关") .. " · " .. math.floor(volume * 100 + 0.5) .. "%" },
     }
@@ -884,6 +884,10 @@ function Menu.DrawSettings()
         UI.Text(660, y, 13, row[3], S.col.dim)
         UI.Text(750, y, 13, row[4], S.col.text)
     end
+
+    UI.Button("set_layout", 430, 508, 190, 38, "按键布局", function()
+        KbLayout.Open()
+    end, { fontSize = 16 })
 
     UI.Button("set_close", 640, 508, 160, 38, "关闭 (Esc)", function()
         S.settings = false
@@ -949,13 +953,11 @@ function Menu.Draw()
         end
     end
     local classLevel = Save.ClassLevel(data)
-    local classExp = Save.ClassExp(data)
     local cost = Save.NextCost(data)
     DrawStat(88, 204, "金币", UI.FormatNumber(data.gold))
     DrawStat(88, 236, "可分配经验", UI.FormatNumber(data.exp))
     DrawStat(88, 268, Config.Class().name .. "等级", "Lv." .. classLevel)
-    DrawStat(88, 300, "本职业经验",
-        cost and (UI.FormatNumber(classExp) .. " / " .. UI.FormatNumber(cost)) or "已满级")
+    DrawStat(88, 300, "升级需要", cost and UI.FormatNumber(cost) or "已满级")
     DrawStat(88, 332, "连续健康", data.streak .. " 天")
     DrawStat(88, 364, "技能点", tostring(data.skillPoints))
 
@@ -965,40 +967,23 @@ function Menu.Draw()
         local needGate, gateName = Config.LevelGate(classLevel + 1)
         if needGate > 0 and data.streak < needGate then
             costText = "需连续 " .. needGate .. " 天（" .. gateName .. "）"
-        elseif classExp < cost then
-            costText = "升级 需 " .. UI.FormatNumber(cost - classExp) .. " 经验"
+        elseif data.exp < cost then
+            costText = string.format("升级到 Lv.%d · 需 %d 经验（还差 %d）",
+                classLevel + 1, cost, math.ceil(cost - data.exp))
         else
-            costText = "升级到 Lv." .. (classLevel + 1)
+            costText = string.format("升级到 Lv.%d · 消耗 %d 经验", classLevel + 1, cost)
             canLevel = true
         end
     else
         costText = Config.Class().name .. "已满级"
     end
-    UI.Button("levelup", 88, 392, 236, 42, costText, function()
+    UI.Button("levelup", 88, 392, 512, 42, costText, function()
         local ok, msg = Save.LevelUp(S.data)
         UI.SetToast(msg, 2.4)
         if ok then FixLoadout() end
-    end, { enabled = canLevel, accent = S.col.green, fontSize = 14 })
+    end, { enabled = canLevel, accent = S.col.green, fontSize = 15 })
 
-    UI.Button("alloc1000", 332, 392, 108, 42, "投入 1000", function()
-        local got = Save.AllocateExp(S.data, 1000)
-        if got > 0 then
-            UI.SetToast(string.format("已向%s投入 %d 经验", Config.Class().name, got), 2.0)
-        else
-            UI.SetToast("没有可分配的经验", 1.6)
-        end
-    end, { enabled = data.exp > 0, fontSize = 14 })
-
-    UI.Button("allocall", 448, 392, 152, 42, "全部投入", function()
-        local got = Save.AllocateExp(S.data, S.data.exp)
-        if got > 0 then
-            UI.SetToast(string.format("已向%s投入 %d 经验", Config.Class().name, got), 2.0)
-        else
-            UI.SetToast("没有可分配的经验", 1.6)
-        end
-    end, { enabled = data.exp > 0, fontSize = 14 })
-
-    UI.Text(88, 440, 12, "经验先进入总池，由你决定投入哪个职业；升级消耗该职业已投入的经验", S.col.dim)
+    UI.Text(88, 440, 12, "点上面的职业按钮决定给谁升级；升级直接从「可分配经验」里扣掉这一级需要的量", S.col.dim)
 
     UI.Text(88, 462, 18, "出战技能（点一下切换）", S.col.dim)
     local loadout = Save.Loadout(data)

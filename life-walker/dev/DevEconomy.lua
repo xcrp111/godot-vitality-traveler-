@@ -11,7 +11,6 @@ function Start()
     print(string.format("[Econ] steps=12000 gold=%d unlocks=%d streak=%d rewardGold=%d rewardSp=%d skillPoints=%d",
         g, u, st, rg, rsp, S.data.skillPoints))
     print("[Econ] totalGold=" .. S.data.gold .. " exp=" .. S.data.exp .. " unlocked=" .. S.data.unlocked)
-    Save.AllocateExp(S.data, S.data.exp)
     local ok, msg = Save.LevelUp(S.data)
     print("[Econ] levelup ok=" .. tostring(ok) .. " msg=" .. tostring(msg) .. " level=" .. Save.ClassLevel(S.data))
 end

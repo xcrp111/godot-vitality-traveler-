@@ -4,7 +4,6 @@ local Config = require "Config"
 local Run = require "Run"
 local UI = require "UI"
 local S = require "State"
-local VirtualControls = require "urhox-libs.UI.VirtualControls"
 
 ---@class Enemy
 ---@field id string
@@ -430,9 +429,22 @@ local function ApplyElementHit(cs, e, element, skillId)
             p.shield = math.min(p.maxShield * 1.5, p.shield + p.atk * F(p, "burnShield"))
         end
         if F(p, "emberOnFire") > 0 then
+            -- 余烬最多同时存在 6 片：火系多段命中时不再无限叠
+            local emberCount = 0
+            for _, f in ipairs(cs.mageFields) do
+                if f.ember then emberCount = emberCount + 1 end
+            end
+            if emberCount >= 6 then
+                for i = 1, #cs.mageFields do
+                    if cs.mageFields[i].ember then
+                        table.remove(cs.mageFields, i)
+                        break
+                    end
+                end
+            end
             cs.mageFields[#cs.mageFields + 1] = {
                 x = e.x, y = e.y, r = 60 * (1 + F(p, "emberRadius")),
-                t = 0, life = 2, tick = 0, dmg = p.atk * 0.15, slow = 0,
+                t = 0, life = 2, tick = 0, dmg = p.atk * 0.12, slow = 0,
                 element = "fire", ember = true,
             }
         end
@@ -892,24 +904,163 @@ function Combat.Start(run, roomType, step)
     return cs
 end
 
+-- ---------------------------------------------------------------- 自绘虚拟摇杆
+-- 不再依赖 urhox-libs/UI/VirtualControls：那个库会额外创建一个 NanoVG 上下文、
+-- 并把同一个字体再加载一次，在手机测试端会让引擎报错（闪一个 Start() failed）。
+-- 这里自己实现，逻辑更简单，Y 轴方向也和键盘保持一致。
+local JOY_BASE_X = 140
+local JOY_BASE_Y = 578
+local JOY_R = 74
+
+local function JoystickApply(js, x, y)
+    local dx, dy = x - js.baseX, y - js.baseY
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len > js.radius and len > 0 then
+        local over = len - js.radius
+        if js.follow then
+            -- 拖尾跟随：基座朝手指方向挪，摇杆头始终留在边缘，手指拖远了也不会脱手
+            js.baseX = js.baseX + dx / len * over
+            js.baseY = js.baseY + dy / len * over
+            js.baseX = math.max(js.radius, math.min(Config.DESIGN_W - js.radius, js.baseX))
+            js.baseY = math.max(js.radius, math.min(Config.DESIGN_H - js.radius, js.baseY))
+            dx, dy = x - js.baseX, y - js.baseY
+            local l2 = math.sqrt(dx * dx + dy * dy)
+            if l2 > js.radius and l2 > 0 then
+                dx, dy = dx / l2 * js.radius, dy / l2 * js.radius
+            end
+        else
+            dx, dy = dx / len * js.radius, dy / len * js.radius
+        end
+    end
+    js.kx, js.ky = js.baseX + dx, js.baseY + dy
+    local nx, ny = dx / js.radius, dy / js.radius
+    -- 死区缩小到 0.06；再套一条 0.65 次幂曲线，轻推就有速度，手感更跟手
+    local mag = math.sqrt(nx * nx + ny * ny)
+    if mag < 0.06 then
+        S.input.x = 0
+        S.input.y = 0
+        return
+    end
+    local shaped = mag ^ 0.65
+    local k = shaped / mag
+    S.input.x = nx * k
+    S.input.y = ny * k
+    if math.abs(S.input.x) < 0.04 then S.input.x = 0 end
+    if math.abs(S.input.y) < 0.04 then S.input.y = 0 end
+end
+
+-- 按键布局（位置/大小可在设置里调整）：按 id 取当前值，没有就用默认值
+local function CtrlPos(id, dx, dy, dr)
+    local L = S.data and S.data.layout
+    local e = type(L) == "table" and L[id] or nil
+    if type(e) == "table" then
+        return e.x or dx, e.y or dy, e.r or dr
+    end
+    return dx, dy, dr
+end
+Combat.CtrlPos = CtrlPos
+
+-- 道具槽位：第一个的位置来自布局，其余向右排开
+local function ItemSlot(i)
+    local ix, iy, ir = CtrlPos("items", 1080, 420, 27)
+    local gap = ir * 2 + 12
+    return { x = ix + (i - 1) * gap, y = iy, r = ir }
+end
+
 function Combat.CreateControls(cs)
-    VirtualControls.Clear()
-    cs.joystick = VirtualControls.CreateJoystick({
-        position = Vector2(116, -116),
-        alignment = { HA_LEFT, VA_BOTTOM },
-        baseRadius = 70,
-        knobRadius = 26,
-        deadZone = 0.12,
-        alwaysShow = true,
-        on_move = function(x, y, percent)
-            S.input.x = x
-            S.input.y = -y
-        end,
-        on_move_end = function()
+    local jx, jy, jr = CtrlPos("joy", JOY_BASE_X, JOY_BASE_Y, JOY_R)
+    local data = S.data or {}
+    cs.joystick = {
+        anchorX = jx, anchorY = jy,      -- 固定位置 / 浮动模式的待机提示位置
+        baseX = jx, baseY = jy,          -- 当前基座（浮动/拖尾时会移动）
+        kx = jx, ky = jy,
+        radius = jr,
+        active = false,
+        touchId = nil,                   -- 正在控制摇杆的那根手指（多指隔离）
+        mode = (data.joyMode == "fixed") and "fixed" or "float",
+        follow = data.joyFollow ~= false,
+    }
+    S.input.x = 0
+    S.input.y = 0
+end
+
+-- 浮动模式下，按下即定位的激活区域：左半屏、避开顶部 HUD
+local FLOAT_ZONE_MAX_X = Config.DESIGN_W * 0.5
+local FLOAT_ZONE_MIN_Y = 170
+
+-- 触屏 / 鼠标 -> 摇杆，x、y 是设计坐标；id 是 TouchID（鼠标为 nil）。
+-- 返回 true 表示这次输入被摇杆吃掉。只有"按下时抓住摇杆的那根手指"能控制它，
+-- 否则右手点技能会打断左手摇杆的方向。
+function Combat.JoystickPointer(phase, x, y, id)
+    local cs = S.combat
+    if not cs or not cs.joystick then return false end
+    if cs.showBuffs then return false end
+    local js = cs.joystick
+    if phase == "down" then
+        if js.active then return false end   -- 已经有一根手指在控制摇杆
+        if js.mode == "float" then
+            -- 软追踪：按在哪里，摇杆就出现在哪里
+            if x <= FLOAT_ZONE_MAX_X and y >= FLOAT_ZONE_MIN_Y then
+                js.active = true
+                js.touchId = id
+                js.baseX = math.max(js.radius, math.min(Config.DESIGN_W - js.radius, x))
+                js.baseY = math.max(js.radius, math.min(Config.DESIGN_H - js.radius, y))
+                js.kx, js.ky = js.baseX, js.baseY
+                S.input.x = 0
+                S.input.y = 0
+                return true
+            end
+            return false
+        end
+        local dx, dy = x - js.baseX, y - js.baseY
+        -- 抓取范围放宽到 2.4 倍半径，手指稍微偏一点也能抓到
+        local grab = js.radius * 2.4
+        if dx * dx + dy * dy <= grab * grab then
+            js.active = true
+            js.touchId = id
+            JoystickApply(js, x, y)
+            return true
+        end
+    elseif phase == "move" then
+        if js.active and js.touchId == id then
+            JoystickApply(js, x, y)
+            return true
+        end
+    elseif phase == "up" then
+        if js.active and js.touchId == id then
+            js.active = false
+            js.touchId = nil
+            -- 松手后回到待机位置（浮动模式回到锚点，拖尾偏移也一并复位）
+            js.baseX = js.anchorX
+            js.baseY = js.anchorY
+            js.kx, js.ky = js.baseX, js.baseY
             S.input.x = 0
             S.input.y = 0
-        end,
-    })
+            return true
+        end
+    end
+    return false
+end
+
+local function DrawJoystick(cs)
+    local js = cs.joystick
+    if not js then return end
+    if not js.active then
+        -- 待机：浮动模式只画一个很淡的提示圈，固定模式画完整摇杆
+        local faint = js.mode == "float" and 38 or 85
+        UI.Circle(js.anchorX, js.anchorY, js.radius,
+            { 20, 18, 28, math.floor(faint * 0.30) }, { 150, 160, 190, faint }, 3)
+        if js.mode ~= "float" then
+            UI.Circle(js.anchorX, js.anchorY, 26,
+                { 90, 130, 200, math.floor(faint * 0.65) },
+                { 190, 215, 255, math.min(255, faint + 60) }, 3)
+        end
+        return
+    end
+    UI.Circle(js.baseX, js.baseY, js.radius,
+        { 20, 18, 28, math.floor(160 * 0.30) }, { 150, 160, 190, 160 }, 3)
+    UI.Circle(js.kx, js.ky, 26,
+        { 90, 130, 200, math.floor(160 * 0.65) }, { 190, 215, 255, 220 }, 3)
 end
 
 function Combat.AttackCooldown(cs)
@@ -985,16 +1136,16 @@ end
 
 function Combat.RebuildControls(cs)
     if not cs then return end
-    VirtualControls.Shutdown()
-    -- Shutdown 不会移除已注册的 BeginFrame 全局订阅，重建前先清掉，避免重复回调
-    UnsubscribeFromEvent("BeginFrame")
-    VirtualControls.Initialize(Config.DESIGN_W, Config.DESIGN_H)
     Combat.CreateControls(cs)
 end
 
 function Combat.Exit(success)
     local roomType = S.combat and S.combat.roomType or "standard"
-    VirtualControls.Clear()
+    if S.combat and S.combat.joystick then
+        local js = S.combat.joystick
+        js.active = false
+        js.kx, js.ky = js.baseX, js.baseY
+    end
     S.input.x = 0
     S.input.y = 0
     if success then
@@ -1404,7 +1555,8 @@ function Combat.DamagePlayer(cs, amount)
             S.toast.t = 2.0
         else
             p.hp = 0
-            VirtualControls.Clear()
+            S.input.x = 0
+            S.input.y = 0
             S.screen = "gameover"
         end
     end
@@ -3184,8 +3336,12 @@ function Combat.UpdatePlayer(cs, dt)
                         Combat.HitEnemy(cs, e, p.atk * (f.dmg or 0.2) * mul * (1 + p.skillPct),
                             true, true, false, "skill")
                         if f.slow and f.slow > 0 then SlowEnemy(e, 1.2, f.slow) end
-                        if f.ember then SlowEnemy(e, 1.2, 0.15 + F(p, "emberSlow")) end
-                        if f.element then ApplyElementHit(cs, e, f.element, f.skill) end
+                        if f.ember then
+                            -- 余烬只是地面灼烧：不再触发"火系命中"，否则会不断生成新余烬（指数级叠层）
+                            SlowEnemy(e, 1.2, 0.15 + F(p, "emberSlow"))
+                        elseif f.element then
+                            ApplyElementHit(cs, e, f.element, f.skill)
+                        end
                         if f.eternal then
                             SlowEnemy(e, 1.2, 0.5)
                             Combat.HitEnemy(cs, e, p.atk * 0.15 * dt, true, true, true, "skill")
@@ -4490,11 +4646,6 @@ local ACTION_BUTTONS = {
     { id = "skill3", x = 1202, y = 514, r = 32, key = "L", kind = "skill", slot = 3 },
 }
 
-local ITEM_SLOTS = {
-    { x = 1080, y = 420, r = 27 },
-    { x = 1140, y = 420, r = 27 },
-    { x = 1200, y = 420, r = 27 },
-}
 
 local function AttackInterval(cs)
     local p = cs.player
@@ -4597,12 +4748,14 @@ local function DrawActionButtons(cs)
             local id = cs.run.loadout[b.slot]
             charges = id and p.charges[id] or nil
         end
-        DrawActionButton(b, label, color, remaining, total, enabled, charges)
+        local bx, by, br = CtrlPos(b.id, b.x, b.y, b.r)
+        DrawActionButton({ x = bx, y = by, r = br, key = b.key, id = b.id },
+            label, color, remaining, total, enabled, charges)
     end
 
     local itemCount = #cs.run.items
     for i = 1, 3 do
-        local slot = ITEM_SLOTS[i]
+        local slot = ItemSlot(i)
         local it = cs.run.items[i]
         if it then
             local info = Run.ItemInfo(it.id)
@@ -4768,7 +4921,8 @@ local function RegisterControlRegions(cs)
     for _, b in ipairs(ACTION_BUTTONS) do
         local _, _, _, _, enabled = ActionInfo(cs, b)
         if enabled then
-            UI.Region("act_" .. b.id, b.x - b.r - 5, b.y - b.r - 5, (b.r + 5) * 2, (b.r + 5) * 2,
+            local bx, by, br = CtrlPos(b.id, b.x, b.y, b.r)
+            UI.Region("act_" .. b.id, bx - br - 5, by - br - 5, (br + 5) * 2, (br + 5) * 2,
                 function()
                     if b.kind == "attack" then
                         Combat.ManualAttack()
@@ -4781,7 +4935,7 @@ local function RegisterControlRegions(cs)
 
     local itemCount = math.min(3, #cs.run.items)
     for i = 1, itemCount do
-        local slot = ITEM_SLOTS[i]
+        local slot = ItemSlot(i)
         if slot then
             UI.Region("item_slot_" .. i, slot.x - slot.r - 4, slot.y - slot.r - 4,
                 (slot.r + 4) * 2, (slot.r + 4) * 2, function()
@@ -4813,6 +4967,7 @@ function Combat.Draw()
     DrawPhantoms(cs)
     DrawEffects(cs)
     CameraEnd()
+    DrawJoystick(cs)
     DrawHUD(cs)
     DrawActionButtons(cs)
     if cs.showBuffs then

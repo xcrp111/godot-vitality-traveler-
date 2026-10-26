@@ -4,7 +4,18 @@ local Config = require "Config"
 local Save = require "Save"
 local UI = require "UI"
 local S = require "State"
-local VirtualControls = require "urhox-libs.UI.VirtualControls"
+
+-- 释放摇杆输入（原来是 VirtualControls.Clear 负责，现在摇杆是自绘的）
+local function ReleaseInput()
+    S.input.x = 0
+    S.input.y = 0
+    local cs = S.combat
+    if cs and cs.joystick then
+        cs.joystick.active = false
+        cs.joystick.kx = cs.joystick.baseX
+        cs.joystick.ky = cs.joystick.baseY
+    end
+end
 
 ---@class Mods
 ---@field hpPct number
@@ -223,7 +234,7 @@ function Run.Start(level)
 end
 
 function Run.Abort()
-    VirtualControls.Clear()
+    ReleaseInput()
     S.reward = false
     S.run = nil
     S.combat = nil
@@ -455,7 +466,7 @@ end
 
 -- ---------------------------------------------------------------- 战斗房奖励
 function Run.OpenCombatReward(roomType)
-    VirtualControls.Clear()
+    ReleaseInput()
     local weights = Config.RewardWeights[roomType] or Config.RewardWeights.standard
     local p = S.run and S.run.player
     if not p then p = { classBuffs = {} } end
@@ -544,7 +555,7 @@ end
 
 -- ---------------------------------------------------------------- 商店
 function Run.OpenShop()
-    VirtualControls.Clear()
+    ReleaseInput()
     local run = S.run
     run.shop = { freeRefreshUsed = false, paidRefresh = 0, slots = {} }
     Run.RefreshShop()
@@ -737,7 +748,7 @@ local function PickEventDef()
 end
 
 function Run.OpenEvent()
-    VirtualControls.Clear()
+    ReleaseInput()
     local run = S.run
     local p = run.player
     local id = PickEventDef()
@@ -846,7 +857,7 @@ end
 
 -- ---------------------------------------------------------------- 关卡结束
 function Run.ReturnToMenu()
-    VirtualControls.Clear()
+    ReleaseInput()
     S.input.x = 0
     S.input.y = 0
     S.reward = false

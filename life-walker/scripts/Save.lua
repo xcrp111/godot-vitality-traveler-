@@ -27,6 +27,9 @@ local function Defaults()
         streakRewardIndex = 0,  -- 已领取到第几档连续奖励
         musicOn = true,         -- 背景音乐开关
         musicVolume = 0.32,     -- 背景音乐音量 0~1
+        layout = nil,           -- 按键布局（由 Save.Layout 补齐默认值）
+        joyMode = "float",      -- 摇杆模式：fixed 固定位置 / float 按下即定位
+        joyFollow = true,       -- 拖尾跟随：手指拖出圈时基座跟着走
         loadouts = {
             swordsman = { 1, 2, 3 },
             spearman = { 1, 2, 4 },
@@ -42,6 +45,46 @@ local CLASS_DEFAULT_LOADOUT = {
     ranger = { 1, 2, 5 },
     mage = { 1, 2, 3 },
 }
+
+-- 按键布局默认值：{x, y, 半径}，设计坐标 1280x720
+local LAYOUT_DEFAULTS = {
+    joy    = { 140, 578, 74 },
+    attack = { 1186, 626, 48 },
+    skill1 = { 1080, 624, 36 },
+    skill2 = { 1110, 526, 36 },
+    skill3 = { 1202, 514, 32 },
+    items  = { 1080, 420, 27 },
+}
+
+local LAYOUT_IDS = { "joy", "attack", "skill1", "skill2", "skill3", "items" }
+
+-- 读取（并补齐）按键布局，返回 data.layout
+---@param data table
+---@return table
+function Save.Layout(data)
+    if type(data.layout) ~= "table" then data.layout = {} end
+    local L = data.layout
+    for _, id in ipairs(LAYOUT_IDS) do
+        local d = LAYOUT_DEFAULTS[id]
+        local cur = L[id]
+        if type(cur) ~= "table" then
+            L[id] = { x = d[1], y = d[2], r = d[3] }
+        else
+            if type(cur.x) ~= "number" then cur.x = d[1] end
+            if type(cur.y) ~= "number" then cur.y = d[2] end
+            if type(cur.r) ~= "number" then cur.r = d[3] end
+        end
+    end
+    return L
+end
+
+-- 恢复默认布局
+---@param data table
+function Save.ResetLayout(data)
+    data.layout = nil
+    Save.Layout(data)
+    Save.Write(data)
+end
 
 ---@param data table
 ---@return string
@@ -79,7 +122,7 @@ function Save.ClassExp(data)
     return data.classExp[Save.ActiveClass(data)] or 0
 end
 
--- 从可分配经验池投入当前职业
+-- 从可分配经验池投入当前职业（已废弃：升级现在直接从总池扣，保留只为兼容旧调用）
 ---@param data table
 ---@param amount number
 ---@return number 实际投入
@@ -158,6 +201,15 @@ local function MergeDefaults(data)
     if type(data.musicVolume) ~= "number" then data.musicVolume = 0.32 end
     data.musicVolume = math.max(0, math.min(1, data.musicVolume))
     EnsureMaps(data)
+    -- 升级改成直接从总池扣之后，旧存档里"已投入职业"的经验并回总池，避免丢经验
+    local refund = 0
+    for id, v in pairs(data.classExp) do
+        if type(v) == "number" and v > 0 then
+            refund = refund + v
+            data.classExp[id] = 0
+        end
+    end
+    if refund > 0 then data.exp = (data.exp or 0) + refund end
     data.loadout = nil
     return data
 end
@@ -167,20 +219,31 @@ function Save.TodayKey(data)
     return os.date("%Y-%m-%d", os.time() + offset * 86400)
 end
 
+-- 全新存档（不读文件）。手机/网页端读写不可用时用它兜底，保证游戏能跑
+---@return SaveData
+function Save.Fresh()
+    local data = MergeDefaults({})
+    Save.RollDay(data)
+    return data
+end
+
 ---@return SaveData
 function Save.Load()
     local data = nil
-    if fileSystem:FileExists(SAVE_FILE) then
-        local f = File(SAVE_FILE, FILE_READ)
-        if f:IsOpen() then
-            local text = f:ReadString()
-            f:Close()
-            local ok, decoded = pcall(cjson.decode, text)
-            if ok and type(decoded) == "table" then
-                data = decoded
+    -- 移动端 / 网页端可能没有 fileSystem 或 File，统一用 pcall 兜底
+    pcall(function()
+        if fileSystem and fileSystem:FileExists(SAVE_FILE) then
+            local f = File(SAVE_FILE, FILE_READ)
+            if f and f:IsOpen() then
+                local text = f:ReadString()
+                f:Close()
+                local ok, decoded = pcall(cjson.decode, text)
+                if ok and type(decoded) == "table" then
+                    data = decoded
+                end
             end
         end
-    end
+    end)
     data = MergeDefaults(data or {})
     Save.RollDay(data)
     return data
@@ -188,13 +251,17 @@ end
 
 ---@return boolean
 function Save.Write(data)
-    local f = File(SAVE_FILE, FILE_WRITE)
-    if f:IsOpen() then
-        f:WriteString(cjson.encode(data))
-        f:Close()
-        return true
-    end
-    return false
+    if type(data) ~= "table" then return false end
+    local ok, result = pcall(function()
+        local f = File(SAVE_FILE, FILE_WRITE)
+        if f and f:IsOpen() then
+            f:WriteString(cjson.encode(data))
+            f:Close()
+            return true
+        end
+        return false
+    end)
+    return ok and result == true
 end
 
 -- 跨天重置
@@ -300,6 +367,7 @@ function Save.NextCost(data)
     return Config.LevelCost[level]
 end
 
+-- 升级：直接从全局可分配经验里扣掉这一级需要的量
 -- 返回 ok, 失败原因
 ---@return boolean, string
 function Save.LevelUp(data)
@@ -315,12 +383,11 @@ function Save.LevelUp(data)
     if not cost then
         return false, "已经满级"
     end
-    local invested = Save.ClassExp(data)
-    if invested < cost then
-        return false, "本职业经验不足，还差 " .. math.floor(cost - invested)
+    if (data.exp or 0) < cost then
+        return false, string.format("可分配经验不足，还差 %d", math.ceil(cost - (data.exp or 0)))
     end
     local class = Save.ActiveClass(data)
-    data.classExp[class] = invested - cost
+    data.exp = data.exp - cost
     data.levels[class] = level + 1
     Save.Write(data)
     return true, Config.Class().name .. "升到 Lv." .. (level + 1)
