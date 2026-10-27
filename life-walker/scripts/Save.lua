@@ -31,6 +31,21 @@ local function Defaults()
         layout = nil,           -- 按键布局（由 Save.Layout 补齐默认值）
         joyMode = "float",      -- 摇杆模式：fixed 固定位置 / float 按下即定位
         joyFollow = true,       -- 拖尾跟随：手指拖出圈时基座跟着走
+        aimMode = "button",     -- 选位技能瞄准：button 技能键当摇杆 / screen 拖到屏幕对应位置
+        -- 画面与性能
+        fpsCap = 60,            -- 帧率上限 30 / 60 / 120
+        lowQuality = false,     -- 低画质：粒子/拖尾/残影减量
+        screenShake = true,     -- 屏幕震动
+        damageText = "full",    -- 伤害数字：full 完整 / simple 简化 / off 关闭
+        -- 操作手感
+        joySensitivity = "mid", -- 摇杆灵敏度：low / mid / high
+        aimHold = 0.22,         -- 长按施法阈值（秒）
+        autoAttack = true,      -- 自动攻击：进入普攻范围后自动出刀
+        aimIndicator = true,    -- 瞄准时显示按键摇杆指示线
+        -- 战斗显示
+        showSkillRange = true,  -- 常驻显示普攻范围
+        enemyHpBar = true,      -- 怪物血条
+        bossWarn = true,        -- 敌方预警加强
         loadouts = {
             swordsman = { 1, 2, 3 },
             spearman = { 1, 2, 4 },
@@ -55,9 +70,10 @@ local LAYOUT_DEFAULTS = {
     skill2 = { 1110, 526, 36 },
     skill3 = { 1202, 514, 32 },
     items  = { 1080, 420, 27 },
+    aim_cancel = { 1170, 378, 80 },   -- 瞄准时的「取消施法」框（中心 + 半径，宽 2r 高 1.2r）
 }
 
-local LAYOUT_IDS = { "joy", "attack", "skill1", "skill2", "skill3", "items" }
+local LAYOUT_IDS = { "joy", "attack", "skill1", "skill2", "skill3", "items", "aim_cancel" }
 
 -- 读取（并补齐）按键布局，返回 data.layout
 ---@param data table
@@ -231,6 +247,11 @@ function Save.Fresh()
     local data = MergeDefaults({})
     Save.RollDay(data)
     return data
+end
+
+-- 设置页「恢复默认设置」用：拿到一份默认值（不动存档）
+function Save.Defaults()
+    return Defaults()
 end
 
 ---@return SaveData

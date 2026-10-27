@@ -116,7 +116,8 @@ function Start()
     local hpMid = cs.player.hp
     Combat.HitEnemy(cs, el, 9999, false, true, false, "basic")
     check("6 精英掉银币", cs.run.silver > silver0, cs.run.silver - silver0)
-    check("6 打完精英回血", cs.player.hp > hpMid, string.format("%d -> %d", hpMid, cs.player.hp))
+    check("6 打完精英不回血（按反馈移除）", cs.player.hp == hpMid,
+        string.format("%d -> %d", hpMid, cs.player.hp))
 
     -- 5. 移速
     check("5 基础移速上调", Config.Classes.mage.speed >= 3.9 * 32, Config.Classes.mage.speed)

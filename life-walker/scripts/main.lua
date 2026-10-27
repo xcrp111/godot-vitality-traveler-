@@ -12,6 +12,47 @@ local Screens = require "Screens"
 local Audio = require "Audio"
 local KbLayout = require "KbLayout"
 
+-- 设备端 urhox-libs/Engine/i18n 会把 string.format 换成一个包装函数，而 Lua 5.4 的 %d
+-- 一旦收到「带小数的浮点」（比如 screensize / dpr 得到的 989.53），会直接抛
+-- "number has no integer representation"，把所在的 Start / Update / Draw 整段打断。
+-- 测试壳只会笼统弹一句 "Game script Start() failed"，从表象完全看不出是这里。
+-- 所以这里统一给整型占位符的浮点参数取整：任何一个漏改的调用点都不会再炸。
+do
+    local rawFormat = string.format
+    local ALL_SPEC = "diouxXeEfgGaAcs"   -- 全部转换符，用来判断一个格式串写完了没
+    local INT_SPEC = "diouxXc"           -- 需要整数的转换符
+    local function formatIntSafe(fmt, ...)
+        if type(fmt) ~= "string" then return rawFormat(fmt, ...) end
+        local args = table.pack(...)
+        local idx, i, n = 1, 1, #fmt
+        while i <= n do
+            local p = string.find(fmt, "%", i, true)
+            if not p or p >= n then break end
+            local j = p + 1
+            if string.sub(fmt, j, j) == "%" then
+                i = j + 1            -- 转义的 %%
+            else
+                local k, conv = j, nil
+                while k <= n do
+                    local ch = string.sub(fmt, k, k)
+                    if string.find(ALL_SPEC, ch, 1, true) then conv = ch; break end
+                    k = k + 1
+                end
+                if not conv then break end
+                if string.find(INT_SPEC, conv, 1, true) then
+                    local v = args[idx]
+                    -- math.floor 对整数原样返回；对浮点给出整数值（可表示时是 integer 子类型）
+                    if type(v) == "number" then args[idx] = math.floor(v) end
+                end
+                idx = idx + 1
+                i = k + 1
+            end
+        end
+        return rawFormat(fmt, table.unpack(args, 1, args.n))
+    end
+    string.format = formatIntSafe
+end
+
 local function Layout()
     local physW = graphics:GetWidth()
     local physH = graphics:GetHeight()
@@ -71,6 +112,13 @@ local function Boot()
     S.selectedLevel = Save.MaxPlayable(S.data)
     S.screen = "menu"
 
+    -- 画面设置：帧率上限（超低端机可以靠它省电/稳帧）
+    startStage = "video"
+    pcall(function()
+        S.data.fpsCap = S.data.fpsCap or 60
+        if engine then engine.maxFps = S.data.fpsCap end
+    end)
+
     -- 背景音乐（无音频设备时静默跳过）
     startStage = "audio"
     pcall(Audio.Init, S.data)
@@ -110,7 +158,7 @@ function Start()
     end
 
     print(string.format("[main] 生命行者 v%s started, logical=%dx%d dpr=%.2f scale=%.3f",
-        Config.VERSION, S.W, S.H, S.dpr, S.scale))
+        Config.VERSION, math.floor(S.W), math.floor(S.H), S.dpr, S.scale))
 end
 
 function Stop()
@@ -243,6 +291,7 @@ function HandleMouseDown(eventType, eventData)
         KbLayout.Pointer("down", dx, dy)
         return
     end
+    if Combat.AimPointer("down", dx, dy, 0) then return end
     if Combat.JoystickPointer("down", dx, dy) then return end
     UI.Click(dx, dy)
 end
@@ -257,6 +306,7 @@ function HandleMouseMove(eventType, eventData)
         KbLayout.Pointer("move", dx, dy)
         return
     end
+    if Combat.AimPointer("move", dx, dy, 0) then return end
     if S.screen ~= "combat" then return end
     Combat.JoystickPointer("move", dx, dy)
 end
@@ -272,6 +322,7 @@ function HandleMouseUp(eventType, eventData)
         KbLayout.Pointer("up", dx, dy)
         return
     end
+    if Combat.AimPointer("up", dx, dy, 0) then return end
     Combat.JoystickPointer("up", dx, dy)
 end
 
@@ -287,6 +338,7 @@ function HandleTouchBegin(eventType, eventData)
         KbLayout.Pointer("down", dx, dy)
         return
     end
+    if Combat.AimPointer("down", dx, dy, tid or 0) then return end
     if Combat.JoystickPointer("down", dx, dy, tid) then return end
     UI.Click(dx, dy)
 end
@@ -303,6 +355,7 @@ function HandleTouchMove(eventType, eventData)
         KbLayout.Pointer("move", dx, dy)
         return
     end
+    if Combat.AimPointer("move", dx, dy, tid or 0) then return end
     if S.screen ~= "combat" then return end
     Combat.JoystickPointer("move", dx, dy, tid)
 end
@@ -316,6 +369,7 @@ function HandleTouchEnd(eventType, eventData)
         KbLayout.Pointer("up", 0, 0)
         return
     end
+    if Combat.AimPointer("up", 0, 0, tid or 0) then return end
     Combat.JoystickPointer("up", 0, 0, tid)
 end
 
@@ -352,6 +406,7 @@ function HandleKeyDown(eventType, eventData)
             KbLayout.Close(true)
         elseif S.settings then
             S.settings = false
+            S.settingsWipeConfirm = false
         elseif S.confirmReset then
             S.confirmReset = false
         elseif S.test then

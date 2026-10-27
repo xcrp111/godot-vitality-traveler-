@@ -31,7 +31,6 @@ end
 ---@field basicPct number
 ---@field skillPct number
 ---@field regen number
----@field armorPen number
 ---@field revive number
 ---@field rangePct number
 ---@field hurtHeal number
@@ -60,7 +59,6 @@ end
 ---@field basicPct number
 ---@field skillPct number
 ---@field regen number
----@field armorPen number
 ---@field rangePct number
 ---@field hurtHeal number
 ---@field critHeal number
@@ -69,6 +67,7 @@ end
 ---@field mods Mods
 ---@field flags table<string, number>
 ---@field classBuffs table<string, boolean>
+---@field colorPity integer
 ---@field charges table<number, integer>
 ---@field buffs table[]
 ---@field intent integer
@@ -114,7 +113,7 @@ local function NewMods()
     return {
         hpPct = 0, shieldPct = 0, atkPct = 0, asPct = 0, msPct = 0,
         cdrPct = 0, crit = 0, critDmg = 0, lifesteal = 0, dodge = 0,
-        basicPct = 0, skillPct = 0, regen = 0, armorPen = 0, revive = 0,
+        basicPct = 0, skillPct = 0, regen = 0, revive = 0,
         rangePct = 0, hurtHeal = 0, critHeal = 0,
     }
 end
@@ -133,12 +132,13 @@ function Run.NewPlayer(classLevel)
         attackSpeed = c.attackSpeed or 1.0,
         moveSpeed = c.speed,
         crit = 0, critDmg = 1.5, lifesteal = 0, dodge = 0,
-        cdr = 0, basicPct = 0, skillPct = 0, regen = 0, armorPen = 0,
+        cdr = 0, basicPct = 0, skillPct = 0, regen = 0,
         rangePct = 0, hurtHeal = 0, critHeal = 0, revive = 0,
         reviveUsed = false,
         mods = NewMods(),
         flags = {},
         classBuffs = {},
+        colorPity = 0,
         charges = {},
         buffs = {},
         intent = 0,
@@ -173,7 +173,6 @@ function Run.Recompute(p)
     p.basicPct = m.basicPct
     p.skillPct = m.skillPct
     p.regen = m.regen
-    p.armorPen = m.armorPen
     p.rangePct = m.rangePct
     p.hurtHeal = m.hurtHeal
     p.critHeal = m.critHeal
@@ -410,7 +409,8 @@ function Run.RollClassBuff(p, rarity)
     if not group then return nil end
     if not rarity then
         rarity = WeightedRarity()
-        if math.random() < 0.04 then rarity = "color" end
+        local pity = p.colorPity or 0
+        if math.random() < 0.06 + 0.03 * pity then rarity = "color" end
     end
     local pool = group[rarity]
     if not pool then return nil end
@@ -445,9 +445,14 @@ end
 function Run.RollAnyBuff(p, rarity, weights)
     rarity = rarity or (weights and WeightedFrom(weights)) or WeightedRarity()
     if math.random() < 0.55 then
-        -- 金色专属有小概率升级成彩色
+        -- 金色专属有小概率升级成彩色；连续没出彩色会把概率推高，第 5 次保底
         local classRarity = rarity
-        if rarity == "gold" and math.random() < 0.12 then classRarity = "color" end
+        if rarity == "gold" then
+            local pity = (p.colorPity or 0) + 1
+            p.colorPity = pity
+            local chance = 0.18 + 0.07 * (pity - 1)
+            if pity >= 5 or math.random() < chance then classRarity = "color" end
+        end
         local cb = Run.RollClassBuff(p, classRarity)
         if cb then return cb end
         if classRarity ~= rarity then
@@ -473,6 +478,7 @@ function Run.GrantBuff(p, buff)
     end
     if buff.classBuff then p.classBuffs[buff.id] = true end
     p.buffs[#p.buffs + 1] = buff
+    if buff.rarity == "color" then p.colorPity = 0 end   -- 拿到彩色就重置保底计数
     Run.Recompute(p)
     return buff
 end

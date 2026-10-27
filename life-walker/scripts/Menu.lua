@@ -79,7 +79,7 @@ local function ClassStatusLines()
     return {
         "剑意：普攻命中叠 1 层（最多 5 层），每层普攻伤害 +6%；5 层触发剑气爆发（1.5 倍范围伤害 + 1 层挫裂）。",
         "挫裂：每层使目标受到的全部物理伤害 +12%，最多 5 层，持续 4 秒、每秒掉 1 层；剑意 ≥3 层时普攻叠加挫裂。",
-        "无敌：突进期间免疫伤害。格挡：0.75 秒内抵挡一次伤害并获得 1 层剑意。",
+        "无敌：突进期间免疫伤害。格挡：1 秒内完全免伤（可连挡多次），格挡成功反击剑气、获得剑意并返还冷却。",
     }
 end
 
@@ -282,8 +282,8 @@ local function CompendiumStatusRanger()
         { "狩猎冲动", "疾退腾挪获得 1 层（最多 3 层），每层攻速 +8%；5 秒不刷新会清空。" },
         { "追猎", "失衡 + 猎痕触发，短时间提升自身攻速与移速，并返还部分技能冷却。" },
         { "精准速射", "5 秒内普攻命中叠层，每层攻速 +6%（最多 5 层）。" },
-        { "猎影诱捕", "陷阱减速并施加猎痕，触发后下一次普攻必定暴击。" },
-        { "掠袭换位", "瞬移到带猎痕的敌人身边，下一次普攻额外叠猎痕并提高攻速。" },
+        { "猎影诱捕", "长按拖放夹子，敌人踩中被束缚 1.2 秒、减速 40%、叠 1 层猎痕，触发后下一次普攻必定暴击。" },
+        { "掠袭换位", "瞬移到带猎痕的敌人身后，下一次普攻伤害 +25% 并额外叠 2 层猎痕。" },
     }
     local y = 224
     for _, st in ipairs(statuses) do
@@ -362,7 +362,7 @@ local function CompendiumStatus()
         { "物理连携", "粉碎：额外爆发伤害；震荡：对周围敌人溅射；追猎：返还技能冷却。专属强化可解锁。" },
         { "剑气爆发", "剑意满层触发，对周围造成 1.5 倍攻击伤害，并施加 1 层挫裂。" },
         { "无敌", "闪影突进 0.22 秒、瞬影连斩约 0.45 秒，期间免疫全部伤害。" },
-        { "格挡", "卸势格挡 0.75 秒内抵挡一次伤害，成功获得 1 层剑意；铁壁卸锋可挡两次。" },
+        { "格挡", "卸势格挡 1 秒内完全免伤，可连挡多次；格挡成功反击剑气、获得剑意并返还 0.8 秒冷却。" },
         { "护盾", "每房开局满盾；战斗中脱战 5 秒后每秒回复 10% 护盾上限。" },
     }
     local y = 224
@@ -818,83 +818,270 @@ function Menu.DrawResetConfirm()
     end, { fontSize = 16 })
 end
 
-function Menu.DrawSettings()
-    local data = S.data
-    nvgBeginPath(S.ctx)
-    nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
-    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 205))
-    nvgFill(S.ctx)
+-- ---------------------------------------------------------------- 设置（左侧分类 + 右侧列表）
+local SETTINGS_TABS = {
+    { id = "visual",  label = "画面与性能" },
+    { id = "control", label = "操作手感" },
+    { id = "combat",  label = "战斗显示" },
+    { id = "data",    label = "数据与帮助" },
+}
 
-    UI.Panel(400, 140, 480, 420, 16, { 28, 24, 38, 252 }, S.col.line, 1)
-    UI.Text(430, 164, 28, "设置", S.col.gold)
-    UI.Text(430, 200, 12, "本地保存，修改后立即生效", S.col.dim)
+local function ApplyFps(data)
+    data.fpsCap = data.fpsCap or 60
+    if engine then engine.maxFps = data.fpsCap end
+end
+Menu.ApplyFps = ApplyFps
 
-    -- 音乐开关
-    UI.Text(430, 234, 16, "背景音乐", S.col.text)
-    local on = data.musicOn ~= false
-    UI.Button("set_music", 700, 224, 140, 40, on and "开启中" or "已关闭", function()
-        Audio.SetEnabled(data, not (data.musicOn ~= false))
-        Save.Write(data)
+-- 单行：左标题（可带说明），右侧控件区从 x=790 开始
+local function SetRow(y, title, hint)
+    UI.Text(404, y + 6, 16, title, S.col.text)
+    if hint then UI.Text(404, y + 28, 11, hint, S.col.dim) end
+end
+
+local function SetToggle(y, id, on, cb, onText, offText)
+    UI.Button(id, 790, y, 120, 36, on and (onText or "开启") or (offText or "关闭"), function()
+        cb(not on)
+        Save.Write(S.data)
     end, {
-        fontSize = 15,
+        fontSize = 14,
         fill = on and { 40, 70, 52, 255 } or { 52, 34, 38, 255 },
         stroke = on and S.col.green or S.col.red,
     })
+end
 
-    -- 音量
-    local volume = data.musicVolume or 0.32
-    UI.Text(430, 286, 16, "音量", S.col.text)
-    UI.Text(790, 286, 16, string.format("%d%%", math.floor(volume * 100 + 0.5)), S.col.cyan,
-        NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
-    UI.Button("vol_minus", 430, 306, 44, 36, "-", function()
-        Audio.SetVolume(data, (data.musicVolume or 0.32) - 0.1)
-        Save.Write(data)
-    end, { fontSize = 20 })
-    local filled = math.floor(volume * 10 + 0.5)
-    for i = 1, 10 do
-        local x = 486 + (i - 1) * 32
-        local segOn = i <= filled
-        UI.Panel(x, 306, 30, 36, 6,
-            segOn and { 48, 96, 110, 255 } or { 36, 32, 48, 255 },
-            segOn and S.col.cyan or S.col.line, 1)
-        local level = i
-        UI.Region("vol_seg_" .. i, x, 306, 30, 36, function()
-            Audio.SetVolume(data, level / 10)
+local function SetSeg(y, id, options, cur, cb)
+    local x = 790
+    for _, o in ipairs(options) do
+        local active = (o[1] == cur)
+        local val = o[1]
+        UI.Button(id .. "_" .. tostring(val), x, y, 92, 36, o[2], function()
+            cb(val)
+            Save.Write(S.data)
+        end, {
+            fontSize = 14,
+            fill = active and { 40, 70, 52, 255 } or { 36, 32, 48, 255 },
+            stroke = active and S.col.green or S.col.line,
+        })
+        x = x + 98
+    end
+end
+
+function Menu.DrawSettings()
+    local data = S.data
+    local tab = S.settingsTab or "control"
+
+    nvgBeginPath(S.ctx)
+    nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
+    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 210))
+    nvgFill(S.ctx)
+
+    UI.Panel(200, 76, 880, 568, 18, { 28, 24, 38, 252 }, S.col.line, 1)
+    UI.Text(232, 96, 26, "设置", S.col.gold)
+    UI.Text(232, 128, 12, "本地保存，改动立即生效", S.col.dim)
+
+    -- 左侧分类
+    for i, t in ipairs(SETTINGS_TABS) do
+        local y = 168 + (i - 1) * 58
+        local active = (tab == t.id)
+        UI.Button("set_tab_" .. t.id, 224, y, 160, 46, t.label, function()
+            S.settingsTab = t.id
+        end, {
+            fontSize = 15,
+            fill = active and { 42, 62, 84, 255 } or { 34, 30, 44, 255 },
+            stroke = active and S.col.cyan or S.col.line,
+            accent = active and S.col.cyan or nil,
+        })
+    end
+
+    -- 分隔线
+    UI.Panel(400, 150, 2, 462, 1, { 60, 56, 78, 255 })
+
+    local y0 = 158
+    local rowH = 62
+
+    if tab == "visual" then
+        local r = 1
+        SetRow(y0 + (r - 1) * rowH, "帧率上限", "省电就选 30，流畅选 60/120")
+        SetSeg(y0 + (r - 1) * rowH, "set_fps", { { 30, "30" }, { 60, "60" }, { 120, "120" } },
+            data.fpsCap or 60, function(v)
+                data.fpsCap = v
+                ApplyFps(data)
+            end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "低画质模式", "粒子、拖尾、残影减量，弱机更稳")
+        SetToggle(y0 + (r - 1) * rowH, "set_lowq", data.lowQuality == true, function(v)
+            data.lowQuality = v
+        end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "屏幕震动", "受击/爆发时的镜头抖动")
+        SetToggle(y0 + (r - 1) * rowH, "set_shake", data.screenShake ~= false, function(v)
+            data.screenShake = v
+        end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "伤害数字", "简化 = 更小更淡，减少画面干扰")
+        SetSeg(y0 + (r - 1) * rowH, "set_dmg",
+            { { "full", "完整" }, { "simple", "简化" }, { "off", "关闭" } },
+            data.damageText or "full", function(v)
+                data.damageText = v
+            end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "背景音乐", "当前版本音频未启用，开关先保留")
+        SetToggle(y0 + (r - 1) * rowH, "set_music", data.musicOn ~= false, function(v)
+            Audio.SetEnabled(data, v)
+        end, "开启", "关闭")
+        r = r + 1
+        local volume = data.musicVolume or 0.32
+        SetRow(y0 + (r - 1) * rowH, "音量", string.format("当前 %d%%（0%% 等同静音）",
+            math.floor(volume * 100 + 0.5)))
+        UI.Button("vol_minus", 790, y0 + (r - 1) * rowH, 44, 36, "-", function()
+            Audio.SetVolume(data, (data.musicVolume or 0.32) - 0.1)
             Save.Write(data)
-        end, true)
+        end, { fontSize = 20 })
+        UI.Button("vol_plus", 842, y0 + (r - 1) * rowH, 44, 36, "+", function()
+            Audio.SetVolume(data, (data.musicVolume or 0.32) + 0.1)
+            Save.Write(data)
+        end, { fontSize = 20 })
+        for i = 1, 6 do
+            local x = 896 + (i - 1) * 24
+            local on = i <= math.floor(volume * 6 + 0.5)
+            UI.Panel(x, y0 + (r - 1) * rowH, 20, 36, 5,
+                on and { 48, 96, 110, 255 } or { 36, 32, 48, 255 },
+                on and S.col.cyan or S.col.line, 1)
+            local lv = i
+            UI.Region("vol_seg_" .. i, x, y0 + (r - 1) * rowH, 20, 36, function()
+                Audio.SetVolume(data, lv / 6)
+                Save.Write(data)
+            end, true)
+        end
+    elseif tab == "control" then
+        local r = 1
+        SetRow(y0 + (r - 1) * rowH, "摇杆模式", "浮动 = 按在哪里就在哪里出现")
+        SetSeg(y0 + (r - 1) * rowH, "set_joymode",
+            { { "float", "浮动" }, { "fixed", "固定" } },
+            data.joyMode == "fixed" and "fixed" or "float", function(v)
+                data.joyMode = v
+            end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "摇杆灵敏度", "高 = 轻推就走，低 = 更稳不容易飘")
+        SetSeg(y0 + (r - 1) * rowH, "set_joysens",
+            { { "low", "低" }, { "mid", "中" }, { "high", "高" } },
+            data.joySensitivity or "mid", function(v)
+                data.joySensitivity = v
+            end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "拖尾跟随", "手指拖出圈子时摇杆基座跟着走")
+        SetToggle(y0 + (r - 1) * rowH, "set_follow", data.joyFollow ~= false, function(v)
+            data.joyFollow = v
+        end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "长按施法阈值", "按住多久进入瞄准；越短越容易触发")
+        SetSeg(y0 + (r - 1) * rowH, "set_aimhold",
+            { { 0.15, "0.15s" }, { 0.22, "0.22s" }, { 0.30, "0.30s" } },
+            data.aimHold or 0.22, function(v)
+                data.aimHold = v
+            end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "选位施法", "夹子/流星这类技能怎么定落点")
+        SetSeg(y0 + (r - 1) * rowH, "set_aimmode",
+            { { "button", "按键摇杆" }, { "screen", "屏幕位置" } },
+            data.aimMode == "screen" and "screen" or "button", function(v)
+                data.aimMode = v
+            end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "瞄准指示", "长按技能时显示按键到手指的指示线")
+        SetToggle(y0 + (r - 1) * rowH, "set_aimind", data.aimIndicator ~= false, function(v)
+            data.aimIndicator = v
+        end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "自动攻击", "进入普攻范围后自动出刀；关掉只能手动点普攻")
+        SetToggle(y0 + (r - 1) * rowH, "set_auto", data.autoAttack ~= false, function(v)
+            data.autoAttack = v
+        end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "按键布局", "摇杆/技能键/取消施法框的位置和大小")
+        UI.Button("set_layout", 790, y0 + (r - 1) * rowH, 190, 36, "打开编辑器", function()
+            KbLayout.Open()
+        end, { fontSize = 15 })
+    elseif tab == "combat" then
+        local r = 1
+        SetRow(y0 + (r - 1) * rowH, "普攻范围预览", "常驻显示普攻的扇形/射线")
+        SetToggle(y0 + (r - 1) * rowH, "set_range", data.showSkillRange ~= false, function(v)
+            data.showSkillRange = v
+        end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "怪物血条", "关掉可以更看清弹幕")
+        SetToggle(y0 + (r - 1) * rowH, "set_hpbar", data.enemyHpBar ~= false, function(v)
+            data.enemyHpBar = v
+        end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "敌方预警加强", "Boss/精英的红圈更亮更粗")
+        SetToggle(y0 + (r - 1) * rowH, "set_warn", data.bossWarn ~= false, function(v)
+            data.bossWarn = v
+        end)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "命中反馈", "攻击命中时的闪白与火花（固定开启）")
+        UI.Text(790, y0 + (r - 1) * rowH + 10, 14, "已开启", S.col.dim)
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "战斗内暂停", "屏幕右上角「暂停」按钮 / Esc")
+        UI.Text(790, y0 + (r - 1) * rowH + 10, 14, "始终可用", S.col.dim)
+    else
+        local r = 1
+        SetRow(y0 + (r - 1) * rowH, "按键布局", "调整摇杆、技能键、取消施法框")
+        UI.Button("set_layout2", 790, y0 + (r - 1) * rowH, 190, 36, "打开编辑器", function()
+            KbLayout.Open()
+        end, { fontSize = 15 })
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "图鉴", "怪物 / 强化 / 技能 / 状态与道具")
+        UI.Button("set_codex", 790, y0 + (r - 1) * rowH, 190, 36, "打开图鉴", function()
+            S.settings = false
+            S.compendium = true
+        end, { fontSize = 15 })
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "恢复默认设置", "只重置画面/操作/战斗开关，不动存档")
+        UI.Button("set_defaults", 790, y0 + (r - 1) * rowH, 190, 36, "恢复默认", function()
+            local def = Save.Defaults()
+            for _, k in ipairs({ "fpsCap", "lowQuality", "screenShake", "damageText",
+                "joySensitivity", "aimHold", "autoAttack", "aimIndicator",
+                "showSkillRange", "enemyHpBar", "bossWarn", "aimMode", "joyMode", "joyFollow" }) do
+                data[k] = def[k]
+            end
+            ApplyFps(data)
+            Save.Write(data)
+            UI.SetToast("设置已恢复默认", 1.6)
+        end, { fontSize = 15 })
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "清空存档", "等级、金币、关卡进度全部重置，不可恢复")
+        if S.settingsWipeConfirm then
+            UI.Button("set_wipe_yes", 790, y0 + (r - 1) * rowH, 92, 36, "确认清空", function()
+                S.settingsWipeConfirm = false
+                local fresh = Save.Fresh()
+                Save.Write(fresh)
+                S.data = fresh
+                ApplyFps(S.data)
+                UI.SetToast("存档已清空", 1.6)
+            end, { fontSize = 14, fill = { 96, 34, 40, 255 }, stroke = S.col.red })
+            UI.Button("set_wipe_no", 890, y0 + (r - 1) * rowH, 92, 36, "取消", function()
+                S.settingsWipeConfirm = false
+            end, { fontSize = 14 })
+        else
+            UI.Button("set_wipe", 790, y0 + (r - 1) * rowH, 190, 36, "清空存档", function()
+                S.settingsWipeConfirm = true
+            end, { fontSize = 15, fill = { 52, 34, 38, 255 }, stroke = S.col.red })
+        end
+        r = r + 1
+        UI.Text(404, y0 + (r - 1) * rowH + 4, 12,
+            string.format("版本 v%s · 职业 %s Lv.%d · 金币 %s · 关卡 1~%d",
+                Config.VERSION, Config.Class().name, Save.ClassLevel(data),
+                UI.FormatNumber(data.gold), data.unlocked), S.col.dim)
     end
-    UI.Button("vol_plus", 812, 306, 44, 36, "+", function()
-        Audio.SetVolume(data, (data.musicVolume or 0.32) + 0.1)
-        Save.Write(data)
-    end, { fontSize = 20 })
-    UI.Text(430, 350, 11, "点格子或 - / + 调整；0% 等同静音", S.col.dim)
 
-    -- 当前状态
-    UI.Text(430, 382, 16, "当前状态", S.col.gold)
-    local classLevel = Save.ClassLevel(data)
-    local cost = Save.NextCost(data)
-    local rows = {
-        { "职业", Config.Class().name, "等级", "Lv." .. classLevel },
-        { "金币", UI.FormatNumber(data.gold), "可分配经验", UI.FormatNumber(data.exp) },
-        { "升级需要", cost and UI.FormatNumber(cost) or "已满级",
-          "解锁关卡", "1 ~ " .. data.unlocked },
-        { "连续健康", data.streak .. " 天", "音乐", (on and "开" or "关") .. " · " .. math.floor(volume * 100 + 0.5) .. "%" },
-    }
-    for i, row in ipairs(rows) do
-        local y = 410 + (i - 1) * 24
-        UI.Text(430, y, 13, row[1], S.col.dim)
-        UI.Text(510, y, 13, row[2], S.col.text)
-        UI.Text(660, y, 13, row[3], S.col.dim)
-        UI.Text(750, y, 13, row[4], S.col.text)
-    end
-
-    UI.Button("set_layout", 430, 508, 190, 38, "按键布局", function()
-        KbLayout.Open()
-    end, { fontSize = 16 })
-
-    UI.Button("set_close", 640, 508, 160, 38, "关闭 (Esc)", function()
+    -- 底部：说明 + 关闭
+    UI.Text(224, 600, 12,
+        "Esc / 点「关闭」返回；设置改动会立刻写进本地存档", S.col.dim)
+    UI.Button("set_close", 920, 588, 140, 38, "关闭 (Esc)", function()
         S.settings = false
-    end, { fontSize = 16 })
+        S.settingsWipeConfirm = false
+    end, { fontSize = 15, fill = { 44, 92, 62, 255 } })
 end
 
 function Menu.Draw()

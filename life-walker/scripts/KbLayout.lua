@@ -14,7 +14,14 @@ local ELEMENTS = {
     { id = "skill2", label = "技能2",  minR = 22, maxR = 68 },
     { id = "skill3", label = "技能3",  minR = 22, maxR = 68 },
     { id = "items",  label = "道具",   minR = 18, maxR = 52 },
+    { id = "aim_cancel", label = "取消施法框", minR = 50, maxR = 130, box = true },
 }
+
+-- 矩形控件（目前只有取消施法框）：中心 + 半径 -> 外框
+local function BoxOf(p)
+    return p.x - p.r, p.y - p.r * 0.6, p.r * 2, p.r * 1.2
+end
+KbLayout.BoxOf = BoxOf
 
 local TOOLBAR = {
     { id = "smaller", label = "缩小", x = 40,  y = 72, w = 120, h = 44 },
@@ -71,8 +78,15 @@ local function HitElement(x, y)
         local e = ELEMENTS[i]
         local p = L[e.id]
         if p then
-            local d = math.sqrt((x - p.x) ^ 2 + (y - p.y) ^ 2)
-            if d <= p.r + 14 then return e.id end
+            if e.box then
+                local bx, by, bw, bh = BoxOf(p)
+                if x >= bx - 8 and x <= bx + bw + 8 and y >= by - 8 and y <= by + bh + 8 then
+                    return e.id
+                end
+            else
+                local d = math.sqrt((x - p.x) ^ 2 + (y - p.y) ^ 2)
+                if d <= p.r + 14 then return e.id end
+            end
         end
     end
     return nil
@@ -214,16 +228,28 @@ function KbLayout.Draw()
         local p = L[e.id]
         if p then
             local selected = (st.sel == e.id)
-            if e.id == "joy" then
+            if e.box then
+                local bx, by, bw, bh = BoxOf(p)
+                UI.Panel(bx, by, bw, bh, 12, { 40, 38, 54, 220 },
+                    selected and { 255, 210, 120, 255 } or { 140, 140, 165, 220 }, selected and 4 or 2)
+                local cx, cy = bx + bw / 2, by + bh / 2 - 10
+                local rr = math.min(16, bh * 0.24)
+                UI.Line(cx - rr, cy - rr, cx + rr, cy + rr,
+                    selected and { 255, 210, 120, 255 } or { 190, 190, 210, 220 }, 3)
+                UI.Line(cx - rr, cy + rr, cx + rr, cy - rr,
+                    selected and { 255, 210, 120, 255 } or { 190, 190, 210, 220 }, 3)
+                UI.Text(cx, by + bh - 18, 12, e.label,
+                    selected and S.col.gold or S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            elseif e.id == "joy" then
                 UI.Circle(p.x, p.y, p.r, { 30, 60, 100, 90 },
                     selected and { 255, 210, 120, 255 } or { 120, 170, 230, 200 }, selected and 4 or 2)
                 UI.Circle(p.x, p.y, p.r * 0.35, { 120, 170, 230, 200 })
             else
                 UI.Circle(p.x, p.y, p.r, { 40, 38, 54, 220 },
                     selected and { 255, 210, 120, 255 } or { 140, 140, 165, 220 }, selected and 4 or 2)
+                UI.Text(p.x, p.y - 7, 13, e.label,
+                    selected and S.col.gold or S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             end
-            UI.Text(p.x, p.y - 7, 13, e.label,
-                selected and S.col.gold or S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         end
     end
 

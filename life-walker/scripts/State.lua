@@ -38,6 +38,21 @@
 ---@field musicOn boolean
 ---@field musicVolume number
 ---@field loadouts table<string, integer[]>
+---@field layout any
+---@field joyMode string
+---@field joyFollow boolean
+---@field aimMode string
+---@field fpsCap integer
+---@field lowQuality boolean
+---@field screenShake boolean
+---@field damageText string
+---@field joySensitivity string
+---@field aimHold number
+---@field autoAttack boolean
+---@field aimIndicator boolean
+---@field showSkillRange boolean
+---@field enemyHpBar boolean
+---@field bossWarn boolean
 -- SaveData 字段与 Save.lua 的 Defaults 保持一致
 
 ---@class KeyState
@@ -88,6 +103,9 @@
 ---@field confirmReset boolean
 ---@field showStatus boolean
 ---@field statusPanel any
+---@field kbEdit any
+---@field settingsTab string
+---@field settingsWipeConfirm boolean
 ---@field col table
 
 ---@type GameState
@@ -123,6 +141,20 @@ local S = {
         streakRewardIndex = 0,
         musicOn = true,
         musicVolume = 0.32,
+        joyMode = "float",
+        joyFollow = true,
+        aimMode = "button",
+        fpsCap = 60,
+        lowQuality = false,
+        screenShake = true,
+        damageText = "full",
+        joySensitivity = "mid",
+        aimHold = 0.22,
+        autoAttack = true,
+        aimIndicator = true,
+        showSkillRange = true,
+        enemyHpBar = true,
+        bossWarn = true,
         loadouts = {
             swordsman = { 1, 2, 3 },
             spearman = { 1, 2, 4 },
@@ -152,6 +184,8 @@ local S = {
     testSkills = {},
     testLevel = 1,
     testDetail = nil,
+    settingsTab = "control",
+    settingsWipeConfirm = false,
     confirmReset = false,
     showStatus = false,
     statusPanel = nil,

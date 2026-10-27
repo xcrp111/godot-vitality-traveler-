@@ -94,5 +94,22 @@ function Start()
     check("改用新位置后摇杆可用", p.y < py0, string.format("%.1f -> %.1f", py0, p.y))
     Combat.JoystickPointer("up", 220, 480)
 
+    -- 取消施法框也能在布局编辑器里拖位置、调大小
+    KbLayout.Open()
+    local dz = Combat.AimCancelRect()
+    check("取消框有默认位置", dz.w > 100 and dz.h > 60, string.format("%.0f x %.0f", dz.w, dz.h))
+    KbLayout.Pointer("down", dz.x + dz.w / 2, dz.y + dz.h / 2)   -- 选中它
+    KbLayout.Pointer("move", 900, 300)
+    KbLayout.Pointer("up", 900, 300)
+    local moved = Combat.AimCancelRect()
+    check("取消框能拖动",
+        math.abs((moved.x + moved.w / 2) - 900) < 2 and math.abs((moved.y + moved.h / 2) - 300) < 2,
+        string.format("%.0f,%.0f", moved.x + moved.w / 2, moved.y + moved.h / 2))
+    local w0 = moved.w
+    KbLayout.Pointer("down", 176 + 60, 72 + 22)                 -- 「放大」
+    local bigger = Combat.AimCancelRect()
+    check("取消框能调大小", bigger.w > w0, string.format("%.0f -> %.0f", w0, bigger.w))
+    KbLayout.Pointer("down", 1160, 94)                          -- 「完成」
+
     print("[KB] done, failures = " .. fails)
 end

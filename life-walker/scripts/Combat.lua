@@ -113,6 +113,31 @@ local Combat = {}
 local WORLD_W = Run.WORLD_W
 local WORLD_H = Run.WORLD_H
 
+-- 屏幕右下角的动作键（位置可被“按键布局”改写，见 CtrlPos）
+local ACTION_BUTTONS = {
+    { id = "attack", x = 1186, y = 626, r = 48, key = "SPACE", kind = "attack" },
+    { id = "skill1", x = 1080, y = 624, r = 36, key = "J", kind = "skill", slot = 1 },
+    { id = "skill2", x = 1110, y = 526, r = 36, key = "K", kind = "skill", slot = 2 },
+    { id = "skill3", x = 1202, y = 514, r = 32, key = "L", kind = "skill", slot = 3 },
+}
+
+-- 当前镜头偏移（世界 -> 设计坐标）
+local function CameraPos(cs)
+    local camX = cs.player.x - S.designW / 2
+    local camY = cs.player.y - S.designH / 2
+    if WORLD_W <= S.designW then
+        camX = (WORLD_W - S.designW) / 2
+    else
+        camX = Config.Clamp(camX, 0, WORLD_W - S.designW)
+    end
+    if WORLD_H <= S.designH then
+        camY = (WORLD_H - S.designH) / 2
+    else
+        camY = Config.Clamp(camY, 0, WORLD_H - S.designH)
+    end
+    return camX, camY
+end
+
 local function Dist(x1, y1, x2, y2)
     local dx = x2 - x1
     local dy = y2 - y1
@@ -244,7 +269,30 @@ local function AddText(cs, x, y, text, color, size)
     cs.texts[#cs.texts + 1] = { x = x, y = y, text = text, color = color, t = 0, life = 0.95, size = size or 18 }
 end
 
+-- 读取设置项（存档里没有就用默认值）
+local function Opt(key, default)
+    local d = S.data
+    if type(d) ~= "table" then return default end
+    local v = d[key]
+    if v == nil then return default end
+    return v
+end
+
+-- 伤害数字：完整 / 简化（更小更淡）/ 关闭
+local function DmgText(cs, x, y, text, color, size, crit)
+    local mode = Opt("damageText", "full")
+    if mode == "off" then return end
+    if mode == "simple" then
+        local c = color
+        if crit then c = color end
+        AddText(cs, x, y, text, { c[1], c[2], c[3], 190 }, math.floor((size or 18) * 0.75))
+    else
+        AddText(cs, x, y, text, color, size)
+    end
+end
+
 local function AddParticles(cs, x, y, color, count)
+    if Opt("lowQuality", false) then count = math.max(1, math.floor(count * 0.35)) end
     for i = 1, count do
         local a = math.random() * math.pi * 2
         local sp = 40 + math.random() * 160
@@ -273,6 +321,7 @@ local function AddRing(cs, x, y, maxR, color, life, width)
 end
 
 local function AddTrail(cs, x, y, color, radius)
+    if Opt("lowQuality", false) then return end
     cs.trails = cs.trails or {}
     cs.trails[#cs.trails + 1] = {
         x = x, y = y, t = 0, life = 0.22, color = color or { 120, 200, 255 },
@@ -317,6 +366,7 @@ end
 -- 避免“明明怪在旁边却空挥”。返回锁定的目标。
 local function AimAt(cs, range, maxAngle)
     local p = cs.player
+    if cs.aimLock then return nil end   -- 玩家长按瞄准过：尊重手动方向，不自动转头
     local limit = maxAngle or math.rad(80)
     local best, bd = nil, range
     for _, e in ipairs(cs.enemies) do
@@ -525,6 +575,16 @@ local function NearestEnemy(cs, x, y, maxDist)
     local best, bd = nil, maxDist or 99999
     for _, e in ipairs(cs.enemies) do
         local d = Dist(x, y, e.x, e.y)
+        if d < bd then best, bd = e, d end
+    end
+    return best, bd
+end
+
+-- 离“瞄准落点”最近的敌人（长按瞄准时按落点选目标）
+local function NearestEnemyTo(cs, x, y, maxDist)
+    local best, bd = nil, maxDist or 99999
+    for _, e in ipairs(cs.enemies) do
+        local d = Dist(x, y, e.x, e.y) - (e.radius or 0)
         if d < bd then best, bd = e, d end
     end
     return best, bd
@@ -953,14 +1013,19 @@ local function JoystickApply(js, x, y)
     end
     js.kx, js.ky = js.baseX + dx, js.baseY + dy
     local nx, ny = dx / js.radius, dy / js.radius
-    -- 死区缩小到 0.06；再套一条 0.65 次幂曲线，轻推就有速度，手感更跟手
+    -- 死区 + 次幂曲线，灵敏度在设置里可选：高=轻推就走 / 低=更稳
+    local sens = Opt("joySensitivity", "mid")
+    local dead = 0.06
+    local curve = 0.65
+    if sens == "high" then dead, curve = 0.035, 0.55
+    elseif sens == "low" then dead, curve = 0.105, 0.78 end
     local mag = math.sqrt(nx * nx + ny * ny)
-    if mag < 0.06 then
+    if mag < dead then
         S.input.x = 0
         S.input.y = 0
         return
     end
-    local shaped = mag ^ 0.65
+    local shaped = mag ^ curve
     local k = shaped / mag
     S.input.x = nx * k
     S.input.y = ny * k
@@ -1061,6 +1126,164 @@ function Combat.JoystickPointer(phase, x, y, id)
     return false
 end
 
+-- ---------------------------------------------------------------- 技能长按瞄准
+-- 按住技能键进入瞄准（显示范围预览），松手释放；轻点仍然是自动瞄准
+local AIM_HOLD = 0.22
+
+-- 长按阈值可在设置里改（0.15 / 0.22 / 0.30）
+local function AimHoldValue()
+    local v = Opt("aimHold", AIM_HOLD)
+    if type(v) ~= "number" then return AIM_HOLD end
+    return v
+end
+local AIM_MOVE_EPS = 14
+local AIM_DIR_DEADZONE = 10    -- 手指几乎没离开按键时，方向保持不变（避免抖）
+local AIM_FULL_PULL = 120      -- 摇杆式选位：拖满 120px 到达最远落点
+-- 取消施法框：位置和大小在「设置 → 按键布局」里拖（id = aim_cancel），中心 + 半径 = 宽 2r 高 1.2r
+local AIM_CANCEL_DEFAULT = { 1170, 378, 80 }
+local function AimCancelRect()
+    local cx, cy, r = CtrlPos("aim_cancel",
+        AIM_CANCEL_DEFAULT[1], AIM_CANCEL_DEFAULT[2], AIM_CANCEL_DEFAULT[3])
+    return { x = cx - r, y = cy - r * 0.6, w = r * 2, h = r * 1.2 }
+end
+Combat.AimCancelRect = AimCancelRect
+
+local function InAimCancel(x, y)
+    local z = AimCancelRect()
+    return x >= z.x and x <= z.x + z.w and y >= z.y and y <= z.y + z.h
+end
+
+function Combat.SkillReady(cs, id)
+    local p = cs.player
+    if (p.cooldowns[id] or 0) <= 0 then return true end
+    if p.freeCharges and (p.freeCharges[id] or 0) > 0 then return true end
+    if p.charges and (p.charges[id] or 0) > 0 then return true end
+    return false
+end
+
+-- 选位技能最远落点：不超过角色自身的攻击范围
+local function AimMaxRange(cs)
+    local class = Config.Class()
+    return class.basicRange * (1 + (cs.player.rangePct or 0))
+end
+
+local function AimUpdateTarget(cs, dx, dy)
+    local aim = cs.aim
+    if not aim then return end
+    local p = cs.player
+    local spec = aim.spec
+    local ox, oy = dx - aim.bx, dy - aim.by
+    local len = math.sqrt(ox * ox + oy * oy)
+    -- “有没有真的拖动”一律相对按下的落点算：手指按在按键边缘时不会被误判成瞄准，
+    -- 这样轻点仍然走智能施法（自动瞄准）
+    local dragged = Dist(dx, dy, aim.sx, aim.sy) > AIM_DIR_DEADZONE
+
+    if spec.mode == "dir" then
+        -- 方向技能：以技能键为摇杆圆心 —— 手指从按键往上，技能就朝上
+        if len > AIM_DIR_DEADZONE then
+            aim.angle = math.atan(oy, ox)
+        end
+    else
+        -- 选位技能：两种手感，设置里切换
+        local maxR = math.min(spec.range or 9999, AimMaxRange(cs))
+        local byButton = not (S.data and S.data.aimMode == "screen")
+        local wx, wy
+        if byButton then
+            -- 技能键当摇杆：方向从按键算，拖动距离决定放多远
+            if dragged and len > AIM_DIR_DEADZONE then
+                local ang = math.atan(oy, ox)
+                local pull = math.min(1, len / AIM_FULL_PULL)
+                wx = p.x + math.cos(ang) * pull * maxR
+                wy = p.y + math.sin(ang) * pull * maxR
+            else
+                wx, wy = p.x, p.y
+            end
+        else
+            -- 屏幕落点：手指指哪放哪
+            local camX, camY = CameraPos(cs)
+            wx, wy = dx + camX, dy + camY
+            local d = Dist(p.x, p.y, wx, wy)
+            if d > maxR and d > 1 then
+                local k = maxR / d
+                wx = p.x + (wx - p.x) * k
+                wy = p.y + (wy - p.y) * k
+            end
+        end
+        aim.point = { x = wx, y = wy }
+        aim.angle = math.atan(wy - p.y, wx - p.x)
+    end
+
+    if Dist(dx, dy, aim.sx, aim.sy) > AIM_MOVE_EPS then aim.moved = true end
+    aim.fx, aim.fy = dx, dy
+    aim.cancel = InAimCancel(dx, dy)
+end
+
+-- 返回 true 表示这次触摸被瞄准逻辑吃掉了（不要再走 UI.Click）
+function Combat.AimPointer(phase, dx, dy, id)
+    local cs = S.combat
+    if S.screen ~= "combat" or not cs then return false end
+    if cs.showBuffs or cs.paused then
+        if phase == "up" and cs.aim then
+            cs.aim = nil
+            return true
+        end
+        return false
+    end
+    local aim = cs.aim
+    if phase == "down" then
+        -- 瞄准期间只认“按下技能键的那根手指”，别的手指（比如左手摇杆）必须放行，
+        -- 否则一边瞄准一边就走不动了
+        if aim then return aim.tid ~= nil and aim.tid == id end
+        for _, b in ipairs(ACTION_BUTTONS) do
+            if b.kind == "skill" then
+                local sid = cs.run.loadout[b.slot]
+                local spec = sid and Config.SkillAimOf(sid)
+                if spec and Combat.SkillReady(cs, sid) then
+                    local bx, by, br = CtrlPos(b.id, b.x, b.y, b.r)
+                    local ddx, ddy = dx - bx, dy - by
+                    if ddx * ddx + ddy * ddy <= (br + 16) * (br + 16) then
+                        cs.aim = {
+                            slot = b.slot, id = sid, spec = spec, tid = id,
+                            t = 0, sx = dx, sy = dy, moved = false,
+                            bx = bx, by = by,        -- 技能键圆心：摇杆式瞄准的原点
+                            angle = cs.facing,
+                            point = { x = cs.player.x, y = cs.player.y },
+                            cancel = false,
+                        }
+                        AimUpdateTarget(cs, dx, dy)
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    elseif phase == "move" then
+        if not aim then return false end
+        if id and aim.tid and id ~= aim.tid then return false end
+        AimUpdateTarget(cs, dx, dy)
+        return true
+    elseif phase == "up" then
+        if not aim then return false end
+        if id and aim.tid and id ~= aim.tid then return false end
+        cs.aim = nil
+        if aim.cancel then
+            -- 拖进取消区域松手：不放技能、也不吃冷却
+            UI.SetToast("已取消施法", 0.8)
+            return true
+        end
+        if aim.t >= AimHoldValue() or aim.moved then
+            cs.facing = aim.angle
+            cs.aimLock = true
+            if aim.spec.mode == "point" then cs.aimPoint = aim.point end
+        end
+        Combat.CastSkill(aim.slot)
+        cs.aimLock = nil
+        cs.aimPoint = nil
+        return true
+    end
+    return false
+end
+
 local function DrawJoystick(cs)
     local js = cs.joystick
     if not js then return end
@@ -1091,7 +1314,6 @@ function Combat.AttackCooldown(cs)
     if IsRanger() then
         as = as * (1 + (p.intent or 0) * 0.08)
         as = as * (1 + (cs.rapidStacks or 0) * (0.06 + F(p, "rapidPct")))
-        if (cs.rangerSwap or 0) > 0 then as = as * (1 + 0.12 + F(p, "swapAs")) end
     end
     as = as * (1 + MissingHpBonus(p))
     local cd = 1 / math.max(0.2, as)
@@ -1313,6 +1535,10 @@ function Combat.HitEnemy(cs, e, amount, isSkill, physical, noCrit, src, forceCri
     if physical and e.crack > 0 then
         dmg = dmg * (1 + e.crack * 0.12)
     end
+    -- 破甲：普攻命中后目标受到的物理伤害提高（可被后续普攻/技能吃到）
+    if physical and (e.penVulnTimer or 0) > 0 then
+        dmg = dmg * (1 + F(p, "penVuln"))
+    end
     if physical and not isSkill and (e.hunt or 0) > 0 then
         dmg = dmg * (1 + e.hunt * 0.14) -- 猎痕只加成普攻
     end
@@ -1328,11 +1554,19 @@ function Combat.HitEnemy(cs, e, amount, isSkill, physical, noCrit, src, forceCri
     e.hp = e.hp - dmg
     e.hitFlash = 0.12
     AddParticles(cs, e.x, e.y, { 255, 236, 190 }, 3)
-    AddText(cs, e.x, e.y - e.radius - 16, string.format("%d", math.floor(dmg)),
-        crit and S.col.gold or S.col.text, crit and 34 or 28)
+    DmgText(cs, e.x, e.y - e.radius - 16, string.format("%d", math.floor(dmg)),
+        crit and S.col.gold or S.col.text, crit and 34 or 28, crit)
     Lifesteal(cs, dmg)
     if crit and p.critHeal > 0 then
         p.hp = math.min(p.maxHp, p.hp + p.critHeal)
+    end
+
+    -- 破甲：普攻给目标挂 4 秒易伤
+    if physical and not isSkill and F(p, "penVuln") > 0 and e.hp > 0 then
+        if (e.penVulnTimer or 0) <= 0 then
+            AddText(cs, e.x, e.y - (e.radius or 14) - 50, "破甲", { 255, 196, 120 }, 14)
+        end
+        e.penVulnTimer = 4.0
     end
 
     -- 流血（噬魂侵蚀 / 持续蚀伤）
@@ -1441,12 +1675,6 @@ function Combat.KillEnemy(cs, e)
         local n = math.random(drop[1], drop[2])
         cs.run.silver = cs.run.silver + n
         AddText(cs, e.x, e.y - e.radius - 34, "+" .. n, S.col.gold)
-        -- 打完精英回一点血：降低精英战的持续掉血成本
-        local heal = math.floor(cs.player.maxHp * 0.06)
-        if heal > 0 then
-            HealPlayer(cs.player, heal)
-            AddText(cs, cs.player.x, cs.player.y - 58, "+" .. heal, S.col.green, 15)
-        end
         cs.shake = math.max(cs.shake, 6)
     else
         cs.bossKilled = true
@@ -1467,15 +1695,29 @@ function Combat.DamagePlayer(cs, amount)
         return
     end
 
-    local parryCharges = math.floor(F(p, "parryCharges"))
-    if p.parryTimer > 0 and (p.parryLeft or 0) > 0 then
-        p.parryLeft = p.parryLeft - 1
-        if p.parryLeft <= 0 then p.parryTimer = 0 end
+    -- 卸势格挡：窗口内完全免伤（反复被砸也全挡），成功格挡给足反馈 + 剑气反打 + 技能冷却返还
+    if p.parryTimer > 0 then
+        p.parryLeft = math.max(0, (p.parryLeft or 0) - 1)
+        cs.parryFlash = 0.32
+        cs.parryCombo = (cs.parryCombo or 0) + 1
+        cs.shake = math.max(cs.shake, 7)
 
         AddIntent(p, 1 + math.floor(F(p, "parryIntent")))
-        AddText(cs, p.x, p.y - 40, "格挡", S.col.cyan)
-        AddRing(cs, p.x, p.y, 48, { 150, 235, 255 }, 0.28, 6)
-        AddParticles(cs, p.x, p.y, S.col.cyan, 8)
+        AddText(cs, p.x, p.y - 46, "格挡!", { 150, 235, 255 }, 22)
+        AddRing(cs, p.x, p.y, 76, { 150, 235, 255 }, 0.34, 7)
+        AddRing(cs, p.x, p.y, 52, { 235, 250, 255 }, 0.2, 4)
+        AddParticles(cs, p.x, p.y, S.col.cyan, 16)
+
+        -- 弹反剑气：正面 170 范围横扫，附带伤害
+        local riposte = 0.9 * (1 + F(p, "parryRiposte"))
+        Combat.ArcHitAt(cs, p.x, p.y, cs.facing, 170, math.rad(110), riposte, true, 0,
+            { src = "skill", slashColor = { 190, 245, 255 }, slashWidth = 7 })
+
+        -- 降低其他技能冷却
+        local refund = 0.8 + F(p, "parryCdr")
+        for oid, v in pairs(p.cooldowns) do
+            if oid ~= 5 and v > 0 then p.cooldowns[oid] = math.max(0, v - refund) end
+        end
 
         local heal = F(p, "parryHeal")
         if heal > 0 then
@@ -1548,7 +1790,7 @@ function Combat.DamagePlayer(cs, amount)
     if dmg > 0 then
         p.hp = p.hp - dmg
         cs.playerHitFlash = 0.18
-        AddText(cs, p.x, p.y - 46, string.format("-%d", math.floor(dmg)), S.col.red)
+        DmgText(cs, p.x, p.y - 46, string.format("-%d", math.floor(dmg)), S.col.red, 18)
         cs.shake = math.max(cs.shake, 5)
         if p.hurtHeal > 0 then
             p.hurtHealAmount = p.hurtHealAmount + dmg * p.hurtHeal
@@ -1986,7 +2228,8 @@ function Combat.RangerBasicAttack(cs)
         cs.rangerCrit = cs.rangerCrit - 1
     end
     if (cs.rangerSwap or 0) > 0 then
-        coef = coef * (1 + F(p, "swapBasicPct"))
+        -- 换位后第一发：伤害加成（原来给攻速，手感上体现不出来）
+        coef = coef * (1 + 0.25 + F(p, "swapBasicPct") + F(p, "swapAs"))
         hunt = hunt + 1 + math.floor(F(p, "swapHunt"))
         if F(p, "swapCrit") > 0 then crit = true end
         cs.rangerSwap = 0
@@ -2103,7 +2346,12 @@ function Combat.RangerCastSkill(slot)
         AimAt(cs, 900, math.rad(120))
         local function shoot()
             local target = NearestEnemy(cs, p.x, p.y, 900)
-            local facing = target and math.atan(target.y - p.y, target.x - p.x) or cs.facing
+            local facing
+            if cs.aimLock then
+                facing = cs.facing     -- 玩家手动瞄准的朝向
+            else
+                facing = target and math.atan(target.y - p.y, target.x - p.x) or cs.facing
+            end
             cs.snipeCharge = nil
             SpawnProj(cs, {
                 x = p.x, y = p.y,
@@ -2129,21 +2377,28 @@ function Combat.RangerCastSkill(slot)
         cs.rangerTraps = cs.rangerTraps or {}
         local maxTraps = 1 + math.floor(F(p, "trapCount"))
         if #cs.rangerTraps >= maxTraps then table.remove(cs.rangerTraps, 1) end
-        local trapR = 70 * (1 + F(p, "trapRadius"))
+        -- 夹子判定明显小于视觉外框，避免“擦边就触发”的错觉
+        local trapR = 46 * (1 + F(p, "trapRadius"))
+        local tx, ty = p.x + math.cos(cs.facing) * 90, p.y + math.sin(cs.facing) * 90
+        if cs.aimPoint then tx, ty = cs.aimPoint.x, cs.aimPoint.y end
+        local rx, ry = ResolveCircleWalls(cs, tx, ty, 10)
+        tx = Config.Clamp(rx, 20, WORLD_W - 20)
+        ty = Config.Clamp(ry, 20, WORLD_H - 20)
         cs.rangerTraps[#cs.rangerTraps + 1] = {
-            x = p.x, y = p.y, r = trapR,
+            x = tx, y = ty, r = trapR,
             t = 3 + F(p, "trapDur"), slow = 0.4 + F(p, "trapSlow"),
             hunt = 1 + math.floor(F(p, "trapHuntStacks")),
             crit = 1 + math.floor(F(p, "trapCritStacks")),
+            root = 1.2 + F(p, "trapRoot"),
             triggered = false,
         }
-        AddTelegraph(cs, { kind = "circle", x = p.x, y = p.y, r = trapR,
+        AddTelegraph(cs, { kind = "circle", x = tx, y = ty, r = trapR + 10,
             color = { 150, 240, 170 }, life = 0.5 })
-        AddText(cs, p.x, p.y - 50, "陷阱", S.col.green, 16)
+        AddText(cs, tx, ty - 30, "陷阱", S.col.green, 16)
     elseif id == 5 then
         AimAt(cs, 700, math.rad(110))
         local count = 4 + math.floor(F(p, "volleyArrows"))
-        local coef = 0.6 * (1 + F(p, "volleyPct"))
+        local coef = 0.85 * (1 + F(p, "volleyPct"))
         for i = 1, count do
             local spread = (i - (count + 1) / 2) * 0.10
             local ang = cs.facing + spread
@@ -2168,13 +2423,15 @@ function Combat.RangerCastSkill(slot)
         target = target or NearestEnemy(cs, p.x, p.y, 500)
         if target then
             local ang = math.atan(target.y - p.y, target.x - p.x)
-            local d = math.max(40, Dist(p.x, p.y, target.x, target.y) - 50)
-            local nx = p.x + math.cos(ang) * d
-            local ny = p.y + math.sin(ang) * d
+            -- 穿到目标身后落地，回头面对它
+            local behind = (target.radius or 14) + p.radius + 24
+            local nx = target.x + math.cos(ang) * behind
+            local ny = target.y + math.sin(ang) * behind
             local rx, ry = ResolveCircleWalls(cs, nx, ny, p.radius)
             local fromX, fromY = p.x, p.y
             p.x = Config.Clamp(rx, p.radius, WORLD_W - p.radius)
             p.y = Config.Clamp(ry, p.radius, WORLD_H - p.radius)
+            cs.facing = ang + math.pi
             AddTrail(cs, p.x, p.y, { 190, 245, 200 }, 13)
             AddTelegraph(cs, { kind = "line", x = fromX, y = fromY, x2 = p.x, y2 = p.y,
                 color = { 190, 245, 200 }, life = 0.34 })
@@ -2257,9 +2514,16 @@ function Combat.MageCastSkill(slot)
     end
     if F(p, "chaos") > 0 and math.random() < 0.2 then cs.chaosTimer = 1.0 end
 
-    local target = NearestEnemy(cs, p.x, p.y, 700)
-    local facing = target and math.atan(target.y - p.y, target.x - p.x) or cs.facing
-    cs.facing = facing
+    local target
+    if cs.aimPoint then target = NearestEnemyTo(cs, cs.aimPoint.x, cs.aimPoint.y, 280) end
+    target = target or NearestEnemy(cs, p.x, p.y, 700)
+    local facing
+    if cs.aimLock then
+        facing = cs.facing          -- 手动瞄准：用玩家选的方向
+    else
+        facing = target and math.atan(target.y - p.y, target.x - p.x) or cs.facing
+        cs.facing = facing
+    end
 
     local elemMul = sk.element and ElemMul(cs, sk.element) or 1
     if sk.element == "bolt" and F(p, "staticBolt") > 0 and InBoltField(cs) then
@@ -2405,7 +2669,8 @@ function Combat.MageCastSkill(slot)
             color = { 255, 235, 140 }, life = 0.55 })
     elseif id == 8 then
         local cx, cy = p.x + math.cos(facing) * 200, p.y + math.sin(facing) * 200
-        if target then cx, cy = target.x, target.y end
+        if cs.aimPoint then cx, cy = cs.aimPoint.x, cs.aimPoint.y
+        elseif target then cx, cy = target.x, target.y end
         AddBolt(cs, cx, cy - 240, cx, cy, { 255, 170, 100 }, 0.26)
         for _, e in ipairs(ArcTargets(cs, cx, cy, 0, 96, math.pi * 2)) do
             Combat.HitEnemy(cs, e, p.atk * 3.0 * skillMul * elemMul, true, true, false, "skill")
@@ -2609,11 +2874,15 @@ function Combat.CastSkill(slot)
         p.cooldowns[id] = cd
     end
 
-    -- 狂剑士：技能消耗当前生命 10%
+    -- 狂剑士：技能消耗当前生命 10%，但不会把自己扣到 25% 以下
     if F(p, "berserk") > 0 then
         local cost = p.hp * 0.10
-        p.hp = math.max(1, p.hp - cost)
-        AddText(cs, p.x, p.y - 52, string.format("-%d", math.floor(cost)), { 255, 120, 120, 255 }, 16)
+        local floorHp = p.maxHp * 0.25
+        if p.hp - cost < floorHp then cost = math.max(0, p.hp - floorHp) end
+        if cost > 0 then
+            p.hp = p.hp - cost
+            AddText(cs, p.x, p.y - 52, string.format("-%d", math.floor(cost)), { 255, 120, 120, 255 }, 16)
+        end
     end
 
     -- 柔化/速斩：技能后下一次普攻的额外剑意
@@ -2719,10 +2988,12 @@ function Combat.CastSkill(slot)
         end
         cs.shake = math.max(cs.shake, 6)
     elseif id == 5 then
-        -- 卸势格挡
-        p.parryTimer = 0.75 + F(p, "parryDur")
-        p.parryLeft = 1 + math.floor(F(p, "parryCharges"))
-        AddText(cs, p.x, p.y - 48, "格挡姿态", S.col.cyan)
+        -- 卸势格挡：1 秒内免伤，可连续挡下多次攻击
+        p.parryTimer = 1.0 + F(p, "parryDur")
+        p.parryLeft = 99
+        cs.parryFlash = 0.3
+        AddText(cs, p.x, p.y - 48, "格挡姿态", S.col.cyan, 18)
+        AddRing(cs, p.x, p.y, 66, { 150, 235, 255 }, 0.26, 5)
     elseif id == 6 then
         -- 瞬影连斩
         local stages = 2 + math.floor(F(p, "blinkStages"))
@@ -2842,12 +3113,12 @@ function Combat.SpearCastSkill(slot)
             color = { 255, 205, 140 }, life = 0.4 })
     elseif id == 2 then
         AimAt(cs, 360, math.rad(90))
-        local dashSpeed = 1050 * (1 + F(p, "dashDist"))
-        SpearStartDash(cs, 1.6 * (1 + F(p, "dashPct")), dashSpeed, 0.16,
+        local dashSpeed = 1080 * (1 + F(p, "dashDist"))
+        SpearStartDash(cs, 1.6 * (1 + F(p, "dashPct")), dashSpeed, 0.20,
             F(p, "dashInvuln") > 0, 0.10)
         cs.dash.usedMomentum = usedMomentum
         AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = cs.facing,
-            len = dashSpeed * 0.16 + 40, width = 62, color = { 255, 205, 150 }, life = 0.34 })
+            len = dashSpeed * 0.20 + 40, width = 62, color = { 255, 205, 150 }, life = 0.36 })
         if F(p, "next3aPct") > 0 then cs.next3aTimer = 3 end
         if F(p, "momentumOnSkill") > 0 then GainMomentum(p, 1) end
     elseif id == 3 then
@@ -2875,8 +3146,8 @@ function Combat.SpearCastSkill(slot)
             len = maxDist, width = 46, color = { 255, 205, 150 }, life = 0.5 })
         if F(p, "momentumOnSkill") > 0 then GainMomentum(p, 1) end
     elseif id == 5 then
-        AimAt(cs, 320, math.rad(100))
-        local back = 46 * (1 + F(p, "backDist"))
+        AimAt(cs, 360, math.rad(100))
+        local back = 60 * (1 + F(p, "backDist"))
         local bx = p.x - math.cos(cs.facing) * back
         local by = p.y - math.sin(cs.facing) * back
         local rx, ry = ResolveCircleWalls(cs, bx, by, p.radius)
@@ -2886,17 +3157,28 @@ function Combat.SpearCastSkill(slot)
         AddTrail(cs, p.x, p.y, { 255, 205, 150 }, 13)
         AddTelegraph(cs, { kind = "line", x = fromX, y = fromY, x2 = p.x, y2 = p.y,
             color = { 255, 205, 150 }, life = 0.3 })
+        local thrustRange = 170
+        local thrustArc = math.rad(85)
         AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = cs.facing,
-            range = 110 + 24, arc = math.rad(80), color = { 255, 205, 150 }, life = 0.42 })
+            range = thrustRange + 32, arc = thrustArc, color = { 255, 205, 150 }, life = 0.42 })
         if F(p, "backMs") > 0 then cs.spearMsTimer = 2 end
         if F(p, "momentumOnSkill") > 0 then GainMomentum(p, 1) end
         cs.pendingHits[#cs.pendingHits + 1] = { t = 0.14, fn = function()
-            local tx = p.x + math.cos(cs.facing) * 24
-            local ty = p.y + math.sin(cs.facing) * 24
-            Combat.ArcHitAt(cs, tx, ty, cs.facing, 110, math.rad(70),
-                1.6 * (1 + F(p, "backPct")), true, 0,
-                { src = "skill", slashColor = { 255, 205, 150 } })
-            for _, e in ipairs(ArcTargets(cs, tx, ty, cs.facing, 110, math.rad(70))) do
+            -- 后撤之后向前补一段突刺身位，缩掉“撤了打不到”的断层
+            local lunge = 52
+            local lx = p.x + math.cos(cs.facing) * lunge
+            local ly = p.y + math.sin(cs.facing) * lunge
+            local lrx, lry = ResolveCircleWalls(cs, lx, ly, p.radius)
+            p.x = Config.Clamp(lrx, p.radius, WORLD_W - p.radius)
+            p.y = Config.Clamp(lry, p.radius, WORLD_H - p.radius)
+            AddTrail(cs, p.x, p.y, { 255, 205, 150 }, 13)
+
+            local tx = p.x + math.cos(cs.facing) * 20
+            local ty = p.y + math.sin(cs.facing) * 20
+            Combat.ArcHitAt(cs, tx, ty, cs.facing, thrustRange, thrustArc,
+                1.75 * (1 + F(p, "backPct")), true, 0,
+                { src = "skill", slashColor = { 255, 205, 150 }, slashWidth = 8 })
+            for _, e in ipairs(ArcTargets(cs, tx, ty, cs.facing, thrustRange, thrustArc)) do
                 AddStagger(cs, e, 1)
                 if usedMomentum and (e.crack or 0) > 0 then TryCombo(cs, e, "震荡") end
                 if F(p, "backMomentum") > 0 and math.random() < F(p, "backMomentum") then
@@ -2908,6 +3190,7 @@ function Combat.SpearCastSkill(slot)
                     end
                 end
             end
+            cs.shake = math.max(cs.shake, 5)
         end }
     elseif id == 6 then
         SpearShock(cs, usedMomentum)
@@ -2939,6 +3222,11 @@ function Combat.Update(dt)
     local cs = S.combat
     if not cs then return end
     cs.time = cs.time + dt
+    -- 长按瞄准：计时；技能不再可用时自动取消
+    if cs.aim then
+        cs.aim.t = cs.aim.t + dt
+        if not Combat.SkillReady(cs, cs.aim.id) then cs.aim = nil end
+    end
     if cs.joystick then cs.joystick.visible = not cs.showBuffs end
     if cs.shake > 0 then cs.shake = math.max(0, cs.shake - dt * 30) end
     if cs.attackFlash > 0 then cs.attackFlash = cs.attackFlash - dt end
@@ -2982,6 +3270,7 @@ function Combat.UpdatePlayer(cs, dt)
     p.noDamageTimer = p.noDamageTimer + dt
     if p.rageTimer > 0 then p.rageTimer = p.rageTimer - dt end
     if p.parryTimer > 0 then p.parryTimer = p.parryTimer - dt end
+    if (cs.parryFlash or 0) > 0 then cs.parryFlash = math.max(0, cs.parryFlash - dt) end
     if p.invulnTimer > 0 then p.invulnTimer = p.invulnTimer - dt end
     if IsSpear() then
         -- 枪势不会自然衰减
@@ -3149,6 +3438,13 @@ function Combat.UpdatePlayer(cs, dt)
                     local sk2 = Config.SkillByID(2)
                     local base = (sk2 and sk2.cd or 6.0) * (1 - p.cdr)
                     p.cooldowns[2] = math.max(0, (p.cooldowns[2] or 0) - base * F(p, "missRefund"))
+                end
+            elseif d.spear and #d.hit > 0 then
+                -- 突刺收尾：给一点停顿感（震屏 + 环 + 叠失衡），别像滑过去
+                cs.shake = math.max(cs.shake, 6)
+                AddRing(cs, p.x, p.y, 78, { 255, 205, 140 }, 0.24, 4)
+                for _, e in ipairs(cs.enemies) do
+                    if Dist(p.x, p.y, e.x, e.y) < 92 then AddStagger(cs, e, 1) end
                 end
             elseif d.src == "blink" and #d.hit == 0 and F(p, "missRefund") > 0 then
                 local sk6 = Config.SkillByID(6)
@@ -3412,6 +3708,7 @@ function Combat.UpdatePlayer(cs, dt)
             for _, e in ipairs(cs.enemies) do
                 if Dist(tr.x, tr.y, e.x, e.y) < tr.r + e.radius then
                     SlowEnemy(e, 2, tr.slow)
+                    e.rootTimer = math.max(e.rootTimer or 0, tr.root or 1.2)   -- 夹住：短时间不能移动
                     AddHunt(cs, e, tr.hunt)
                     if F(p, "trapHuntAoe") > 0 then
                         for _, o in ipairs(cs.enemies) do
@@ -3472,7 +3769,7 @@ function Combat.UpdatePlayer(cs, dt)
         Combat.BasicAttack(cs)
         p.attackTimer = Combat.AttackCooldown(cs)
     end
-    if p.attackTimer <= 0 and nearest then
+    if p.attackTimer <= 0 and nearest and Opt("autoAttack", true) then
         local class = Config.Class()
         local range = class.basicRange * (1 + p.rangePct) + nearest.radius
         if IsSpear() and p.intent > 0 then range = range + 32 end
@@ -3583,9 +3880,18 @@ function Combat.UpdateEnemies(cs, dt)
             if e.huntTimer <= 0 then e.hunt = 0 end
         end
         if e.slowTimer > 0 then e.slowTimer = e.slowTimer - dt end
+        if (e.rootTimer or 0) > 0 then
+            e.rootTimer = e.rootTimer - dt
+            if e.rootTimer <= 0 then e.rootTimer = nil end
+        end
+        if (e.penVulnTimer or 0) > 0 then
+            e.penVulnTimer = e.penVulnTimer - dt
+            if e.penVulnTimer <= 0 then e.penVulnTimer = nil end
+        end
 
         local d = Dist(e.x, e.y, p.x, p.y)
         local spd = e.speed
+        if (e.rootTimer or 0) > 0 then spd = 0 end   -- 被夹子束缚
         if e.enraged then spd = spd * 1.3 end
         if e.slowTimer > 0 then spd = spd * (1 - (e.slowPct or 0.45)) end
         if (e.freezeTimer or 0) > 0 then spd = spd * 0.15 end
@@ -3949,20 +4255,9 @@ end
 
 -- ---------------------------------------------------------------- 渲染
 local function CameraBegin(cs)
-    local camX = cs.player.x - S.designW / 2
-    local camY = cs.player.y - S.designH / 2
-    if WORLD_W <= S.designW then
-        camX = (WORLD_W - S.designW) / 2
-    else
-        camX = Config.Clamp(camX, 0, WORLD_W - S.designW)
-    end
-    if WORLD_H <= S.designH then
-        camY = (WORLD_H - S.designH) / 2
-    else
-        camY = Config.Clamp(camY, 0, WORLD_H - S.designH)
-    end
+    local camX, camY = CameraPos(cs)
     local sx, sy = 0.0, 0.0
-    if cs.shake > 0 then
+    if cs.shake > 0 and Opt("screenShake", true) then
         sx = (math.random() - 0.5) * cs.shake
         sy = (math.random() - 0.5) * cs.shake
     end
@@ -4064,7 +4359,9 @@ local function DrawEnemy(cs, e)
     local bx = e.x - bw / 2
     local by = e.y - r - 16
     UI.Panel(bx, by, bw, 6, 3, { 20, 14, 20, 220 })
-    UI.Bar(bx, by, bw, 6, e.hp / e.maxHp, e.kind == "boss" and S.col.orange or S.col.red)
+    if Opt("enemyHpBar", true) then
+        UI.Bar(bx, by, bw, 6, e.hp / e.maxHp, e.kind == "boss" and S.col.orange or S.col.red)
+    end
     if e.kind ~= "minion" then
         UI.Text(e.x, by - 18, 14, e.name, S.col.text, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
     end
@@ -4194,13 +4491,15 @@ local function DrawPlayer(cs)
     local atkRange = baseRange
     if IsSpear() and p.intent > 0 then atkRange = atkRange + 18 end
     local halfArc = class.basicArc / 2
-    if IsRanged() then
-        -- 远程职业只画一条瞄准线，避免大扇形挡住画面
-        UI.Line(p.x, p.y, p.x + math.cos(cs.facing) * atkRange,
-            p.y + math.sin(cs.facing) * atkRange,
-            { 150, 210, 255, 55 }, 2)
-    else
-        DrawSector(p.x, p.y, atkRange, cs.facing, halfArc, nvgRGBA(130, 200, 255, 18), nil)
+    if Opt("showSkillRange", true) then
+        if IsRanged() then
+            -- 远程职业只画一条瞄准线，避免大扇形挡住画面
+            UI.Line(p.x, p.y, p.x + math.cos(cs.facing) * atkRange,
+                p.y + math.sin(cs.facing) * atkRange,
+                { 150, 210, 255, 55 }, 2)
+        else
+            DrawSector(p.x, p.y, atkRange, cs.facing, halfArc, nvgRGBA(130, 200, 255, 18), nil)
+        end
     end
 
     if cs.attackFlash > 0 then
@@ -4234,15 +4533,39 @@ local function DrawPlayer(cs)
             { 110, 225, 255, math.floor(90 + 80 * pulse) }, 3)
     end
 
-    -- 卸势格挡：正面盾弧
+    -- 卸势格挡：横剑架势 + 正面盾弧 + 剩余时间呼吸
     if p.parryTimer > 0 then
-        local half = math.rad(55)
-        DrawArcBand(p.x, p.y, r + 10, r + 20, cs.facing - half, cs.facing + half,
-            { 140, 230, 255, 55 }, { 190, 245, 255, 235 }, 4)
-        if (p.parryLeft or 0) > 1 then
-            DrawArcBand(p.x, p.y, r + 23, r + 30, cs.facing - half, cs.facing + half,
-                { 140, 230, 255, 40 }, { 190, 245, 255, 180 }, 3)
-        end
+        local half = math.rad(70)
+        local pulse = 0.5 + 0.5 * math.sin(cs.time * 16)
+        DrawArcBand(p.x, p.y, r + 10, r + 22, cs.facing - half, cs.facing + half,
+            { 120, 225, 255, math.floor(60 + 45 * pulse) }, { 200, 248, 255, 240 }, 5)
+        DrawArcBand(p.x, p.y, r + 26, r + 32, cs.facing - half * 0.8, cs.facing + half * 0.8,
+            { 140, 230, 255, 26 }, { 190, 245, 255, 150 }, 2)
+        -- 横剑：剑身垂直于面朝方向横在胸前
+        local px = math.cos(cs.facing + math.pi / 2)
+        local py = math.sin(cs.facing + math.pi / 2)
+        local cx2 = p.x + math.cos(cs.facing) * (r + 12)
+        local cy2 = p.y + math.sin(cs.facing) * (r + 12)
+        local halfLen = r + 26
+        nvgBeginPath(S.ctx)
+        nvgMoveTo(S.ctx, cx2 - px * halfLen, cy2 - py * halfLen)
+        nvgLineTo(S.ctx, cx2 + px * halfLen, cy2 + py * halfLen)
+        nvgStrokeColor(S.ctx, nvgRGBA(225, 245, 255, 250))
+        nvgStrokeWidth(S.ctx, 6)
+        nvgStroke(S.ctx)
+        nvgBeginPath(S.ctx)
+        nvgMoveTo(S.ctx, cx2 - px * (halfLen + 3), cy2 - py * (halfLen + 3))
+        nvgLineTo(S.ctx, cx2 + px * (halfLen + 3), cy2 + py * (halfLen + 3))
+        nvgStrokeColor(S.ctx, nvgRGBA(150, 230, 255, 120))
+        nvgStrokeWidth(S.ctx, 2)
+        nvgStroke(S.ctx)
+    end
+
+    -- 格挡成功：强闪光环，一眼看得见
+    if (cs.parryFlash or 0) > 0 then
+        local k = math.min(1, cs.parryFlash / 0.32)
+        UI.Circle(p.x, p.y, r + 20 + (1 - k) * 48, { 190, 245, 255, math.floor(70 * k) },
+            { 235, 252, 255, math.floor(255 * k) }, 6)
     end
 
     -- 受击闪红
@@ -4271,8 +4594,9 @@ local function DrawPlayer(cs)
     local sy = p.y + math.sin(cs.facing) * (r + 4)
     local ex, ey
     if IsSpear() then
-        -- 武器长度固定在基础射程上：枪势只加判定范围，不把枪拉长
-        local len = baseRange + 22
+        -- 枪身长度贴合实际判定：命中范围是从角色中心算到怪物中心 + 怪物半径，
+        -- 所以枪尖画到 basicRange 附近即可，画太长会让人误以为能打到更远
+        local len = baseRange - 4
         ex = p.x + math.cos(cs.facing) * len
         ey = p.y + math.sin(cs.facing) * len
         nvgBeginPath(S.ctx)
@@ -4283,11 +4607,11 @@ local function DrawPlayer(cs)
         nvgStroke(S.ctx)
         -- 枪头
         nvgBeginPath(S.ctx)
-        local hx = ex + math.cos(cs.facing) * 10
-        local hy = ey + math.sin(cs.facing) * 10
+        local hx = ex + math.cos(cs.facing) * 8
+        local hy = ey + math.sin(cs.facing) * 8
         nvgMoveTo(S.ctx, hx, hy)
-        nvgLineTo(S.ctx, ex + math.cos(cs.facing + 0.5) * 6, ey + math.sin(cs.facing + 0.5) * 6)
-        nvgLineTo(S.ctx, ex + math.cos(cs.facing - 0.5) * 6, ey + math.sin(cs.facing - 0.5) * 6)
+        nvgLineTo(S.ctx, ex + math.cos(cs.facing + 0.5) * 5, ey + math.sin(cs.facing + 0.5) * 5)
+        nvgLineTo(S.ctx, ex + math.cos(cs.facing - 0.5) * 5, ey + math.sin(cs.facing - 0.5) * 5)
         nvgClosePath(S.ctx)
         nvgFillColor(S.ctx, nvgRGBA(255, 235, 190, 255))
         nvgFill(S.ctx)
@@ -4323,7 +4647,8 @@ local function DrawPlayer(cs)
         local oy = p.y + math.sin(cs.facing) * (r + 26)
         local pulse = 0.5 + 0.5 * math.sin(cs.time * 8)
         UI.Circle(ox, oy, 6 + pulse * 2, { 190, 160, 255, 120 }, { 220, 200, 255, 240 }, 2)
-    else
+    elseif not (p.parryTimer > 0) then
+        -- 剑：格挡时改画横剑（见上），平时正常指向面朝方向
         ex = p.x + math.cos(cs.facing) * (atkRange + 4)
         ey = p.y + math.sin(cs.facing) * (atkRange + 4)
         nvgBeginPath(S.ctx)
@@ -4506,20 +4831,26 @@ local function DrawTelegraphs(cs)
         local k = math.min(1, g.t / g.life)
         local a = math.floor(165 * (1 - k) * (1 - k))
         local c = g.color
+        -- 敌方预警加强（偏红的预警更亮更明显）
+        local warnW = 2
+        if Opt("bossWarn", true) and c[1] >= c[2] and c[1] >= c[3] then
+            a = math.min(255, math.floor(a * 1.55))
+            warnW = 3
+        end
         local fillA = math.floor(a * 0.14)
         if g.kind == "sector" then
             local half = g.arc / 2
             DrawSector(g.x, g.y, g.range, g.facing, half,
                 nvgRGBA(c[1], c[2], c[3], fillA), nil)
             DrawArcBand(g.x, g.y, g.range - 2, g.range, g.facing - half, g.facing + half,
-                nil, { c[1], c[2], c[3], a }, 2)
+                nil, { c[1], c[2], c[3], a }, warnW)
             UI.Line(g.x, g.y, g.x + math.cos(g.facing - half) * g.range,
                 g.y + math.sin(g.facing - half) * g.range, { c[1], c[2], c[3], math.floor(a * 0.55) }, 1)
             UI.Line(g.x, g.y, g.x + math.cos(g.facing + half) * g.range,
                 g.y + math.sin(g.facing + half) * g.range, { c[1], c[2], c[3], math.floor(a * 0.55) }, 1)
         elseif g.kind == "circle" then
             UI.Circle(g.x, g.y, g.r, { c[1], c[2], c[3], fillA },
-                { c[1], c[2], c[3], a }, 2)
+                { c[1], c[2], c[3], a }, warnW)
             UI.Circle(g.x, g.y, g.r * 0.55, nil, { c[1], c[2], c[3], math.floor(a * 0.30) }, 1)
         elseif g.kind == "corridor" then
             local dx, dy = math.cos(g.facing), math.sin(g.facing)
@@ -4549,7 +4880,7 @@ local function DrawTelegraphs(cs)
                 { c[1], c[2], c[3], math.floor(a * 0.45) }, 1)
         elseif g.kind == "line" then
             UI.Line(g.x, g.y, g.x2, g.y2, { c[1], c[2], c[3], a }, 3)
-            UI.Circle(g.x2, g.y2, 5, nil, { c[1], c[2], c[3], a }, 2)
+            UI.Circle(g.x2, g.y2, 5, nil, { c[1], c[2], c[3], a }, warnW)
         end
     end
     -- 蓄力中的狙击：随蓄力增长的前方指示
@@ -4561,8 +4892,8 @@ local function DrawTelegraphs(cs)
         local a = math.floor(70 + 110 * pulse * prog)
         local c = { 255, 230, 150 }
         UI.Line(ch.x, ch.y, ch.x + math.cos(ch.facing) * len, ch.y + math.sin(ch.facing) * len,
-            { c[1], c[2], c[3], a }, 2)
-        UI.Circle(ch.x, ch.y, 26 + 10 * prog, nil, { c[1], c[2], c[3], a }, 2)
+            { c[1], c[2], c[3], a }, warnW)
+        UI.Circle(ch.x, ch.y, 26 + 10 * prog, nil, { c[1], c[2], c[3], a }, warnW)
     end
 end
 
@@ -4630,13 +4961,20 @@ local function DrawRangedFx(cs)
             { 190, 150, 100, a }, 2)
     end
     for _, tr in ipairs(cs.rangerTraps or {}) do
-        UI.Circle(tr.x, tr.y, tr.r, { 120, 230, 150, 18 }, { 150, 240, 170, 190 }, 2)
-        for i = 1, 6 do
-            local a = i / 6 * math.pi * 2
-            UI.Line(tr.x, tr.y,
-                tr.x + math.cos(a) * tr.r, tr.y + math.sin(a) * tr.r,
-                { 150, 240, 170, 90 }, 2)
+        -- 夹子外形：底座 + 上下两片锯齿夹颚 + 中心触发板
+        local glow = 150 + math.floor(80 * (0.5 + 0.5 * math.sin(cs.time * 10)))
+        UI.Circle(tr.x, tr.y, tr.r + 9, { 40, 70, 52, 90 }, { 90, 170, 115, 120 }, 2)
+        DrawArcBand(tr.x, tr.y, tr.r - 7, tr.r, -math.pi + 0.22, -0.22,
+            { 70, 130, 95, 55 }, { 170, 240, 190, glow }, 4)
+        DrawArcBand(tr.x, tr.y, tr.r - 7, tr.r, 0.22, math.pi - 0.22,
+            { 70, 130, 95, 55 }, { 170, 240, 190, glow }, 4)
+        for i = 1, 8 do
+            local ang = (i - 0.5) / 8 * math.pi * 2
+            UI.Line(tr.x + math.cos(ang) * (tr.r - 9), tr.y + math.sin(ang) * (tr.r - 9),
+                tr.x + math.cos(ang) * (tr.r + 4), tr.y + math.sin(ang) * (tr.r + 4),
+                { 190, 245, 200, 190 }, 2)
         end
+        UI.Circle(tr.x, tr.y, 7, { 150, 240, 170, 60 }, { 200, 250, 210, 200 }, 2)
     end
     for _, f in ipairs(cs.mageFields or {}) do
         local c = { 255, 235, 140 }
@@ -4775,14 +5113,6 @@ local function DrawPause(cs)
     end, { fontSize = 16, fill = { 62, 34, 38, 255 }, stroke = { 130, 70, 76, 255 } })
 end
 
-local ACTION_BUTTONS = {
-    { id = "attack", x = 1186, y = 626, r = 48, key = "SPACE", kind = "attack" },
-    { id = "skill1", x = 1080, y = 624, r = 36, key = "J", kind = "skill", slot = 1 },
-    { id = "skill2", x = 1110, y = 526, r = 36, key = "K", kind = "skill", slot = 2 },
-    { id = "skill3", x = 1202, y = 514, r = 32, key = "L", kind = "skill", slot = 3 },
-}
-
-
 local function AttackInterval(cs)
     local p = cs.player
     local as = p.attackSpeed
@@ -4889,6 +5219,36 @@ local function DrawActionButton(b, label, color, remaining, total, enabled, char
     end
 end
 
+-- 瞄准时右上角的「取消施法」区域：手指拖进去，松手就不放技能
+local function DrawAimCancel(cs)
+    local aim = cs.aim
+    if not aim then return end
+    local z = AimCancelRect()
+    local active = aim.cancel
+
+    -- 技能键摇杆指示：从按键圆心连到手指，手指处画一个小圆（设置里可关）
+    if aim.fx and aim.bx and Opt("aimIndicator", true) then
+        local readyK = (aim.t >= AimHoldValue() or aim.moved) and 1 or 0.5
+        UI.Circle(aim.bx, aim.by, 26, nil, { 170, 215, 255, math.floor(70 * readyK) }, 2)
+        UI.Line(aim.bx, aim.by, aim.fx, aim.fy,
+            { 180, 225, 255, math.floor(120 * readyK) }, 2)
+        UI.Circle(aim.fx, aim.fy, 12,
+            { 180, 225, 255, math.floor(45 * readyK) },
+            { 220, 240, 255, math.floor(220 * readyK) }, 2)
+    end
+    local fill = active and { 128, 38, 52, 238 } or { 26, 24, 38, 170 }
+    local stroke = active and { 255, 120, 120, 245 } or { 150, 150, 180, 175 }
+    UI.Panel(z.x, z.y, z.w, z.h, 12, fill, stroke, active and 3 or 2)
+    local cx, cy = z.x + z.w / 2, z.y + z.h / 2 - 12
+    local r = 15
+    UI.Line(cx - r, cy - r, cx + r, cy + r, stroke, 3)
+    UI.Line(cx - r, cy + r, cx + r, cy - r, stroke, 3)
+    UI.Text(z.x + z.w / 2, z.y + z.h - 24, 14,
+        active and "松手取消" or "取消施法",
+        active and { 255, 205, 205, 255 } or { 190, 190, 210, 220 },
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
 local function DrawActionButtons(cs)
     local p = cs.player
     cs.lastCd = cs.lastCd or {}
@@ -4928,6 +5288,7 @@ local function DrawActionButtons(cs)
                 "无", { 120, 120, 130 }, 0, 0, false)
         end
     end
+    DrawAimCancel(cs)
 end
 
 -- 状态/强化面板：战斗内 Tab 和选关界面共用同一套
@@ -5111,6 +5472,38 @@ local function RegisterControlRegions(cs)
     end
 end
 
+-- 长按瞄准：画出技能的实际作用范围
+local function DrawAimPreview(cs)
+    local aim = cs.aim
+    if not aim then return end
+    local p = cs.player
+    local spec = aim.spec
+    local ready = aim.t >= AimHoldValue() or aim.moved
+    local k = ready and 1 or 0.45
+    local function a(v) return math.floor(v * k) end
+    if spec.mode == "point" then
+        UI.Circle(aim.point.x, aim.point.y, spec.r, { 150, 240, 170, a(40) },
+            { 200, 252, 215, a(225) }, 3)
+        UI.Line(p.x, p.y, aim.point.x, aim.point.y, { 200, 252, 215, a(120) }, 2)
+        UI.Circle(aim.point.x, aim.point.y, 7, nil, { 235, 255, 240, a(240) }, 2)
+        for i = 1, 4 do
+            local ang = i * math.pi / 2
+            UI.Line(aim.point.x + math.cos(ang) * (spec.r - 10), aim.point.y + math.sin(ang) * (spec.r - 10),
+                aim.point.x + math.cos(ang) * (spec.r + 6), aim.point.y + math.sin(ang) * (spec.r + 6),
+                { 200, 252, 215, a(180) }, 2)
+        end
+    else
+        DrawSector(p.x, p.y, spec.range, aim.angle, spec.arc / 2,
+            nvgRGBA(130, 210, 255, a(30)), nvgRGBA(205, 240, 255, a(180)), 3)
+        UI.Line(p.x, p.y, p.x + math.cos(aim.angle) * spec.range,
+            p.y + math.sin(aim.angle) * spec.range, { 215, 242, 255, a(130) }, 2)
+    end
+    if ready then
+        UI.Text(p.x, p.y - p.radius - 54, 13, "松手释放",
+            { 210, 240, 255, 220 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    end
+end
+
 function Combat.Draw()
     local cs = S.combat
     if not cs then return end
@@ -5130,6 +5523,7 @@ function Combat.Draw()
     DrawSpearShots(cs)
     DrawRangedFx(cs)
     DrawPlayer(cs)
+    DrawAimPreview(cs)
     DrawPhantoms(cs)
     DrawEffects(cs)
     CameraEnd()

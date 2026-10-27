@@ -231,7 +231,8 @@ Config.Buffs = {
         { id = "g_as", name = "急速强化", desc = "攻速 +50%", mod = { asPct = 0.50 } },
         { id = "g_ms", name = "移速强化", desc = "移速 +45%", mod = { msPct = 0.45 } },
         { id = "g_cdr", name = "冷却缩减强化", desc = "技能冷却 -35%", mod = { cdrPct = 0.35 } },
-        { id = "g_pen", name = "破甲", desc = "普攻无视 30% 护甲", mod = { armorPen = 0.30 } },
+        { id = "g_pen", name = "破甲", desc = "普通攻击伤害 +40%，普攻命中使目标受到的物理伤害 +8%（4 秒）。",
+          mod = { basicPct = 0.40 }, flag = { penVuln = 0.08 } },
         { id = "g_regen", name = "持续回复", desc = "每秒回复 3 点生命", mod = { regen = 3 } },
         { id = "g_revive", name = "复活", desc = "死亡时以 30% 生命复活一次", mod = { revive = 1 } },
     },
@@ -321,8 +322,8 @@ Config.ClassBuffs = {
               mod = {}, flag = { illusionChance = 0.35 } },
             { id = "sw_p_spin", name = "旋刃风暴", desc = "旋刃横斩范围 +22%、额外 20% 概率施加挫裂，连携伤害 +22%。",
               mod = {}, flag = { spinRange = 0.22, spinCrackChance = 0.2, comboDmg = 0.22 } },
-            { id = "sw_p_parry2", name = "铁壁卸锋", desc = "卸势格挡可抵挡 2 次伤害；格挡成功立刻获得 2 层剑意，之后 4 秒挫裂叠加上限 +1。",
-              mod = {}, flag = { parryCharges = 1, parryIntent = 2, parryCrackCap = 1 } },
+            { id = "sw_p_parry2", name = "铁壁卸锋", desc = "卸势格挡持续 +0.3 秒；格挡成功立刻获得 2 层剑意，额外返还 0.6 秒技能冷却，之后 4 秒挫裂叠加上限 +1。",
+              mod = {}, flag = { parryDur = 0.3, parryIntent = 2, parryCdr = 0.6, parryCrackCap = 1 } },
             { id = "sw_p_blinkcd", name = "瞬影卸锋", desc = "瞬影连斩冷却 -1 秒；格挡成功时为瞬影连斩补充 1 次免费充能；每段命中延长挫裂 0.5 秒。",
               mod = {}, flag = { blinkCd = -1, parryBlinkCharge = 1, blinkCrackExtend = 0.5 } },
         },
@@ -349,8 +350,8 @@ Config.ClassBuffs = {
         color = {
             { id = "sw_c_oni", name = "鬼剑术", desc = "剑意满时普攻变为远程拔刀剑气（3.4 倍伤害、贯穿并清弹幕）；技能伤害 +35%；剑气命中施加 1 层挫裂。",
               mod = { skillPct = 0.35 }, flag = { oni = 1 } },
-            { id = "sw_c_berserk", name = "狂剑士", desc = "技能伤害 +60%；释放技能消耗当前生命 10%；每损失 10% 生命获得 +5% 攻击 / 攻速 / 减伤（最多 50%）。",
-              mod = { skillPct = 0.6 }, flag = { berserk = 1 } },
+            { id = "sw_c_berserk", name = "狂剑士", desc = "技能伤害 +60%；造成伤害的 8% 回复生命；释放技能消耗当前生命 10%（不会低于 25% 最大生命）；每损失 10% 生命获得 +5% 攻击 / 攻速 / 减伤（最多 50%）。",
+              mod = { skillPct = 0.6, lifesteal = 0.08 }, flag = { berserk = 1 } },
             { id = "sw_c_symbiosis", name = "武链共生", desc = "攻击 40% 概率额外施加另外两种物理负面；可触发全部三套连携。代价：原生剑意与技能不再施加挫裂，负面叠层上限减半。",
               mod = {}, flag = { chainSymbiosis = 1, debuffChance = 0.4, comboMaster = 1 } },
             { id = "sw_c_compensate", name = "代偿流转", desc = "击杀时抽取目标全部负面并储存；接下来 5 次攻击将其施加给新敌人。代价：储存负面触发的连携伤害 -35%。",
@@ -514,7 +515,7 @@ Config.ClassBuffs = {
               mod = {}, flag = { trapSlow = 0.2, trapCd = -0.5, trapCritDur = 1 } },
             { id = "ra_b_volley", name = "齐射增益", desc = "箭影连射 +1 支箭，伤害 +13%。",
               mod = {}, flag = { volleyArrows = 1, volleyPct = 0.13 } },
-            { id = "ra_b_swap", name = "瞬跃增益", desc = "掠袭换位后攻速额外 +8%，瞬移后移速 +10%，该次普攻 +12%。",
+            { id = "ra_b_swap", name = "瞬跃增益", desc = "掠袭换位后该次普攻伤害额外 +8%，瞬移后移速 +10%，该次普攻 +12%。",
               mod = {}, flag = { swapAs = 0.08, swapMs = 0.10, swapBasicPct = 0.12 } },
         },
         purple = {
@@ -1003,7 +1004,7 @@ Config.ClassSkills = {
         {
             id = 5, name = "卸势格挡", short = "格", unlockLevel = 7,
             cd = 8.0,
-            desc = "架剑 0.75 秒，抵挡一次伤害；格挡成功获得 1 层剑意。格挡本身不造成伤害，也不触发连携。",
+            desc = "横剑架起 1 秒，期间完全免伤（可连挡多次攻击）。格挡成功立刻反击一道剑气（0.9 倍范围伤害）、获得 1 层剑意，并让其他技能冷却 -0.8 秒。",
         },
         {
             id = 6, name = "瞬影连斩", short = "瞬", unlockLevel = 9,
@@ -1020,7 +1021,7 @@ Config.ClassSkills = {
         {
             id = 2, name = "突刺奔袭", short = "突", unlockLevel = 1,
             cd = 6.0,
-            desc = "向前突刺 1.6 倍伤害，突进期间减伤 10%；命中施加 1 层挫裂。消耗 1 层枪势时，命中带挫裂目标触发震荡连携。",
+            desc = "向前突刺（距离更远），1.6 倍伤害，突进期间减伤 10%；命中施加 1 层挫裂，收尾震开周围敌人并叠失衡。消耗 1 层枪势时，命中带挫裂目标触发震荡连携。",
         },
         {
             id = 3, name = "铁枪固守", short = "守", unlockLevel = 3,
@@ -1035,7 +1036,7 @@ Config.ClassSkills = {
         {
             id = 5, name = "回马枪", short = "回", unlockLevel = 7,
             cd = 6.5,
-            desc = "后撤一步后向前猛刺，造成 1.6 倍伤害并施加 1 层失衡。消耗枪势时，命中带挫裂目标触发震荡连携。",
+            desc = "后撤一步再向前突刺：突刺距离与范围都更大，1.75 倍伤害并施加 1 层失衡。消耗枪势时，命中带挫裂目标触发震荡连携。",
         },
         {
             id = 6, name = "枪阵震地", short = "震", unlockLevel = 9,
@@ -1062,17 +1063,17 @@ Config.ClassSkills = {
         {
             id = 4, name = "猎影诱捕", short = "陷", unlockLevel = 5,
             cd = 11.0,
-            desc = "放置陷阱 3 秒：敌人触碰减速 40%、施加 1 层猎痕，并使你下一次普攻必定暴击。",
+            desc = "长按拖到指定位置放下夹子（3 秒）：敌人踩中会被束缚 1.2 秒、减速 40%、施加 1 层猎痕，并使你下一次普攻必定暴击。",
         },
         {
             id = 5, name = "箭影连射", short = "连", unlockLevel = 7,
             cd = 5.5,
-            desc = "向面前扇形射出 4 支箭，每支 0.6 倍伤害并施加猎痕；命中带失衡目标可触发追猎连携。",
+            desc = "向面前扇形射出 4 支箭，每支 0.85 倍伤害并施加猎痕；命中带失衡目标可触发追猎连携。",
         },
         {
             id = 6, name = "掠袭换位", short = "换", unlockLevel = 9,
             cd = 10.0,
-            desc = "瞬移到最近的带猎痕敌人身旁，下一次普攻攻速 +12% 并额外施加 2 层猎痕。",
+            desc = "瞬移到最近带猎痕的敌人身后，下一次普攻伤害 +25% 并额外施加 2 层猎痕。",
         },
     },
     mage = {
@@ -1125,6 +1126,37 @@ Config.ClassSkills = {
 }
 
 Config.Skills = Config.ClassSkills.swordsman
+
+-- ---------------------------------------------------------------- 技能长按瞄准
+-- 按住技能键 0.22 秒进入瞄准：dir = 选方向（显示扇形/直线预览），point = 选落点（显示圆圈）
+-- 松手立刻释放；轻点（不到 0.22 秒且没拖动）仍然是原来的自动瞄准
+Config.SkillAim = {
+    swordsman = {},
+    spearman = {
+        [2] = { mode = "dir", range = 230, arc = math.rad(44) },
+        [4] = { mode = "dir", range = 620, arc = math.rad(16) },
+        [5] = { mode = "dir", range = 240, arc = math.rad(85) },
+    },
+    ranger = {
+        [3] = { mode = "dir", range = 860, arc = math.rad(14) },
+        [4] = { mode = "point", range = 420, r = 56 },
+        [5] = { mode = "dir", range = 640, arc = math.rad(62) },
+    },
+    mage = {
+        [1] = { mode = "dir", range = 760, arc = math.rad(18) },
+        [2] = { mode = "dir", range = 128, arc = math.rad(62) },
+        [3] = { mode = "point", range = 620, r = 150 },
+        [4] = { mode = "dir", range = 860, arc = math.rad(12) },
+        [5] = { mode = "point", range = 620, r = 150 },
+        [6] = { mode = "dir", range = 120, arc = math.rad(140) },
+        [8] = { mode = "point", range = 520, r = 100 },
+    },
+}
+
+function Config.SkillAimOf(id)
+    local group = Config.SkillAim[Config.PlayerClass]
+    return group and group[id] or nil
+end
 
 function Config.SetClass(id)
     if Config.Classes[id] and Config.ClassSkills[id] then

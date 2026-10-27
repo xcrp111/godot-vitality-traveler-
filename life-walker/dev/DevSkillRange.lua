@@ -100,7 +100,7 @@ function Start()
     cs, p = Scene("ranger", { 3, 4, 5 }, { { 120, 0 } })
     Combat.CastSkill(2)                                             -- 猎影诱捕
     circ = HasKind(cs, "circle")
-    check("游侠 陷阱显示作用半径", circ ~= nil and math.abs(circ.r - 70) < 1, circ and circ.r)
+    check("游侠 陷阱显示作用半径", circ ~= nil and math.abs(circ.r - 56) < 1, circ and circ.r)
 
     cs.telegraphs = {}
     cs, p = Scene("ranger", { 3, 4, 5 }, { { 260, 60 } })

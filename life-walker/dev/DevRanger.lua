@@ -94,9 +94,12 @@ function Start()
     e = Place(cs, 30)
     Combat.CastSkill(4)
     check("陷阱生成", #cs.rangerTraps > 0, #cs.rangerTraps)
+    -- 夹子现在放在身前，把怪挪到夹子上再触发
+    if cs.rangerTraps[1] then e.x, e.y = cs.rangerTraps[1].x, cs.rangerTraps[1].y end
     Step(cs, 10)
     check("陷阱触发猎痕", (e.hunt or 0) > 0 and (cs.rangerCrit or 0) > 0,
         "hunt=" .. tostring(e.hunt) .. " crit=" .. tostring(cs.rangerCrit))
+    check("陷阱束缚目标", (e.rootTimer or 0) > 0, e.rootTimer)
 
     -- 箭影连射
     p.cooldowns[5] = 0
