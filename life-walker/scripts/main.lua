@@ -68,7 +68,7 @@ local function Boot()
     startStage = "class"
     Config.SetClass(Save.ActiveClass(S.data))
     if S.data.unlocked < 1 then S.data.unlocked = 1 end
-    S.selectedLevel = S.data.unlocked
+    S.selectedLevel = Save.MaxPlayable(S.data)
     S.screen = "menu"
 
     -- 背景音乐（无音频设备时静默跳过）
@@ -171,7 +171,7 @@ function HandleUpdate(eventType, eventData)
 
         UpdateKeyboardInput()
 
-        if S.screen == "combat" and S.combat then
+        if S.screen == "combat" and S.combat and not S.combat.paused then
             Combat.Update(dt)
         end
     end, function(e) return tostring(e) end)
@@ -359,11 +359,15 @@ function HandleKeyDown(eventType, eventData)
         elseif S.compendium then
             S.compendium = false
         elseif S.screen == "combat" and S.combat and S.combat.showBuffs then
-            if S.combat.buffDetail then
-                S.combat.buffDetail = nil
+            if S.combat.statusPanel and S.combat.statusPanel.detail then
+                S.combat.statusPanel.detail = nil
             else
                 S.combat.showBuffs = false
             end
+        elseif S.screen == "combat" and S.combat then
+            Combat.TogglePause()
+        elseif S.showStatus then
+            S.showStatus = false
         elseif S.skillPicker then
             S.skillPicker = false
         elseif S.screen == "reward" then

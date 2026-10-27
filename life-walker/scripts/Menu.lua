@@ -532,7 +532,7 @@ local function StartTestRun()
         for i = 1, 3 do loadout[i] = skills[i] or 0 end
     end
 
-    Run.Start(math.max(1, math.min(20, S.testLevel or 1)))
+    Run.Start(math.max(1, math.min(20, S.testLevel or 1)), true)
     Save.SetClassLevel(data, savedLevel)
     for i = 1, 3 do loadout[i] = savedLoadout[i] end
 
@@ -775,7 +775,7 @@ function Menu.DrawTestLab()
         }
         S.testDetail = nil
     end, { fontSize = 13 })
-    UI.Text(800, 604, 13, "关卡等级", S.col.dim)
+    UI.Text(800, 604, 13, "怪物等级", S.col.dim)
     UI.Button("test_lv_minus", 880, 594, 36, 34, "-", function()
         S.testLevel = math.max(1, (S.testLevel or 1) - 1)
     end, { fontSize = 16 })
@@ -785,7 +785,10 @@ function Menu.DrawTestLab()
     UI.Button("test_lv_plus", 990, 594, 36, 34, "+", function()
         S.testLevel = math.min(20, (S.testLevel or 1) + 1)
     end, { fontSize = 16 })
-    UI.Text(1036, 604, 11, "怪物数值按该关卡", S.col.dim)
+    local tl = math.max(1, math.min(20, S.testLevel or 1))
+    local mhp, matk = Config.MonsterStats(tl, 1, "minion")
+    UI.Text(1036, 594, 11, string.format("第 %d 关数值", tl), S.col.dim)
+    UI.Text(1036, 610, 11, string.format("小兵 %d血/%d攻", mhp, matk), S.col.cyan)
     UI.Button("test_start", 800, 632, 350, 34, "进入测试战斗", StartTestRun, {
         fontSize = 16, accent = S.col.green,
         fill = { 40, 74, 52, 255 }, stroke = { 90, 150, 105, 255 },
@@ -1046,11 +1049,17 @@ function Menu.Draw()
     end
     UI.Text(680, 448, 17,
         string.format("步数解锁：2000 / 8000 / 12000（今日可解锁 %d 关）", unlockCount), S.col.dim)
+    local maxPlayable = Save.MaxPlayable(data)
+    local clearedCount = math.min(20, data.stageCleared or 0)
     UI.Text(680, 476, 17,
-        string.format("已解锁关卡：1 ~ %d", data.unlocked), S.col.dim)
+        string.format("关卡进度：已通关 %d 关 · 可挑战 1 ~ %d", clearedCount, maxPlayable), S.col.dim)
+    if maxPlayable < data.unlocked then
+        UI.Text(680, 504, 15,
+            string.format("通关第 %d 关后才会开放新关卡（步数已够 %d 关）", maxPlayable, data.unlocked), S.col.orange)
+    end
 
     -- 底部：关卡选择 + 开始
-    local maxLv = data.unlocked
+    local maxLv = Save.MaxPlayable(data)
     UI.Button("lv_minus", 330, 580, 56, 56, "-", function()
         S.selectedLevel = math.max(1, S.selectedLevel - 1)
     end, { fontSize = 26 })
@@ -1064,23 +1073,42 @@ function Menu.Draw()
     UI.Button("start", 790, 574, 300, 68, "开始第 " .. S.selectedLevel .. " 关",
         StartLevel, { fontSize = 24, accent = S.col.green, fill = { 40, 74, 52, 255 } })
 
-    -- 开发：下一天 / 测试模式 / 重置存档
+    -- 开发模式（正式发布时把 State.lua 里的 S.dev 改成 false 即可整块隐藏）
     if S.dev then
-        UI.Button("devnextday", 64, 660, 130, 34, "下一天", function()
+        local dvx, dvy, dvw, dvh = 64, 648, 118, 32
+        local function DevX(i) return dvx + (i - 1) * (dvw + 10) end
+        UI.Button("devnextday", DevX(1), dvy, dvw, dvh, "下一天", function()
             Save.NextDay(S.data)
             UI.SetToast("已进入下一天，记得重新记录步数并领取", 2.4)
-        end, { fontSize = 15, fill = { 40, 58, 48, 255 }, stroke = { 80, 130, 96, 255 } })
-        UI.Button("devtest", 204, 660, 130, 34, "测试模式", function()
+        end, { fontSize = 14, fill = { 40, 58, 48, 255 }, stroke = { 80, 130, 96, 255 } })
+        UI.Button("devtest", DevX(2), dvy, dvw, dvh, "测试模式", function()
             S.test = true
             S.testPage = 1
-        end, { fontSize = 15, fill = { 40, 52, 74, 255 }, stroke = { 80, 110, 160, 255 } })
-        UI.Button("devreset", 344, 660, 130, 34, "重置存档", function()
+        end, { fontSize = 14, fill = { 40, 52, 74, 255 }, stroke = { 80, 110, 160, 255 } })
+        UI.Button("devunlock", DevX(3), dvy, dvw, dvh, "解锁关卡", function()
+            Save.DebugUnlockAll(S.data)
+            S.selectedLevel = Save.MaxPlayable(S.data)
+            UI.SetToast("已解锁到第 20 关", 2.0)
+        end, { fontSize = 14, fill = { 44, 56, 44, 255 }, stroke = { 96, 140, 96, 255 } })
+        UI.Button("devexp", DevX(4), dvy, dvw, dvh, "经验 +1000", function()
+            S.data.exp = (S.data.exp or 0) + 1000
+            Save.Write(S.data)
+            UI.SetToast("可分配经验 +1000", 1.8)
+        end, { fontSize = 14, fill = { 44, 52, 70, 255 }, stroke = { 90, 110, 150, 255 } })
+        UI.Button("devgold", DevX(5), dvy, dvw, dvh, "金币 +1000", function()
+            S.data.gold = (S.data.gold or 0) + 1000
+            Save.Write(S.data)
+            UI.SetToast("金币 +1000", 1.8)
+        end, { fontSize = 14, fill = { 58, 52, 36, 255 }, stroke = { 140, 120, 70, 255 } })
+        UI.Button("devreset", DevX(6), dvy, dvw, dvh, "重置存档", function()
             S.confirmReset = true
-        end, { fontSize = 15, fill = { 66, 40, 44, 255 }, stroke = { 130, 76, 82, 255 } })
-        UI.Text(490, 668, 14, "开发模式：推进日期 / 自选强化与怪物测试 / 清空存档", S.col.dim)
+        end, { fontSize = 14, fill = { 66, 40, 44, 255 }, stroke = { 130, 76, 82, 255 } })
+        UI.Text(64, 686, 12,
+            "开发模式：推进日期 / 自选强化与怪物测试 / 解锁关卡 / 加经验金币 / 清空存档（发布前把 State.lua 的 dev 改成 false）",
+            S.col.dim)
     end
 
-    UI.Text(64, 700, 13, "手机：左下摇杆 + 右下技能键　桌面：WASD 移动 / J K L 技能 / SPACE 平A / E 道具 / Tab 强化面板　普攻自动锁敌", S.col.dim)
+    UI.Text(64, 703, 12, "手机：左下摇杆 + 右下技能键　桌面：WASD 移动 / J K L 技能 / SPACE 平A / E 道具 / Tab 强化面板　普攻自动锁敌", S.col.dim)
 
     if S.confirmReset then
         Menu.DrawResetConfirm()

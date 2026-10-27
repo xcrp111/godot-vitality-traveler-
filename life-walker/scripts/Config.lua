@@ -164,7 +164,7 @@ Config.RoomWaves = {
 -- ---------------------------------------------------------------- 银币
 Config.SilverDrop = {
     minion = { 2, 4 },
-    elite = { 15, 25 },
+    elite = { 30, 45 },
     boss = { 0, 0 },
 }
 
@@ -201,6 +201,7 @@ Config.Buffs = {
         { id = "w_as", name = "急速", desc = "攻速 +12%", mod = { asPct = 0.12 } },
         { id = "w_ms", name = "迅捷", desc = "移速 +10%", mod = { msPct = 0.10 } },
         { id = "w_range", name = "普攻射程", desc = "普攻范围 +10%", mod = { rangePct = 0.10 } },
+        { id = "w_ms2", name = "轻身", desc = "移速 +12%", mod = { msPct = 0.12 } },
     },
     blue = {
         { id = "b_ms", name = "移速强化", desc = "移速 +18%", mod = { msPct = 0.18 } },
@@ -209,6 +210,7 @@ Config.Buffs = {
         { id = "b_cdr", name = "冷却缩减", desc = "技能冷却 -12%", mod = { cdrPct = 0.12 } },
         { id = "b_regen", name = "受创回复", desc = "受伤后 2 秒回复 10% 伤害", mod = { hurtHeal = 0.10 } },
         { id = "b_critls", name = "暴击吸血", desc = "暴击时回复 3 点生命", mod = { critHeal = 3 } },
+        { id = "b_wind", name = "疾风", desc = "移速 +15%，攻速 +8%", mod = { msPct = 0.15, asPct = 0.08 } },
     },
     purple = {
         { id = "p_cdr", name = "冷却缩减强化", desc = "技能冷却 -22%", mod = { cdrPct = 0.22 } },
@@ -218,6 +220,10 @@ Config.Buffs = {
         { id = "p_as", name = "急速强化", desc = "攻速 +35%", mod = { asPct = 0.35 } },
         { id = "p_ms", name = "移速强化", desc = "移速 +30%", mod = { msPct = 0.30 } },
         { id = "p_ls", name = "全局吸血", desc = "18% 吸血，单次不超过伤害 50%", mod = { lifesteal = 0.18 } },
+        { id = "p_reflect", name = "镜面反射", desc = "被弹幕命中时 35% 概率反弹一发（1.5 倍攻击），完全免伤",
+          mod = {}, flag = { reflectBullet = 0.35 } },
+        { id = "p_clear", name = "弹幕清除", desc = "普通攻击会击碎范围内的敌人子弹",
+          mod = {}, flag = { clearBullet = 1 } },
     },
     gold = {
         { id = "g_ls", name = "吸血", desc = "造成伤害的 5% 回复生命", mod = { lifesteal = 0.05 } },
@@ -746,16 +752,89 @@ function Config.ClassBuffNeed(buff)
     return group and group[buff.id] or nil
 end
 
+-- 元素类强化：只有携带了对应元素的技能，才可能抽到这条强化。
+-- 没写进来的 = 通用条目，任何配装都能出。
+-- 同时写多个元素（如元素协调）= 必须这几系都带着。
+Config.ClassBuffElements = {
+    mage = {
+        -- 火
+        ma_w_fire = { fire = true },
+        ma_w_spread = { fire = true },
+        ma_w_fireball = { fire = true },
+        ma_b_flame = { fire = true },
+        ma_b_ember = { fire = true },
+        ma_b_emberslow = { fire = true },
+        ma_b_meteor = { fire = true },
+        ma_p_lava = { fire = true },
+        ma_p_dragon = { fire = true },
+        ma_p_emberstorm = { fire = true },
+        ma_g_phoenix = { fire = true },
+        ma_g_burnshield = { fire = true },
+        ma_c_bake = { fire = true },
+        -- 冰
+        ma_w_ice = { ice = true },
+        ma_w_frostarc = { ice = true },
+        ma_w_icewave = { ice = true },
+        ma_w_blizzard = { ice = true },
+        ma_b_pierceice = { ice = true },
+        ma_b_iceshield = { ice = true },
+        ma_b_icespike = { ice = true },
+        ma_b_frostfield = { ice = true },
+        ma_p_frozen = { ice = true },
+        ma_p_nova = { ice = true },
+        ma_p_zero = { ice = true },
+        ma_g_winter = { ice = true },
+        ma_g_icearmor = { ice = true },
+        -- 电
+        ma_w_bolt = { bolt = true },
+        ma_w_chain = { bolt = true },
+        ma_w_boltstrike = { bolt = true },
+        ma_w_static = { bolt = true },
+        ma_b_chain = { bolt = true },
+        ma_b_recover = { bolt = true },
+        ma_b_static = { bolt = true },
+        ma_b_charge = { bolt = true },
+        ma_p_thunder = { bolt = true },
+        ma_p_storm = { bolt = true },
+        ma_p_thundergod = { bolt = true },
+        ma_g_thunder = { bolt = true },
+        ma_g_overload = { bolt = true },
+        -- 需要多系同时存在
+        ma_p_resonance = { fire = true, ice = true, bolt = true },
+        ma_c_melt = { fire = true, ice = true },
+    },
+}
+
+local ELEMENT_NAMES = { fire = "火系", ice = "冰系", bolt = "电系" }
+local ELEMENT_ORDER = { "fire", "ice", "bolt" }
+
+function Config.ClassBuffElementNeed(buff)
+    local group = Config.ClassBuffElements[Config.PlayerClass]
+    return group and group[buff.id] or nil
+end
+
+-- 返回「需要：xxx」文本；技能要求和元素要求会合并
 function Config.ClassBuffNeedText(buff)
+    local parts = {}
     local need = Config.ClassBuffNeed(buff)
-    if not need then return nil end
-    local names = {}
-    for _, id in ipairs(need) do
-        local sk = Config.SkillByID(id)
-        if sk then names[#names + 1] = sk.name end
+    if need then
+        local names = {}
+        for _, id in ipairs(need) do
+            local sk = Config.SkillByID(id)
+            if sk then names[#names + 1] = sk.name end
+        end
+        if #names > 0 then parts[#parts + 1] = table.concat(names, " + ") end
     end
-    if #names == 0 then return nil end
-    return table.concat(names, " + ")
+    local els = Config.ClassBuffElementNeed(buff)
+    if els then
+        local names = {}
+        for _, el in ipairs(ELEMENT_ORDER) do
+            if els[el] then names[#names + 1] = ELEMENT_NAMES[el] end
+        end
+        if #names > 0 then parts[#parts + 1] = table.concat(names, " + ") .. "技能" end
+    end
+    if #parts == 0 then return nil end
+    return table.concat(parts, " + ")
 end
 
 function Config.ClassBuffByID(id)
@@ -796,7 +875,7 @@ Config.Classes = {
         hp = { 43, 70, 100 },      -- Lv.1 / 10 / 20
         shield = { 22, 40, 60 },
         atk = { 8, 17, 27 },
-        speed = 4.4 * 32,           -- 像素/秒（4.4 米/秒）
+        speed = 4.7 * 32,           -- 像素/秒（4.7 米/秒）
         attackSpeed = 1.0,          -- 次/秒
         attackCdMul = 1.0,
         basicCoef = 1.0,
@@ -845,7 +924,7 @@ Config.Classes = {
         hp = { 22, 40, 60 },
         shield = { 16, 25, 35 },
         atk = { 8, 17, 27 },
-        speed = 3.5 * 32,
+        speed = 3.9 * 32,
         attackSpeed = 1.0,
         attackCdMul = 1.0,
         basicCoef = 0.6,

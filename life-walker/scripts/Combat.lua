@@ -124,6 +124,17 @@ local function AngleDiff(a, b)
     return math.abs(d)
 end
 
+-- 冲刺/闪避方向：有摇杆或键盘输入时朝输入方向，否则用面朝方向
+-- 返回 dirx, diry, angle, hasInput
+local function DashDir(cs)
+    local ix, iy = S.input.x, S.input.y
+    local len = math.sqrt(ix * ix + iy * iy)
+    if len > 0.25 then
+        return ix / len, iy / len, math.atan(iy, ix), true
+    end
+    return math.cos(cs.facing), math.sin(cs.facing), cs.facing, false
+end
+
 -- ---------------------------------------------------------------- 专属强化参数
 -- flags 由 Run.GrantBuff 累加，key 不存在时按 0 处理
 local function F(p, key)
@@ -335,7 +346,14 @@ local function AddCrack(cs, e, n)
     local before = e.crack or 0
     e.crack = math.min(CrackCap(cs), before + n)
     e.crackTimer = 4.0
-    if e.crack > before then AddParticles(cs, e.x, e.y, { 255, 170, 90 }, 2) end
+    if e.crack > before then
+        -- 挫裂：碎片粒子 + 飘字 + 橙色冲击环 + 目标短暂高亮，触发看得见
+        AddParticles(cs, e.x, e.y, { 255, 170, 90 }, 4)
+        AddText(cs, e.x, e.y - (e.radius or 14) - 34,
+            "挫裂 " .. e.crack, { 255, 178, 96 }, 15)
+        AddRing(cs, e.x, e.y, (e.radius or 14) + 16, { 255, 170, 90 }, 0.22, 3)
+        e.crackFlash = 0.18
+    end
 end
 
 local function AddStagger(cs, e, n)
@@ -822,6 +840,7 @@ function Combat.Start(run, roomType, step)
         attackFlash = 0,
         swordHeartTimer = 0,
         showBuffs = false,
+        paused = false,
         buttons = {},
         joystick = nil,
         windWaves = {},
@@ -1083,7 +1102,7 @@ end
 
 function Combat.ManualAttack()
     local cs = S.combat
-    if not cs or cs.showBuffs then return end
+    if not cs or cs.showBuffs or cs.paused then return end
     local p = cs.player
     if p.attackTimer > 0 then
         -- 冷却中点击：缓存一次，冷却结束立刻打出
@@ -1422,6 +1441,12 @@ function Combat.KillEnemy(cs, e)
         local n = math.random(drop[1], drop[2])
         cs.run.silver = cs.run.silver + n
         AddText(cs, e.x, e.y - e.radius - 34, "+" .. n, S.col.gold)
+        -- 打完精英回一点血：降低精英战的持续掉血成本
+        local heal = math.floor(cs.player.maxHp * 0.06)
+        if heal > 0 then
+            HealPlayer(cs.player, heal)
+            AddText(cs, cs.player.x, cs.player.y - 58, "+" .. heal, S.col.green, 15)
+        end
         cs.shake = math.max(cs.shake, 6)
     else
         cs.bossKilled = true
@@ -1741,6 +1766,19 @@ local function ApplyStoredDebuffs(cs, e)
 end
 
 function Combat.BasicAttack(cs)
+    -- 弹幕清除：普通攻击挥出去的同时，把攻击范围内的敌人子弹打碎
+    local cp = cs.player
+    if F(cp, "clearBullet") > 0 then
+        local base = Config.Class().basicRange or 80
+        local clearR = base * (1 + (cp.rangePct or 0)) * 1.15
+        for i = #cs.bullets, 1, -1 do
+            local b = cs.bullets[i]
+            if not b.shock and Dist(b.x, b.y, cp.x, cp.y) <= clearR then
+                AddParticles(cs, b.x, b.y, b.color or { 200, 225, 255 }, 3)
+                table.remove(cs.bullets, i)
+            end
+        end
+    end
     if IsSpear() then return Combat.SpearBasicAttack(cs) end
     if IsRanger() then return Combat.RangerBasicAttack(cs) end
     if IsMage() then return Combat.MageBasicAttack(cs) end
@@ -1796,8 +1834,9 @@ function Combat.SpearBasicAttack(cs)
     local range = class.basicRange + (p.rangePct or 0) * class.basicRange
     local arc = class.basicArc
     if held then
-        range = range + 32
-        arc = arc + math.rad(35)
+        -- 枪势加成收敛：原来 +32 距离 / +35° 扇形，视觉上像角色变大了一圈
+        range = range + 18
+        arc = arc + math.rad(18)
     end
     local seg = (cs.spearCombo or 0) + 1
     if seg > 3 then seg = 1 end
@@ -2037,9 +2076,17 @@ function Combat.RangerCastSkill(slot)
         AddTelegraph(cs, { kind = "circle", x = p.x, y = p.y, r = 54,
             color = { 150, 240, 170 }, life = 0.36 })
     elseif id == 2 then
+        -- 有摇杆/键盘输入时朝输入方向翻滚，没有输入才向后撤
         local back = 80
-        local bx = p.x - math.cos(cs.facing) * back
-        local by = p.y - math.sin(cs.facing) * back
+        local dirx, diry, ang, hasInput = DashDir(cs)
+        local bx, by
+        if hasInput then
+            bx = p.x + dirx * back
+            by = p.y + diry * back
+        else
+            bx = p.x - math.cos(cs.facing) * back
+            by = p.y - math.sin(cs.facing) * back
+        end
         local rx, ry = ResolveCircleWalls(cs, bx, by, p.radius)
         local fromX, fromY = p.x, p.y
         p.x = Config.Clamp(rx, p.radius, WORLD_W - p.radius)
@@ -2516,24 +2563,27 @@ SpawnAfterimage = function(cs, phantom, illusion, skillId)
 end
 
 local function StartDash(cs, coef, speed, t, src)
-    local p = cs.player
+    local dirx, diry, ang, hasInput = DashDir(cs)
+    if hasInput then cs.facing = ang end   -- 朝输入方向冲，冲完面朝也转过去
     cs.dash = {
-        t = t, dirx = math.cos(cs.facing), diry = math.sin(cs.facing),
+        t = t, dirx = dirx, diry = diry,
         speed = speed, coef = coef, hit = {}, src = src, iframe = true,
     }
 end
 
 -- 枪客突进：不是无敌，而是减伤（部分专属可以改成无敌）
 local function SpearStartDash(cs, coef, speed, t, iframe, dr)
-    local p = cs.player
+    local dirx, diry, ang, hasInput = DashDir(cs)
+    if hasInput then cs.facing = ang end
     cs.dash = {
-        t = t, dirx = math.cos(cs.facing), diry = math.sin(cs.facing),
+        t = t, dirx = dirx, diry = diry,
         speed = speed, coef = coef, hit = {}, src = "dash",
         spear = true, iframe = iframe, dr = dr or 0,
     }
 end
 
 function Combat.CastSkill(slot)
+    if S.combat and (S.combat.showBuffs or S.combat.paused) then return end
     if IsSpear() then return Combat.SpearCastSkill(slot) end
     if IsRanger() then return Combat.RangerCastSkill(slot) end
     if IsMage() then return Combat.MageCastSkill(slot) end
@@ -3516,6 +3566,9 @@ function Combat.UpdateEnemies(cs, dt)
         if e.hitFlash > 0 then e.hitFlash = e.hitFlash - dt end
         if (e.freezeTimer or 0) > 0 then e.freezeTimer = e.freezeTimer - dt end
         if (e.crack or 0) > 0 and F(p, "crackNoDecay") <= 0 then
+            if (e.crackFlash or 0) > 0 then
+                e.crackFlash = math.max(0, e.crackFlash - dt)
+            end
             if e.crackTimer > 0 then
                 e.crackTimer = e.crackTimer - dt
                 if e.crackTimer <= 0 then e.crack = 0 end
@@ -3778,6 +3831,20 @@ function Combat.UpdateBullets(cs, dt)
             if hit then
                 if (cs.guardTimer or 0) > 0 then
                     Combat.GuardBlockBullet(cs, b.x, b.y, b.color)
+                elseif F(p, "reflectBullet") > 0 and math.random() < F(p, "reflectBullet") then
+                    -- 镜面反射：把这一发打回去，本次免伤
+                    local target = NearestEnemy(cs, p.x, p.y, 700)
+                    local ang = target and math.atan(target.y - p.y, target.x - p.x)
+                        or math.atan(-b.vy, -b.vx)
+                    SpawnProj(cs, {
+                        x = p.x, y = p.y,
+                        vx = math.cos(ang) * 900, vy = math.sin(ang) * 900,
+                        r = 8, life = 1.3,
+                        dmg = p.atk * 1.5 * (1 + p.skillPct),
+                        isSkill = true, kind = "orb", color = { 150, 235, 255 },
+                    })
+                    AddText(cs, p.x, p.y - 44, "反弹", S.col.cyan, 16)
+                    AddRing(cs, p.x, p.y, 62, { 150, 235, 255 }, 0.26, 4)
                 else
                     Combat.DamagePlayer(cs, b.dmg)
                     AddParticles(cs, b.x, b.y, b.color, 4)
@@ -4002,7 +4069,17 @@ local function DrawEnemy(cs, e)
         UI.Text(e.x, by - 18, 14, e.name, S.col.text, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
     end
     if e.crack > 0 then
-        UI.Text(e.x + r + 10, e.y - 8, 13, "裂" .. e.crack, S.col.orange,
+        -- 挫裂：目标套一圈橙边，右侧显示层数，层数越高边越亮
+        local ca = math.floor(90 + 30 * e.crack + ((e.crackFlash or 0) > 0 and 110 or 0))
+        UI.Circle(e.x, e.y, r + 3, nil, { 255, 170, 90, math.min(255, ca) },
+            (e.crackFlash or 0) > 0 and 3 or 2)
+        -- 裂片小图标（三道斜线），比纯文字更直观
+        local gx, gy = e.x + r + 10, e.y - 8
+        for k = 0, 2 do
+            UI.Line(gx + k * 4, gy - 5, gx + k * 4 + 3, gy + 5,
+                { 255, 180, 100, 230 }, 1)
+        end
+        UI.Text(gx + 16, gy, 13, tostring(e.crack), S.col.orange,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     end
     if (e.stagger or 0) > 0 then
@@ -4113,8 +4190,9 @@ local function DrawPlayer(cs)
 
     -- 普攻范围与方向（与实际判定一致）
     local class = Config.Class()
-    local atkRange = class.basicRange * (1 + p.rangePct)
-    if IsSpear() and p.intent > 0 then atkRange = atkRange + 32 end
+    local baseRange = class.basicRange * (1 + p.rangePct)
+    local atkRange = baseRange
+    if IsSpear() and p.intent > 0 then atkRange = atkRange + 18 end
     local halfArc = class.basicArc / 2
     if IsRanged() then
         -- 远程职业只画一条瞄准线，避免大扇形挡住画面
@@ -4193,7 +4271,8 @@ local function DrawPlayer(cs)
     local sy = p.y + math.sin(cs.facing) * (r + 4)
     local ex, ey
     if IsSpear() then
-        local len = atkRange + 26
+        -- 武器长度固定在基础射程上：枪势只加判定范围，不把枪拉长
+        local len = baseRange + 22
         ex = p.x + math.cos(cs.facing) * len
         ey = p.y + math.sin(cs.facing) * len
         nvgBeginPath(S.ctx)
@@ -4229,17 +4308,21 @@ local function DrawPlayer(cs)
         nvgStrokeWidth(S.ctx, 1.5)
         nvgStroke(S.ctx)
     elseif IsMage() then
-        -- 法杖
-        local tx = p.x + math.cos(cs.facing + 0.6) * (r + 30)
-        local ty = p.y + math.sin(cs.facing + 0.6) * (r + 30)
+        -- 法杖：必须和弹道同向，否则瞄准和实际弹道会错位
+        local ax = cs.facing + 0.28
+        local tx = p.x + math.cos(ax) * (r + 30)
+        local ty = p.y + math.sin(ax) * (r + 30)
         nvgBeginPath(S.ctx)
-        nvgMoveTo(S.ctx, p.x + math.cos(cs.facing + 0.6) * 8, p.y + math.sin(cs.facing + 0.6) * 8)
+        nvgMoveTo(S.ctx, p.x + math.cos(ax) * 8, p.y + math.sin(ax) * 8)
         nvgLineTo(S.ctx, tx, ty)
         nvgStrokeColor(S.ctx, nvgRGBA(200, 180, 255, 235))
         nvgStrokeWidth(S.ctx, 4)
         nvgStroke(S.ctx)
+        -- 杖头光球放在正前方（弹道起点方向上），而不是偏 34 度
+        local ox = p.x + math.cos(cs.facing) * (r + 26)
+        local oy = p.y + math.sin(cs.facing) * (r + 26)
         local pulse = 0.5 + 0.5 * math.sin(cs.time * 8)
-        UI.Circle(tx, ty, 6 + pulse * 2, { 190, 160, 255, 120 }, { 220, 200, 255, 240 }, 2)
+        UI.Circle(ox, oy, 6 + pulse * 2, { 190, 160, 255, 120 }, { 220, 200, 255, 240 }, 2)
     else
         ex = p.x + math.cos(cs.facing) * (atkRange + 4)
         ey = p.y + math.sin(cs.facing) * (atkRange + 4)
@@ -4632,11 +4715,64 @@ local function DrawHUD(cs)
             NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
     end
 
-    if not cs.showBuffs then
+    if not cs.showBuffs and not cs.paused then
+        UI.Button("pause_btn", 1030, 96, 60, 36, "暂停", function()
+            Combat.SetPaused(cs, true)
+        end, { fontSize = 14, fill = { 40, 46, 62, 235 } })
         UI.Button("buff_toggle", 1100, 96, 156, 36, "强化面板 Tab", function()
             Combat.ToggleBuffPanel()
         end, { fontSize = 14, fill = { 40, 46, 62, 235 } })
     end
+end
+
+-- 暂停：停掉战斗更新，弹出继续 / 状态 / 退出
+function Combat.SetPaused(cs, v)
+    cs = cs or S.combat
+    if not cs then return end
+    cs.paused = v and true or false
+    if cs.paused then
+        S.input.x = 0
+        S.input.y = 0
+        if cs.joystick then
+            cs.joystick.active = false
+            cs.joystick.kx, cs.joystick.ky = cs.joystick.baseX, cs.joystick.baseY
+        end
+    end
+end
+
+function Combat.TogglePause()
+    local cs = S.combat
+    if not cs then return end
+    Combat.SetPaused(cs, not cs.paused)
+end
+
+local function DrawPause(cs)
+    nvgBeginPath(S.ctx)
+    nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
+    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 190))
+    nvgFill(S.ctx)
+
+    UI.Panel(430, 210, 420, 300, 18, { 28, 24, 38, 252 }, S.col.line, 1)
+    UI.Text(640, 244, 32, "已暂停", S.col.gold, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    UI.Text(640, 288, 13, "战斗已停止，随时可以回来", S.col.dim,
+        NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+
+    UI.Button("pause_resume", 470, 330, 340, 46, "继续游戏", function()
+        Combat.SetPaused(cs, false)
+    end, { fontSize = 17, accent = S.col.green, fill = { 40, 74, 52, 255 },
+        stroke = { 90, 150, 105, 255 } })
+
+    UI.Button("pause_status", 470, 388, 340, 42, "状态面板", function()
+        cs.statusPanel = cs.statusPanel or { page = 1, detail = nil }
+        Combat.SetPaused(cs, false)
+        cs.showBuffs = true
+    end, { fontSize = 16 })
+
+    local quitLabel = cs.testMode and "退出测试，返回主菜单" or "退出关卡"
+    UI.Button("pause_quit", 470, 440, 340, 42, quitLabel, function()
+        Combat.SetPaused(cs, false)
+        Run.ReturnToMenu()
+    end, { fontSize = 16, fill = { 62, 34, 38, 255 }, stroke = { 130, 70, 76, 255 } })
 end
 
 local ACTION_BUTTONS = {
@@ -4683,7 +4819,8 @@ local function ActionInfo(cs, b)
 end
 
 local function DrawCooldownWedge(x, y, r, progress)
-    local steps = 18
+    -- progress = 剩余比例（1 满冷却 -> 0 就绪）
+    local steps = 20
     nvgBeginPath(S.ctx)
     nvgMoveTo(S.ctx, x, y)
     for i = 0, steps do
@@ -4691,29 +4828,32 @@ local function DrawCooldownWedge(x, y, r, progress)
         nvgLineTo(S.ctx, x + math.cos(a) * (r - 1), y + math.sin(a) * (r - 1))
     end
     nvgClosePath(S.ctx)
-    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 155))
+    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 170))
     nvgFill(S.ctx)
 
+    -- 外圈：走完整圈的高亮弧，粗细随按钮大小走，远处也能看清还剩多少
     nvgBeginPath(S.ctx)
     for i = 0, steps do
         local a = -math.pi / 2 + progress * math.pi * 2 * (i / steps)
-        local px = x + math.cos(a) * (r - 3)
-        local py = y + math.sin(a) * (r - 3)
+        local px = x + math.cos(a) * (r - 2)
+        local py = y + math.sin(a) * (r - 2)
         if i == 0 then
             nvgMoveTo(S.ctx, px, py)
         else
             nvgLineTo(S.ctx, px, py)
         end
     end
-    nvgStrokeColor(S.ctx, nvgRGBA(255, 158, 64, 255))
-    nvgStrokeWidth(S.ctx, 5)
+    nvgStrokeColor(S.ctx, nvgRGBA(255, 168, 66, 255))
+    nvgStrokeWidth(S.ctx, math.max(4, math.floor(r * 0.16)))
     nvgStroke(S.ctx)
 end
 
-local function DrawActionButton(b, label, color, remaining, total, enabled, charges)
+local function DrawActionButton(b, label, color, remaining, total, enabled, charges, flashK)
     local x, y, r = b.x, b.y, b.r
     local key = b.key or ""
     local hasKey = key ~= ""
+    local cd = (enabled and remaining and remaining > 0) and remaining or 0
+
     UI.Circle(x, y, r, { 18, 16, 26, 230 },
         { color[1], color[2], color[3], enabled and 235 or 80 }, 2)
 
@@ -4723,24 +4863,36 @@ local function DrawActionButton(b, label, color, remaining, total, enabled, char
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     end
 
-    if enabled and remaining and remaining > 0 and total and total > 0 then
-        DrawCooldownWedge(x, y, r, math.min(1, remaining / total))
+    if cd > 0 and total and total > 0 then
+        DrawCooldownWedge(x, y, r, math.min(1, cd / total))
     end
 
-    UI.Text(x, hasKey and (y - 5) or y, r * 0.48, label, enabled and color or { 110, 106, 120, 255 },
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    -- 刚就绪：绿色扩散环，明确告诉玩家能按了
+    if flashK and flashK > 0 then
+        local k = math.min(1, flashK)
+        UI.Circle(x, y, r + 3 + 8 * (1 - k), nil,
+            { 120, 255, 160, math.floor(235 * k) }, 4)
+    end
+
+    if cd > 0 then
+        -- 冷却中：大号倒计时盖在按钮中央，一眼能看出还要等多久
+        UI.Text(x, y, math.max(15, math.floor(r * 0.60)), string.format("%.1f", cd),
+            { 255, 196, 120, 250 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    else
+        UI.Text(x, hasKey and (y - 5) or y, r * 0.48,
+            enabled and label or label, enabled and color or { 110, 106, 120, 255 },
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    end
     if hasKey then
         UI.Text(x, y + r * 0.40, math.max(10, r * 0.26), "[" .. key .. "]",
             { 205, 205, 215, 170 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    end
-    if enabled and remaining and remaining > 0 then
-        UI.Text(x, y + r * 0.72, 11, string.format("%.1f", remaining),
-            { 255, 176, 90, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
     end
 end
 
 local function DrawActionButtons(cs)
     local p = cs.player
+    cs.lastCd = cs.lastCd or {}
+    cs.readyAt = cs.readyAt or {}
     for _, b in ipairs(ACTION_BUTTONS) do
         local label, color, remaining, total, enabled = ActionInfo(cs, b)
         local charges = nil
@@ -4749,8 +4901,16 @@ local function DrawActionButtons(cs)
             charges = id and p.charges[id] or nil
         end
         local bx, by, br = CtrlPos(b.id, b.x, b.y, b.r)
+        -- 由冷却中变成就绪时记一个时间点，用来放就绪提示
+        local cd = (enabled and remaining and remaining > 0) and remaining or 0
+        local last = cs.lastCd[b.id] or 0
+        if last > 0.001 and cd <= 0.001 then cs.readyAt[b.id] = cs.time end
+        cs.lastCd[b.id] = cd
+        local flashK = 0
+        local since = cs.time - (cs.readyAt[b.id] or -99)
+        if since >= 0 and since < 0.45 then flashK = 1 - since / 0.45 end
         DrawActionButton({ x = bx, y = by, r = br, key = b.key, id = b.id },
-            label, color, remaining, total, enabled, charges)
+            label, color, remaining, total, enabled, charges, flashK)
     end
 
     local itemCount = #cs.run.items
@@ -4770,9 +4930,9 @@ local function DrawActionButtons(cs)
     end
 end
 
-local function DrawBuffPanel(cs)
-    local p = cs.player
-    local run = cs.run
+-- 状态/强化面板：战斗内 Tab 和选关界面共用同一套
+-- p=玩家 run=本局数据 st={page,detail} subtitle=副标题 onClose=关闭回调
+local function DrawBuffPanel(p, run, st, subtitle, onClose)
 
     nvgBeginPath(S.ctx)
     nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
@@ -4781,7 +4941,7 @@ local function DrawBuffPanel(cs)
 
     UI.Panel(300, 64, 680, 592, 18, { 28, 24, 38, 252 }, S.col.line, 1)
     UI.Text(340, 90, 30, "强化面板", S.col.gold)
-    UI.Text(340, 130, 14, "战斗已暂停 · 点击强化名字查看效果 · Tab / Esc 关闭", S.col.dim)
+    UI.Text(340, 130, 14, subtitle or "点击强化名字查看效果", S.col.dim)
 
     local summary = {
         { "银币", tostring(run.silver) },
@@ -4837,8 +4997,8 @@ local function DrawBuffPanel(cs)
         local cols, rowsPerPage = 4, 6
         local perPage = cols * rowsPerPage
         local pages = math.max(1, math.ceil(#order / perPage))
-        local page = math.min(pages, math.max(1, cs.buffPage or 1))
-        cs.buffPage = page
+        local page = math.min(pages, math.max(1, st.page or 1))
+        st.page = page
         local start = (page - 1) * perPage + 1
         local gridY = y0 + 34
         for i = start, math.min(#order, start + perPage - 1) do
@@ -4859,7 +5019,7 @@ local function DrawBuffPanel(cs)
                 UI.Text(x, y, 14, label, rc)
             end
             UI.Region("buff_item_" .. entry.buff.id, x - 4, y - 4, 152, 26, function()
-                cs.buffDetail = entry.buff.id
+                st.detail = entry.buff.id
             end, true)
         end
 
@@ -4875,20 +5035,20 @@ local function DrawBuffPanel(cs)
         end, { fontSize = 18 })
 
         -- 点击强化名字后的详情弹窗
-        if cs.buffDetail then
+        if st.detail then
             ---@type BuffGroup|nil
             local detail = nil
             for _, entry in ipairs(order) do
-                if entry.buff.id == cs.buffDetail then detail = entry break end
+                if entry.buff.id == st.detail then detail = entry break end
             end
             if not detail then
-                cs.buffDetail = nil
+                st.detail = nil
             else
                 local bf = detail.buff
                 local rarity = Config.Rarity[bf.rarity]
                 local rc = rarity and rarity.color or S.col.text
                 UI.Region("buff_detail_bg", 0, 0, Config.DESIGN_W, Config.DESIGN_H, function()
-                    cs.buffDetail = nil
+                    st.detail = nil
                 end, true)
                 UI.Panel(428, 188, 424, 278, 16, { 24, 21, 34, 255 }, rc, 2)
                 UI.Text(456, 210, 24, bf.name, rc)
@@ -4903,19 +5063,25 @@ local function DrawBuffPanel(cs)
                 UI.Text(456, 292, 13, "已获得 x" .. detail.count, S.col.dim)
                 UI.TextBox(456, 320, 368, 14, bf.desc or "", S.col.text)
                 UI.Button("buff_detail_close", 560, 414, 160, 40, "关闭", function()
-                    cs.buffDetail = nil
+                    st.detail = nil
                 end, { fontSize = 16 })
             end
         end
     end
 
     UI.Button("buff_close_btn", 760, 594, 180, 44, "关闭 (Esc)", function()
-        Combat.ToggleBuffPanel()
+        if onClose then onClose() end
     end, { fontSize = 18 })
 end
 
+-- 给外部（选关界面等）用的状态面板
+function Combat.DrawStatusPanel(p, run, st, subtitle, onClose)
+    if not p or not run then return end
+    DrawBuffPanel(p, run, st, subtitle, onClose)
+end
+
 local function RegisterControlRegions(cs)
-    if cs.showBuffs then
+    if cs.showBuffs or cs.paused then
         return
     end
     for _, b in ipairs(ACTION_BUTTONS) do
@@ -4971,7 +5137,16 @@ function Combat.Draw()
     DrawHUD(cs)
     DrawActionButtons(cs)
     if cs.showBuffs then
-        DrawBuffPanel(cs)
+        cs.statusPanel = cs.statusPanel or { page = 1, detail = nil }
+        DrawBuffPanel(cs.player, cs.run, cs.statusPanel,
+            "战斗已暂停 · 点击强化名字查看效果 · Tab / Esc 关闭",
+            function()
+                cs.showBuffs = false
+                cs.statusPanel.detail = nil
+            end)
+    end
+    if cs.paused then
+        DrawPause(cs)
     end
     RegisterControlRegions(cs)
 end

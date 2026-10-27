@@ -16,7 +16,8 @@ local function Defaults()
         exp = 0,                -- 可分配经验池（所有职业共用，需要玩家自己分配）
         levels = { swordsman = 1, spearman = 1, ranger = 1, mage = 1 },   -- 各职业等级
         classExp = { swordsman = 0, spearman = 0, ranger = 0, mage = 0 }, -- 各职业已投入、尚未消耗的经验
-        unlocked = 1,           -- 已解锁最高关卡
+        unlocked = 1,           -- 步数解锁到的最高关卡
+        stageCleared = 0,       -- 已通关的最高关卡（必须通关上一关才能进下一关）
         dayKey = "",
         todaySteps = 0,
         claimed = false,
@@ -164,6 +165,11 @@ function Save.SetClass(data, id)
 end
 
 local function MergeDefaults(data)
+    -- 旧存档没有通关记录：按原来的解锁进度补齐，避免进度倒退
+    if type(data.stageCleared) ~= "number" then
+        local u = type(data.unlocked) == "number" and data.unlocked or 1
+        data.stageCleared = math.max(0, u - 1)
+    end
     local def = Defaults()
     for k, v in pairs(def) do
         if data[k] == nil then
@@ -247,6 +253,31 @@ function Save.Load()
     data = MergeDefaults(data or {})
     Save.RollDay(data)
     return data
+end
+
+-- 实际可挑战的最高关卡：既要步数解锁，也要把上一关打完
+---@param data table
+---@return integer
+function Save.MaxPlayable(data)
+    local stepUnlocked = math.max(1, math.min(20, data.unlocked or 1))
+    local cleared = math.max(0, data.stageCleared or 0)
+    return math.max(1, math.min(stepUnlocked, cleared + 1))
+end
+
+-- 通关某一关后调用
+---@param data table
+---@param level integer
+function Save.MarkCleared(data, level)
+    data.stageCleared = math.max(data.stageCleared or 0, level)
+    Save.Write(data)
+end
+
+-- 开发用：直接把关卡进度推满
+---@param data table
+function Save.DebugUnlockAll(data)
+    data.unlocked = 20
+    data.stageCleared = 19
+    Save.Write(data)
 end
 
 ---@return boolean

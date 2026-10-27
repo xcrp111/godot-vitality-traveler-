@@ -26,6 +26,7 @@
 ---@field levels table<string, integer>
 ---@field classExp table<string, number>
 ---@field unlocked integer
+---@field stageCleared integer
 ---@field dayKey string
 ---@field todaySteps integer
 ---@field claimed boolean
@@ -85,6 +86,8 @@
 ---@field testLevel integer
 ---@field testDetail table|nil
 ---@field confirmReset boolean
+---@field showStatus boolean
+---@field statusPanel any
 ---@field col table
 
 ---@type GameState
@@ -109,6 +112,7 @@ local S = {
         levels = { swordsman = 1, spearman = 1, ranger = 1, mage = 1 },
         classExp = { swordsman = 0, spearman = 0, ranger = 0, mage = 0 },
         unlocked = 1,
+        stageCleared = 0,
         dayKey = "",
         todaySteps = 0,
         claimed = false,
@@ -149,6 +153,8 @@ local S = {
     testLevel = 1,
     testDetail = nil,
     confirmReset = false,
+    showStatus = false,
+    statusPanel = nil,
     col = {
         bg       = { 16, 14, 22, 255 },
         bg2      = { 24, 20, 32, 255 },

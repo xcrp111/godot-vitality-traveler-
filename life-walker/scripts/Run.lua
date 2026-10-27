@@ -187,7 +187,17 @@ function Run.Recompute(p)
     if p.shield > p.maxShield * 1.5 then p.shield = p.maxShield * 1.5 end
 end
 
-function Run.Start(level)
+function Run.Start(level, bypassGate)
+    -- 关卡门槛：步数解锁 + 上一关已通关（测试模式传 bypassGate=true 跳过）
+    level = math.max(1, math.min(20, math.floor(level or 1)))
+    if not bypassGate then
+        local maxPlayable = Save.MaxPlayable(S.data)
+        if level > maxPlayable then
+            print(string.format("[Run] level %d 未解锁（当前最高 %d），已自动降到 %d",
+                level, maxPlayable, maxPlayable))
+            level = maxPlayable
+        end
+    end
     Config.SetClass(Save.ActiveClass(S.data))
     local classLevel = Save.ClassLevel(S.data)
     local p = Run.NewPlayer(classLevel)
@@ -307,11 +317,8 @@ function Run.OnRoomCleared()
     run.cleared[Key(run.posR, run.posC)] = true
     if run.roomType == "boss" then
         local data = S.data
-        local nextLevel = run.level + 1
-        if nextLevel > data.unlocked and nextLevel <= 20 then
-            data.unlocked = nextLevel
-            Save.Write(data)
-        end
+        -- 通关记录：下一关要「步数解锁 + 上一关已通关」两个条件都满足才开放
+        Save.MarkCleared(data, run.level)
         S.screen = "levelclear"
         S.combat = nil
     else
@@ -376,9 +383,23 @@ end
 -- 专属强化要求的技能是否全部携带
 function Run.ClassBuffUsable(buff)
     local need = Config.ClassBuffNeed(buff)
-    if not need then return true end
-    for _, id in ipairs(need) do
-        if not Run.HasSkill(id) then return false end
+    if need then
+        for _, id in ipairs(need) do
+            if not Run.HasSkill(id) then return false end
+        end
+    end
+    -- 元素类强化：必须携带对应元素的技能（法师：没带冰系就抽不到冰系强化）
+    local needEl = Config.ClassBuffElementNeed(buff)
+    if needEl then
+        local carried = {}
+        local loadout = (S.run and S.run.loadout) or {}
+        for _, sid in ipairs(loadout) do
+            local sk = Config.SkillByID(sid)
+            if sk and sk.element then carried[sk.element] = true end
+        end
+        for el in pairs(needEl) do
+            if not carried[el] then return false end
+        end
     end
     return true
 end
@@ -857,6 +878,7 @@ end
 
 -- ---------------------------------------------------------------- 关卡结束
 function Run.ReturnToMenu()
+    S.showStatus = false
     ReleaseInput()
     S.input.x = 0
     S.input.y = 0

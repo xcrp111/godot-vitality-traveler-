@@ -5,6 +5,7 @@ local Config = require "Config"
 local Run = require "Run"
 local UI = require "UI"
 local S = require "State"
+local Combat = require "Combat"
 
 local Screens = {}
 
@@ -14,6 +15,18 @@ function Screens.DrawMap()
     if not run then return end
     local p = run.player
 
+    -- 选关时也能查看状态/强化面板
+    if S.showStatus then
+        S.statusPanel = S.statusPanel or { page = 1, detail = nil }
+        Combat.DrawStatusPanel(p, run, S.statusPanel,
+            "选关界面 · 点击强化名字查看效果 · Esc 返回",
+            function()
+                S.showStatus = false
+                S.statusPanel.detail = nil
+            end)
+        return
+    end
+
     UI.Text(64, 36, 38, "第 " .. run.level .. " 关", S.col.text)
     UI.Text(64, 88, 16, "选择一个相邻房间前进", S.col.dim)
 
@@ -22,6 +35,10 @@ function Screens.DrawMap()
     UI.Text(1056, 44, 22, tostring(run.silver), S.col.gold)
     UI.Text(998, 76, 15, "生命", S.col.dim)
     UI.Text(1056, 72, 18, math.floor(p.hp) .. " / " .. p.maxHp, S.col.text)
+    UI.Button("map_status", 980, 114, 236, 34, "状态面板", function()
+        S.showStatus = true
+        S.statusPanel = S.statusPanel or { page = 1, detail = nil }
+    end, { fontSize = 14 })
 
     local cell = 120
     local gap = 16
