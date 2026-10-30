@@ -4,6 +4,8 @@ local Config = require "Config"
 local Run = require "Run"
 local UI = require "UI"
 local S = require "State"
+local Save = require "Save"
+local Guild = require "Guild"
 
 ---@class Enemy
 ---@field id string
@@ -976,6 +978,13 @@ function Combat.Start(run, roomType, step)
         elseif fire >= 1 and ice >= 1 and bolt >= 1 then cs.mageSpec = "resonance" end
     end
     S.combat = cs
+    -- 公会团本：记录输出量用于评级
+    if roomType == "raid" then
+        cs.guildRaid = true
+        cs.raidDamage = 0
+        cs.raidBossMax = 0
+        cs.raidFinished = false
+    end
     GenerateWalls(cs)
     Combat.CreateControls(cs)
     Combat.SpawnWave(cs, cs.waves[1])
@@ -1423,6 +1432,10 @@ local function SpawnEnemy(cs, kind, defId)
     if not def then return end
 
     local hpm, atk = Config.MonsterStats(cs.run.level, cs.step, kind)
+    -- 公会团本：难度档位直接放大 Boss 伤害
+    if cs.guildRaid and kind == "boss" then
+        atk = atk * Guild.RaidAtkMul(cs.run.raidTier or 1)
+    end
     local x, y = 0, 0
     for _ = 1, 40 do
         local side = math.random(1, 4)
@@ -1503,7 +1516,8 @@ function Combat.SpawnWave(cs, wave)
         SpawnEnemy(cs, "elite", id)
     end
     for _ = 1, wave.boss or 0 do
-        SpawnEnemy(cs, "boss", late and "colossus" or "plague")
+        local bossId = cs.guildRaid and Guild.RAID_BOSS_ID or (late and "colossus" or "plague")
+        SpawnEnemy(cs, "boss", bossId)
     end
 end
 
@@ -1577,6 +1591,11 @@ function Combat.HitEnemy(cs, e, amount, isSkill, physical, noCrit, src, forceCri
     end
 
     e.hp = e.hp - dmg
+    -- 公会团本：累计对 Boss 的伤害，用于评级
+    if cs.guildRaid and e.kind == "boss" then
+        cs.raidDamage = (cs.raidDamage or 0) + dmg
+        if (e.maxHp or 0) > (cs.raidBossMax or 0) then cs.raidBossMax = e.maxHp end
+    end
     e.hitFlash = 0.12
     AddParticles(cs, e.x, e.y, { 255, 236, 190 }, 3)
     DmgText(cs, e.x, e.y - e.radius - 16, string.format("%d", math.floor(dmg)),
@@ -1693,11 +1712,13 @@ function Combat.KillEnemy(cs, e)
     if e.kind == "minion" then
         local drop = Config.SilverDrop.minion
         local n = math.random(drop[1], drop[2])
+        n = math.max(1, math.floor(n * Guild.SilverMul(S.data) + 0.5))
         cs.run.silver = cs.run.silver + n
         AddText(cs, e.x, e.y - e.radius - 34, "+" .. n, S.col.gold)
     elseif e.kind == "elite" then
         local drop = Config.SilverDrop.elite
         local n = math.random(drop[1], drop[2])
+        n = math.max(1, math.floor(n * Guild.SilverMul(S.data) + 0.5))
         cs.run.silver = cs.run.silver + n
         AddText(cs, e.x, e.y - e.radius - 34, "+" .. n, S.col.gold)
         cs.shake = math.max(cs.shake, 6)
@@ -1706,7 +1727,43 @@ function Combat.KillEnemy(cs, e)
         cs.shake = 18
         S.toast.text = "Boss 已击败"
         S.toast.t = 2.0
+        if cs.guildRaid then
+            Combat.FinishRaid(cs, true)
+            return
+        end
     end
+end
+
+-- 公会团本结算：killed = 是否真的打死了 Boss
+function Combat.FinishRaid(cs, killed)
+    if not cs or cs.raidFinished then return end
+    cs.raidFinished = true
+    local percent = 0
+    local maxHp = cs.raidBossMax or 0
+    if maxHp > 0 then
+        percent = math.floor((cs.raidDamage or 0) / maxHp * 100 + 0.5)
+    end
+    if killed and percent < 100 then percent = 100 end
+    if percent > 120 then percent = 120 end
+    local grade, coins, msg = Guild.CompleteRaid(S.data, percent, S.dev == true, cs.raidDamage)
+    local tierName = Guild.RaidTierInfo(cs.run and cs.run.raidTier or 1).name
+    Save.Write(S.data)
+    S.input.x = 0
+    S.input.y = 0
+    if cs.joystick then
+        cs.joystick.active = false
+        cs.joystick.kx, cs.joystick.ky = cs.joystick.baseX, cs.joystick.baseY
+    end
+    S.run = nil
+    S.combat = nil
+    S.reward = false
+    S.screen = "menu"
+    S.guild = true
+    S.guildTab = 4
+    S.toast.text = "团本结算（" .. tierName .. "）· " .. tostring(grade) .. " 级：" .. tostring(msg)
+    S.toast.t = 4.5
+    print("[Raid] finish " .. tostring(grade) .. " tier=" .. tierName .. " percent=" .. percent
+        .. " damage=" .. tostring(cs.raidDamage) .. " coins=" .. tostring(coins))
 end
 
 function Combat.DamagePlayer(cs, amount)
@@ -1842,12 +1899,21 @@ function Combat.DamagePlayer(cs, amount)
 
     -- 血量不足 1 点直接判死：避免浮点残血显示成 0 却“锁血”
     if p.hp < 0.5 then
-        if p.revive > 0 and not p.reviveUsed then
+        if p.guildInsurance and not p.guildInsuranceUsed then
+            p.guildInsuranceUsed = true
+            p.hp = 1
+            S.toast.text = "公会保险：致命伤保留 1 血"
+            S.toast.t = 2.0
+        elseif p.revive > 0 and not p.reviveUsed then
             p.reviveUsed = true
             p.hp = p.maxHp * 0.3
             p.shield = 0
             S.toast.text = "复活：以 30% 生命站起"
             S.toast.t = 2.0
+        elseif cs.guildRaid then
+            p.hp = 0
+            Combat.FinishRaid(cs, false)
+            return
         else
             p.hp = 0
             S.input.x = 0

@@ -68,6 +68,7 @@
 ---@field endlessMonthKey string
 ---@field endlessMonthBest integer
 ---@field devUnlockEndless boolean
+---@field guild table|nil
 -- SaveData 字段与 Save.lua 的 Defaults 保持一致
 
 ---@class KeyState
@@ -123,6 +124,8 @@
 ---@field settingsWipeConfirm boolean
 ---@field healthTasks boolean
 ---@field endlessPanel boolean
+---@field guild boolean
+---@field guildTab integer
 ---@field restPrompt any
 ---@field meditate any
 ---@field col table
@@ -220,6 +223,8 @@ local S = {
     testDetail = nil,
     healthTasks = false,
     endlessPanel = false,
+    guild = false,
+    guildTab = 1,
     restPrompt = nil,
     meditate = nil,
     settingsTab = "control",

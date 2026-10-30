@@ -452,11 +452,13 @@ Config.Endless = {
 Config.RoomNames = {
     start = "起点", light = "轻战房", standard = "标战房", mixed = "混战房",
     elite = "精英房", double = "双精房", shop = "商店房", event = "事件房", boss = "Boss房",
+    raid = "公会团本",
 }
 
 Config.RoomIcons = {
     start = "起", light = "战", standard = "战", mixed = "混",
     elite = "精", double = "精", shop = "商", event = "?", boss = "B",
+    raid = "团",
 }
 
 -- 波次：每波是 { minion = n, elite = n, boss = n }
@@ -480,6 +482,11 @@ Config.RoomWaves = {
         { elite = 1 },
     },
     boss = {
+        { minion = 2 },
+        { boss = 1 },
+    },
+    -- 公会团本：先清一小波杂兵，再进固定 Boss
+    raid = {
         { minion = 2 },
         { boss = 1 },
     },

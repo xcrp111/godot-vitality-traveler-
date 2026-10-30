@@ -2,6 +2,7 @@
 
 local Config = require "Config"
 local Save = require "Save"
+local Guild = require "Guild"
 local UI = require "UI"
 local S = require "State"
 
@@ -278,6 +279,9 @@ function Run.Start(level, bypassGate)
     Config.SetClass(Save.ActiveClass(S.data))
     local classLevel = Save.ClassLevel(S.data)
     local p = Run.NewPlayer(classLevel)
+    -- 公会科技：初始护盾 / 技能冷却 / 暴伤
+    Guild.ApplyRunMods(p, S.data)
+    Run.Recompute(p)
     ---@type RunState
     local run = {
         level = level,
@@ -293,6 +297,9 @@ function Run.Start(level, bypassGate)
         items = {},
     }
     ResetMapPos(run)
+    -- 公会局内特权：初始资金 / 保险 / 预警 / 重随券 / 钥匙
+    Guild.StartRun(run, S.data)
+    Save.Write(S.data)
     S.run = run
     S.screen = "map"
     S.combat = nil
@@ -310,6 +317,9 @@ function Run.StartEndless()
     local classLevel = Save.ClassLevel(S.data)
     local e = Config.Endless
     ---@type RunState
+    local p = Run.NewPlayer(classLevel)
+    Guild.ApplyRunMods(p, S.data)   -- 公会科技加成同样作用于无尽
+    Run.Recompute(p)
     local run = {
         level = e.levelOffset + 1,
         endless = true,
@@ -317,13 +327,15 @@ function Run.StartEndless()
         silver = 0,
         step = 0,
         map = (GenEndlessMap(1)),
-        player = Run.NewPlayer(classLevel),
+        player = p,
         loadout = BuildLoadout(classLevel),
         shop = nil,
         event = nil,
         items = {},
     }
     ResetMapPos(run)
+    Guild.StartRun(run, S.data)
+    Save.Write(S.data)
     run.lastLayerShop = Config.GridHasRoom(run.map, "shop")
     S.run = run
     S.screen = "map"
@@ -369,6 +381,71 @@ function Run.NextEndlessLayer()
     local res = Save.RecordEndless(S.data, run.layer)
     Run.AnnounceEndlessRecord(res)
     print(string.format("[Run] endless layer %d (等效第 %d 关)", run.layer, run.level))
+end
+
+-- ---------------------------------------------------------------- 公会团本
+-- 数值先按第 1 关关底（step 9）算，不跟角色进度走；难度档位放大 Boss 伤害
+function Run.StartRaid()
+    local Combat = require "Combat"
+    Config.SetClass(Save.ActiveClass(S.data))
+    local classLevel = Save.ClassLevel(S.data)
+    local p = Run.NewPlayer(classLevel)
+    Guild.ApplyRunMods(p, S.data)
+    Run.Recompute(p)
+
+    ---@type RunState
+    local run = {
+        level = 1,
+        endless = false,
+        layer = 0,
+        silver = 0,
+        step = 9,
+        map = { { "start" } },
+        player = p,
+        loadout = BuildLoadout(classLevel),
+        shop = nil,
+        event = nil,
+        items = {},
+        roomType = "raid",
+        guildRaid = true,
+        raidDamage = 0,
+        raidTier = Guild.RaidTier(S.data),
+    }
+    ResetMapPos(run)
+    Guild.StartRun(run, S.data)
+    Save.Write(S.data)
+    S.run = run
+    S.combat = nil
+    S.guild = false
+    S.reward = false
+    Combat.Start(run, "raid", 9)
+    S.screen = "combat"
+    print("[Raid] start guild raid, level " .. run.level)
+end
+
+-- 公会重随券：免费刷新奖励房的三选一
+function Run.RerollReward()
+    local reward = S.reward
+    local run = S.run
+    if not reward or not run then return false end
+    if (run.guildRerolls or 0) <= 0 then return false end
+    run.guildRerolls = run.guildRerolls - 1
+    local p = run.player
+    local weights = Config.RewardWeights[reward.roomType] or Config.RewardWeights.standard
+    local used, options = {}, {}
+    for i = 1, 3 do
+        local rarity = WeightedFrom(weights)
+        local buff = Run.RollAnyBuff(p, rarity)
+        local tries = 0
+        while used[buff.id] and tries < 12 do
+            buff = Run.RollAnyBuff(p, WeightedFrom(weights))
+            tries = tries + 1
+        end
+        used[buff.id] = true
+        options[i] = buff
+    end
+    S.reward = { options = options, roomType = reward.roomType, replace = reward.replace }
+    return true
 end
 
 function Run.Abort()

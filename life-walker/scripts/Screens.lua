@@ -6,6 +6,7 @@ local Run = require "Run"
 local UI = require "UI"
 local S = require "State"
 local Combat = require "Combat"
+local Guild = require "Guild"
 
 local Screens = {}
 
@@ -100,6 +101,15 @@ function Screens.DrawMap()
                     NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
             end
 
+            -- 公会特权·精英怪预警：提前标出精英 / Boss 房
+            if run.guildEliteWarn and not visited then
+                if roomType == "elite" or roomType == "double" or roomType == "boss" then
+                    UI.Circle(x + cell - 22, y + 22, 15, { 120, 48, 52, 235 }, { 220, 110, 110, 255 }, 2)
+                    UI.Text(x + cell - 22, y + 22, 13, "险", S.col.text,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+                end
+            end
+
             if canMove then
                 UI.Region("cell_" .. r .. "_" .. c, x, y, cell, cell, function()
                     Run.Move(r, c)
@@ -127,6 +137,20 @@ function Screens.DrawMap()
     UI.Button("retreat", 1100, 640, 120, 44, "撤退", function()
         Run.Abort()
     end, { fontSize = 18, fill = { 52, 34, 38, 255 }, stroke = { 120, 60, 66, 255 } })
+
+    -- 公会钥匙：在地图上额外开一次三选一奖励房
+    if (run.guildKeys or 0) > 0 then
+        UI.Button("map_guild_key", 920, 640, 168, 44, "钥匙开箱 ×" .. run.guildKeys, function()
+            local ok, msg = Guild.UseKey(run, S.data)
+            if not ok then
+                UI.SetToast(msg)
+                return
+            end
+            Save.Write(S.data)
+            UI.SetToast(msg)
+            Run.OpenCombatReward("light")
+        end, { fontSize = 15, fill = { 40, 52, 70, 255 }, stroke = { 76, 110, 150, 255 } })
+    end
 end
 
 -- ---------------------------------------------------------------- 商店
@@ -312,6 +336,15 @@ function Screens.DrawReward()
     UI.Button("skip_reward", 490, 550, 300, 52, "跳过，拿 15 银币", function()
         Run.SkipReward()
     end, { fontSize = 18 })
+
+    -- 公会重随券：免费刷新三个选项
+    if (run.guildRerolls or 0) > 0 then
+        UI.Button("reward_reroll", 150, 550, 300, 52, "公会重随券（剩 " .. run.guildRerolls .. "）", function()
+            if Run.RerollReward() then
+                UI.SetToast("公会重随券：已刷新三个选项")
+            end
+        end, { fontSize = 17, fill = { 44, 42, 70, 255 }, stroke = { 96, 90, 160, 255 } })
+    end
 end
 
 -- ---------------------------------------------------------------- 结算

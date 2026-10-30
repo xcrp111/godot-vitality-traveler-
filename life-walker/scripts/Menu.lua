@@ -8,6 +8,8 @@ local Run = require "Run"
 local Combat = require "Combat"
 local Audio = require "Audio"
 local KbLayout = require "KbLayout"
+local Guild = require "Guild"
+local GuildUI = require "GuildUI"
 
 local Menu = {}
 
@@ -1121,6 +1123,10 @@ function Menu.Draw()
         Menu.DrawEndless()
         return
     end
+    if S.guild then
+        GuildUI.Draw()
+        return
+    end
     if S.test then
         Menu.DrawTestLab()
         return
@@ -1139,6 +1145,10 @@ function Menu.Draw()
         S.compendiumTab = 1
         S.codexPage = 1
     end, { fontSize = 16 })
+    UI.Button("guild", 744, 34, 130, 40, "公会", function()
+        S.guild = true
+        S.guildTab = S.guildTab or 1
+    end, { fontSize = 16, accent = S.col.cyan })
     UI.Button("settings", 890, 34, 120, 40, "设置", function()
         S.settings = true
     end, { fontSize = 16 })
@@ -1251,7 +1261,7 @@ function Menu.Draw()
         S.selectedLevel = S.data.unlocked
         if g > 0 or unlocks > 0 or rg > 0 then
             local msg = string.format("获得 %d 金币，可分配经验 +%d，解锁 %d 关，连续 %d 天",
-                g, g + (extraExp or 0), unlocks, streak)
+                math.floor(g * Guild.GoldMul(S.data) + 0.5), g + (extraExp or 0), unlocks, streak)
             if (extraExp or 0) > 0 then
                 msg = msg .. string.format("（早睡奖励经验 +%d）", extraExp)
             end

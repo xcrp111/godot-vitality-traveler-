@@ -423,6 +423,8 @@ function HandleKeyDown(eventType, eventData)
             S.healthTasks = false
         elseif S.endlessPanel then
             S.endlessPanel = false
+        elseif S.guild then
+            S.guild = false
         elseif S.settings then
             S.settings = false
             S.settingsWipeConfirm = false

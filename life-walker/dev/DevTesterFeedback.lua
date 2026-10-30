@@ -48,13 +48,13 @@ function Start()
     check("3 法师朝向已设定", math.abs(cs.facing - 0.9) < 1e-6)
 
     -- 8 / 10. 冲刺跟随输入方向
-    cs = NewCombat("swordsman")
+    cs = NewCombat("swordsman", { 1, 2, 3 })
     S.input.x, S.input.y = 1, 0
     Combat.CastSkill(2)   -- 闪影突进
     check("8 有输入时按输入方向冲", cs.dash ~= nil and math.abs(cs.dash.dirx - 1) < 0.01,
         cs.dash and string.format("%.2f,%.2f", cs.dash.dirx, cs.dash.diry))
 
-    cs = NewCombat("swordsman")
+    cs = NewCombat("swordsman", { 1, 2, 3 })
     S.input.x, S.input.y = 0, 0
     cs.facing = 0
     Combat.CastSkill(2)

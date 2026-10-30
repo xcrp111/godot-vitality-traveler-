@@ -2,6 +2,7 @@
 -- 本地存档：金币 / 经验 / 职业等级 / 今日步数 / 关卡进度 / 技能配置
 
 local Config = require "Config"
+local Guild = require "Guild"
 
 local Save = {}
 
@@ -249,6 +250,7 @@ local function MergeDefaults(data)
     end
     if refund > 0 then data.exp = (data.exp or 0) + refund end
     data.loadout = nil
+    Guild.Ensure(data)   -- 公会存档结构（缺字段补默认）
     return data
 end
 
@@ -357,7 +359,9 @@ function Save.Claim(data, steps)
     end
 
     local gain, pct = Config.StepGold(steps)
-    data.gold = data.gold + gain
+    -- 公会科技·经济线：局外通用币收益 +1%/级
+    local goldGain = math.floor(gain * Guild.GoldMul(data) + 0.5)
+    data.gold = data.gold + goldGain
     data.exp = data.exp + gain
 
     -- 早睡奖励：昨天打过卡，今天领取时额外给经验
