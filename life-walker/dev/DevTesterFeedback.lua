@@ -83,17 +83,14 @@ function Start()
     check("7 反弹：打出自己的弹丸", #cs.projs >= 1, #cs.projs)
     check("7 反弹：敌方子弹被移除", #cs.bullets == 0, #cs.bullets)
 
-    cs = NewCombat("swordsman")
-    Run.GrantBuff(cs.player, { id = "p_clear", name = "弹幕清除", desc = "", rarity = "purple",
-        classBuff = false, mod = {}, flag = { clearBullet = 1 } })
-    cs.bullets = {}
-    for i = 1, 3 do
-        cs.bullets[i] = { x = cs.player.x + 20 + i * 10, y = cs.player.y, vx = 0, vy = 0, r = 8, life = 5, dmg = 5, color = { 200, 200, 255 } }
+    -- 「弹幕清除」紫色词条已按反馈移除（近程/远程判定太绕，先不做）
+    local hasClear = false
+    for _, rarity in ipairs({ "white", "blue", "purple", "gold" }) do
+        for _, b in ipairs(Config.Buffs[rarity] or {}) do
+            if b.flag and b.flag.clearBullet then hasClear = true end
+        end
     end
-    cs.bullets[4] = { x = cs.player.x + 900, y = cs.player.y, vx = 0, vy = 0, r = 8, life = 5, dmg = 5, color = { 200, 200, 255 } }
-    Combat.BasicAttack(cs)
-    check("7 消弹：范围内清空", #cs.bullets == 1, #cs.bullets)
-    check("7 消弹：范围外保留", cs.bullets[1] ~= nil and cs.bullets[1].x > cs.player.x + 500, cs.bullets[1] and cs.bullets[1].x)
+    check("7 弹幕清除词条已下架", not hasClear)
 
     -- 2. 枪势不再让普攻范围暴涨
     cs = NewCombat("spearman", { 1, 2, 4 })

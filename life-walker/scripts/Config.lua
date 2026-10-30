@@ -97,32 +97,356 @@ Config.Monsters = {
         id = "abscess", name = "脓肿岩行者", kind = "minion", behavior = "chase",
         radius = 18, speed = 88, color = { 190, 150, 100 }, lateGame = true,
         desc = "近战附带皮肤感染，残血滴落脓水",
-        codex = "近战挥拳命中会附加「感染」，4 秒内持续掉血；生命低于 40% 时会在脚下留下腐蚀脓水，站进去会持续受伤。",
+        codex = "近战挥拳命中会附加「感染」（状态栏有图标与倒计时），4 秒内每秒掉 0.45 倍攻击；生命低于 40% 时会在脚下留下腐蚀脓水（棕黄色冒泡地面），站进去会持续受伤。",
     },
     {
         id = "golem", name = "疫蚀石魔", kind = "elite", behavior = "golem",
         radius = 28, speed = 68, color = { 130, 120, 105 }, lateGame = true,
         desc = "重锤附带坏死，跺脚留下腐液",
-        codex = "精英模板。重锤命中附加「坏死」，4 秒内受到的治疗减半；每 5 秒跺脚向四周喷溅腐蚀腐液，站在腐液上会持续掉血并减速。",
+        codex = "精英模板。重锤命中附加「坏死」，4 秒内受到的治疗减半；每 5 秒跺脚留下腐蚀腐液（黄绿色冒泡地面，范围明显），站在上面会持续掉血并减速。",
     },
     {
         id = "colossus", name = "瘟衰巨像", kind = "boss", behavior = "colossus",
         radius = 50, speed = 58, color = { 120, 95, 135 }, lateGame = true,
         desc = "衰弱疫域 + 腐化冲击波",
-        codex = "Boss 模板。巨臂拍击附加「衰弱」，4 秒内攻击力 -20%；身边持续存在衰竭疫域（减速 + 掉血）；每 5 秒释放腐化冲击波；血量 50% 时进入狂暴，疫域扩大。",
+        codex = "Boss 模板。巨臂拍击附加「衰弱」，4 秒内攻击力 -20%；每 7 秒开启 3 秒「衰竭疫域」（紫色范围圈，减速 + 掉血，平时是关闭的，可以趁机贴脸）；每 5 秒释放腐化冲击波；血量 50% 时进入狂暴，疫域变成 5 秒一次、范围更大。",
     },
 }
 
 Config.MinionPool = { "germ", "spore", "worm" }
 
--- ---------------------------------------------------------------- 地图与房间
--- 4x4 固定布局：row 1 在上，col 1 在左；起点 (4,1)，终点 (1,4)
--- 类型：start / light / standard / mixed / elite / double / shop / event / boss
-Config.MapLayout = {
-    { "standard", "mixed", "elite", "boss" },
-    { "standard", "shop", "event", "elite" },
-    { "standard", "event", "mixed", "double" },
-    { "start", "standard", "shop", "mixed" },
+-- ---------------------------------------------------------------- 健康行为（维度二）
+-- 喝水 / 早睡 / 久坐提醒 / 冥想：都是「现实健康行为 → 游戏内收益」
+Config.Health = {
+    waterGoalMl = 2000,       -- 每日建议饮水量
+    waterStepMl = 250,        -- 每次打卡记录的量
+    waterHpPct = 0.10,        -- 达标后全局基础生命 +10%（不局限单局）
+    earlySleepExpPct = 0.30,  -- 早睡 → 次日领取步数时经验 +30%
+    playReminder = 1800,      -- 每玩 30 分钟提醒一次起来活动
+    restPromptDur = 30,       -- 活动弹窗持续 30 秒（期间不能操作游戏）
+    restMovePct = 0.10,       -- 活动完移速 +10%
+    restMoveBuffSec = 600,    -- 持续 10 分钟
+    meditateDur = 60,         -- 推荐冥想时长（秒），可选 60/120/180
+    meditateChoices = { 60, 120, 180 },
+    meditateCdrPct = 0.10,    -- 冥想完成：技能冷却 -10%
+    meditateBuffSec = 1800,   -- 持续 30 分钟
+}
+
+-- ---------------------------------------------------------------- 伪随机地图
+-- 不是纯随机抽格子，而是「手工模板 + 受控扰动」：
+--   1) 先按关卡权重抽一张排好的模板（保证有商店 / 事件 / 精英，路线不畸形）
+--   2) 有一定概率把商店房和事件房的位置对调（只换位置，不改数量）
+--   3) 按关卡做难度归一：算战斗房平均强度，太高就降级、太低就升级
+-- 每局地图都不一样，但不会随机出「一关全是双精房」这种打不过的图。
+--
+-- 模板约束（Config.CheckMap 会校验）：起点 (rows,1)、Boss (1,cols)、
+-- 起点右边第一间是战斗房、商店房 / 事件房至少各 1 个。
+Config.MapTemplates = {
+    { id = "classic", name = "标准路线", grid = {
+        { "standard", "mixed", "elite", "boss" },
+        { "standard", "shop", "event", "elite" },
+        { "standard", "event", "mixed", "double" },
+        { "start", "standard", "shop", "mixed" },
+    } },
+    { id = "supply", name = "双商补给线", grid = {
+        { "mixed", "elite", "mixed", "boss" },
+        { "standard", "shop", "elite", "event" },
+        { "standard", "event", "standard", "mixed" },
+        { "start", "standard", "shop", "standard" },
+    } },
+    { id = "heavy", name = "精英重压", grid = {
+        { "mixed", "elite", "double", "boss" },
+        { "standard", "mixed", "elite", "event" },
+        { "standard", "shop", "standard", "mixed" },
+        { "start", "standard", "event", "standard" },
+    } },
+    { id = "journey", name = "事件旅路", grid = {
+        { "standard", "event", "elite", "boss" },
+        { "mixed", "standard", "event", "elite" },
+        { "standard", "shop", "standard", "mixed" },
+        { "start", "standard", "event", "standard" },
+    } },
+    { id = "light", name = "轻战起步", grid = {
+        { "standard", "light", "elite", "boss" },
+        { "mixed", "standard", "mixed", "elite" },
+        { "standard", "shop", "event", "standard" },
+        { "start", "standard", "light", "mixed" },
+    } },
+    { id = "twins", name = "双精英", grid = {
+        { "standard", "mixed", "elite", "boss" },
+        { "standard", "elite", "event", "double" },
+        { "standard", "shop", "mixed", "elite" },
+        { "start", "standard", "event", "standard" },
+    } },
+    { id = "detour", name = "商店绕行", grid = {
+        { "standard", "event", "mixed", "boss" },
+        { "mixed", "shop", "standard", "elite" },
+        { "elite", "event", "standard", "mixed" },
+        { "start", "standard", "shop", "standard" },
+    } },
+}
+
+-- 无尽模式单层模板（3×3，起点 (3,1)、Boss (1,3)）
+-- 不是每层都有商店房：无商店的层后面一定跟一层有商店的（Run 里保证相邻两层至少一个商店）
+Config.EndlessTemplates = {
+    { id = "e01", grid = {                   -- 有商店
+        { "mixed", "elite", "boss" },
+        { "standard", "event", "elite" },
+        { "start", "standard", "shop" },
+    } },
+    { id = "e02", grid = {                   -- 有商店
+        { "standard", "shop", "boss" },
+        { "event", "mixed", "elite" },
+        { "start", "standard", "event" },
+    } },
+    { id = "e03", grid = {                   -- 有商店
+        { "elite", "event", "boss" },
+        { "standard", "mixed", "shop" },
+        { "start", "standard", "mixed" },
+    } },
+    { id = "e04", grid = {                   -- 有商店
+        { "standard", "event", "boss" },
+        { "mixed", "shop", "elite" },
+        { "start", "standard", "mixed" },
+    } },
+    { id = "e05", grid = {                   -- 有商店（前期轻一点）
+        { "light", "elite", "boss" },
+        { "standard", "event", "mixed" },
+        { "start", "standard", "shop" },
+    } },
+    { id = "e06", grid = {                   -- 有商店（带双精，偏难）
+        { "standard", "mixed", "boss" },
+        { "elite", "double", "shop" },
+        { "start", "standard", "event" },
+    } },
+    { id = "e07", grid = {                   -- 无商店：纯战斗层
+        { "mixed", "event", "boss" },
+        { "standard", "elite", "mixed" },
+        { "start", "standard", "event" },
+    } },
+    { id = "e08", grid = {                   -- 无商店
+        { "elite", "standard", "boss" },
+        { "standard", "event", "elite" },
+        { "start", "standard", "mixed" },
+    } },
+    { id = "e09", grid = {                   -- 无商店
+        { "standard", "mixed", "boss" },
+        { "event", "standard", "elite" },
+        { "start", "standard", "event" },
+    } },
+    { id = "e10", grid = {                   -- 无商店（前期轻一点）
+        { "light", "mixed", "boss" },
+        { "standard", "elite", "standard" },
+        { "start", "standard", "event" },
+    } },
+}
+
+-- 战斗房的难度权重（用来做关卡归一）
+Config.RoomCost = { light = 0.6, standard = 1.0, mixed = 1.4, elite = 2.2, double = 3.0 }
+
+-- 目标平均强度：第 1 关约 1.2，之后每关 +0.03（第 20 关约 1.75）
+-- 战斗房的组成只做小幅调整：只降级 / 只升到混战，不会凭空造精英房
+function Config.MapTargetCost(level)
+    level = math.max(1, math.min(60, math.floor(level or 1)))
+    return 1.15 + 0.03 * level
+end
+
+local COMBAT_SET = { light = true, standard = true, mixed = true, elite = true, double = true }
+local DOWN = { double = "elite", elite = "mixed", mixed = "standard", standard = "light" }
+local UP = { light = "standard", standard = "mixed" }
+
+local function CloneGrid(grid)
+    local out = {}
+    for r = 1, #grid do
+        out[r] = {}
+        for c = 1, #grid[r] do out[r][c] = grid[r][c] end
+    end
+    return out
+end
+
+-- 战斗房的平均强度（不算起点 / Boss / 商店 / 事件）
+function Config.AvgCombatCost(map)
+    local total, n = 0, 0
+    for r = 1, #map do
+        for c = 1, #map[r] do
+            local t = map[r][c]
+            if COMBAT_SET[t] then
+                total = total + (Config.RoomCost[t] or 1)
+                n = n + 1
+            end
+        end
+    end
+    if n == 0 then return 0 end
+    return total / n
+end
+
+-- 按关卡把强度往目标值上拉：太高降级、太低升级
+local function NormalizeMap(map, level)
+    local target = Config.MapTargetCost(level)
+    for _ = 1, 16 do
+        local avg = Config.AvgCombatCost(map)
+        if avg > target + 0.28 then
+            local best, bestCost = nil, -1
+            for r = 1, #map do
+                for c = 1, #map[r] do
+                    local t = map[r][c]
+                    if DOWN[t] and (Config.RoomCost[t] or 0) > bestCost then
+                        best, bestCost = { r, c }, Config.RoomCost[t] or 0
+                    end
+                end
+            end
+            if not best then break end
+            map[best[1]][best[2]] = DOWN[map[best[1]][best[2]]]
+        elseif avg < target - 0.30 then
+            local best, bestCost = nil, 99
+            for r = 1, #map do
+                for c = 1, #map[r] do
+                    local t = map[r][c]
+                    if UP[t] and (Config.RoomCost[t] or 0) < bestCost then
+                        best, bestCost = { r, c }, Config.RoomCost[t] or 0
+                    end
+                end
+            end
+            if not best then break end
+            map[best[1]][best[2]] = UP[map[best[1]][best[2]]]
+        else
+            break
+        end
+    end
+    -- 前 5 关不出双精房
+    if level < 6 then
+        for r = 1, #map do
+            for c = 1, #map[r] do
+                if map[r][c] == "double" then map[r][c] = "elite" end
+            end
+        end
+    end
+    return map
+end
+
+-- 商店房 / 事件房偶尔换位置（数量不变，只换路线体验）
+local function JitterSpecial(map)
+    if math.random() > 0.45 then return map end
+    local shops, events = {}, {}
+    for r = 1, #map do
+        for c = 1, #map[r] do
+            if map[r][c] == "shop" then shops[#shops + 1] = { r, c } end
+            if map[r][c] == "event" then events[#events + 1] = { r, c } end
+        end
+    end
+    if #shops == 0 or #events == 0 then return map end
+    local s = shops[math.random(1, #shops)]
+    local e = events[math.random(1, #events)]
+    map[s[1]][s[2]], map[e[1]][e[2]] = "event", "shop"
+    return map
+end
+
+local function PickTemplate(list, level)
+    local total = 0
+    local weights = {}
+    for i, t in ipairs(list) do
+        local w = 1
+        if level < (t.minLevel or 1) then w = 0.15 end
+        weights[i] = w
+        total = total + w
+    end
+    if total <= 0 then return list[math.random(1, #list)] end
+    local x = math.random() * total
+    for i, t in ipairs(list) do
+        x = x - weights[i]
+        if x <= 0 then return t end
+    end
+    return list[#list]
+end
+
+-- 主线地图：伪随机，返回 地图 + 模板 id
+---@param level integer
+---@return string[][], string
+function Config.PickMainMap(level)
+    level = math.max(1, math.floor(level or 1))
+    local tpl = PickTemplate(Config.MapTemplates, level)
+    local map = CloneGrid(tpl.grid)
+    JitterSpecial(map)
+    NormalizeMap(map, level)
+    return map, tpl.id
+end
+
+local function GridHasRoom(grid, kind)
+    for r = 1, #grid do
+        for col = 1, #grid[r] do
+            if grid[r][col] == kind then return true end
+        end
+    end
+    return false
+end
+Config.GridHasRoom = GridHasRoom
+
+-- 无尽模式单层地图：伪随机（难度按等效主线关卡归一）
+-- needShop = true 时只从「带商店房」的模板里抽（保证相邻两层之间至少有一个商店）
+---@param layer integer
+---@param needShop boolean|nil
+---@return string[][], string
+function Config.PickEndlessMap(layer, needShop)
+    layer = math.max(1, math.floor(layer or 1))
+    local level = Config.Endless.levelOffset + layer
+    local pool = {}
+    for _, t in ipairs(Config.EndlessTemplates) do
+        if not needShop or GridHasRoom(t.grid, "shop") then pool[#pool + 1] = t end
+    end
+    if #pool == 0 then pool = Config.EndlessTemplates end
+    local tpl = PickTemplate(pool, level)
+    local map = CloneGrid(tpl.grid)
+    JitterSpecial(map)
+    NormalizeMap(map, level)
+    return map, tpl.id
+end
+
+-- 校验一张图的硬约束（回归测试 / 模板自检用）
+-- opts.shop = false 表示允许这张图没有商店房（无尽模式里只有隔层保证）
+---@param map string[][]
+---@param opts table|nil
+---@return boolean, string|nil
+function Config.CheckMap(map, opts)
+    opts = opts or {}
+    local rows = #map
+    local cols = rows > 0 and #map[1] or 0
+    if rows == 0 or cols == 0 then return false, "空地图" end
+    if map[rows][1] ~= "start" then return false, "起点不在左下" end
+    if map[1][cols] ~= "boss" then return false, "Boss 不在右上" end
+    if cols >= 2 then
+        local t = map[rows][2]
+        if not COMBAT_SET[t] then return false, "起点右边第一间不是战斗房" end
+    end
+    local shop, event = 0, 0
+    for r = 1, rows do
+        for col = 1, cols do
+            if map[r][col] == "shop" then shop = shop + 1 end
+            if map[r][col] == "event" then event = event + 1 end
+        end
+    end
+    if opts.shop ~= false and shop < 1 then return false, "没有商店房" end
+    if opts.event ~= false and event < 1 then return false, "没有事件房" end
+    return true, nil
+end
+
+-- ---------------------------------------------------------------- 无尽模式
+-- 文档：无尽模式.docx
+--   解锁：主线通关第 10 关
+--   单层 3×3 共 9 个房间，从起点走到 Boss
+--   强度：等效主线关卡 N = 层数 L + 9（每层 +1 关）
+--   Buff 上限 10 个，满了以后每层改成「拿 1 个换掉 1 个」
+Config.Endless = {
+    unlockStage = 10,     -- 通关第 10 关解锁
+    rows = 3,
+    cols = 3,
+    buffCap = 10,         -- Buff 上限
+    levelOffset = 9,      -- 等效主线关卡 = 层数 + 9
+    medalMax = 20,        -- 记录勋章最高等级
+    scoreGold = 30,       -- 破纪录奖励：金币 = scoreGold + scoreGoldPerLayer * 层数
+    scoreGoldPerLayer = 10,
+    scoreExp = 30,        -- 破纪录奖励：经验（同上）
+    scoreExpPerLayer = 10,
+    leaderboard = "local", -- 排行榜目前只存本机记录（日 / 周 / 月 / 历史）
 }
 
 Config.RoomNames = {
@@ -219,14 +543,12 @@ Config.Buffs = {
         { id = "p_critdmg", name = "暴击伤害提升", desc = "暴击伤害 +30%", mod = { critDmg = 0.30 } },
         { id = "p_as", name = "急速强化", desc = "攻速 +35%", mod = { asPct = 0.35 } },
         { id = "p_ms", name = "移速强化", desc = "移速 +30%", mod = { msPct = 0.30 } },
-        { id = "p_ls", name = "全局吸血", desc = "18% 吸血，单次不超过伤害 50%", mod = { lifesteal = 0.18 } },
+        { id = "p_ls", name = "全局吸血", desc = "6% 吸血（普攻与技能都吃），单次最多回本次伤害的 100%", mod = { lifesteal = 0.06 } },
         { id = "p_reflect", name = "镜面反射", desc = "被弹幕命中时 35% 概率反弹一发（1.5 倍攻击），完全免伤",
           mod = {}, flag = { reflectBullet = 0.35 } },
-        { id = "p_clear", name = "弹幕清除", desc = "普通攻击会击碎范围内的敌人子弹",
-          mod = {}, flag = { clearBullet = 1 } },
     },
     gold = {
-        { id = "g_ls", name = "吸血", desc = "造成伤害的 5% 回复生命", mod = { lifesteal = 0.05 } },
+        { id = "g_ls", name = "吸血", desc = "造成伤害的 10% 回复生命（普攻与技能都吃），单次最多回本次伤害的 100%", mod = { lifesteal = 0.10 } },
         { id = "g_dodge", name = "闪避", desc = "10% 概率躲避伤害", mod = { dodge = 0.10 } },
         { id = "g_as", name = "急速强化", desc = "攻速 +50%", mod = { asPct = 0.50 } },
         { id = "g_ms", name = "移速强化", desc = "移速 +45%", mod = { msPct = 0.45 } },
@@ -244,7 +566,7 @@ Config.Buffs = {
 Config.ClassBuffs = {
     swordsman = {
         white = {
-            { id = "sw_w_sharpen", name = "利刃打磨", desc = "三段斩每段伤害 +8%；第三段命中 35% 概率额外施加 1 层挫裂。",
+            { id = "sw_w_sharpen", name = "利刃打磨", desc = "三段斩每段伤害 +8%；第三段命中 35% 概率额外施加 1 层挫裂（挫裂持续 4 秒，每层使目标受到的物理伤害 +12%）。",
               mod = {}, flag = { triplePct = 0.08, triple3CrackChance = 0.35 } },
             { id = "sw_w_dashcd", name = "疾行突袭", desc = "闪影突进冷却 -1.5 秒。",
               mod = {}, flag = { dashCd = -1.5 } },
@@ -414,8 +736,8 @@ Config.ClassBuffs = {
               mod = { basicPct = 0.32 }, flag = { comboFullRefund = 1, comboFullMomentum = 1 } },
             { id = "sp_p_break", name = "双重破军", desc = "突刺奔袭获得 2 层充能；对第 2 名及之后的敌人额外 0.33 倍伤害，命中积累失衡。",
               mod = {}, flag = { dashCharges = 1, dashPierce = 0.33, dashStagger = 1 } },
-            { id = "sp_p_air", name = "破空突袭", desc = "突刺奔袭期间无敌，伤害 +25%。",
-              mod = {}, flag = { dashInvuln = 1, dashPct = 0.25 } },
+            { id = "sp_p_air", name = "破空突袭", desc = "突刺奔袭伤害 +25%；冲刺结束后再无敌 0.25 秒（位移期间本来就无敌）。",
+              mod = {}, flag = { dashInvuln = 0.25, dashPct = 0.25 } },
             { id = "sp_p_resonance", name = "印记共振", desc = "攻击带失衡目标 30% 概率施加 1 层猎痕；消耗枪势的技能命中带挫裂+猎痕目标触发震荡。代价：猎痕持续减半，震荡扩散层数减半。",
               mod = {}, flag = { huntOnStagger = 0.3, momentumCombo = 1, huntDurMul = 0.5, spreadMul = 0.5 } },
             { id = "sp_p_illusion", name = "虚影回响", desc = "释放技能时 35% 概率召唤虚影，复刻该技能 35% 伤害并施加随机物理负面。",
@@ -989,7 +1311,7 @@ Config.ClassSkills = {
         {
             id = 2, name = "闪影突进", short = "突", unlockLevel = 1,
             cd = 6.0,
-            desc = "向前突进并造成 1.7 倍伤害，命中后该技能冷却 -0.8 秒。突进期间无敌（0.22 秒），可以穿怪。",
+            desc = "向前突进并造成 1.7 倍伤害，命中后该技能冷却 -0.8 秒；突进期间无敌（0.22 秒）、可以穿怪。点按立即朝最近敌人/输入方向释放，按住拖动可选方向。",
         },
         {
             id = 3, name = "剑心护体", short = "护", unlockLevel = 3,
@@ -1009,7 +1331,7 @@ Config.ClassSkills = {
         {
             id = 6, name = "瞬影连斩", short = "瞬", unlockLevel = 9,
             cd = 7.0,
-            desc = "两段短冲刺，每段 1.2 倍伤害，每段命中获得 1 层剑意。突进期间无敌（约 0.45 秒，覆盖两段之间的间隙）。",
+            desc = "两段短冲刺：第一段短促、第二段更重更亮，每段 1.2 倍伤害，段间约 0.2 秒停顿；每段命中获得 1 层剑意。突进期间无敌（覆盖两段之间的间隙）。",
         },
     },
     spearman = {
@@ -1036,7 +1358,7 @@ Config.ClassSkills = {
         {
             id = 5, name = "回马枪", short = "回", unlockLevel = 7,
             cd = 6.5,
-            desc = "后撤一步再向前突刺：突刺距离与范围都更大，1.75 倍伤害并施加 1 层失衡。消耗枪势时，命中带挫裂目标触发震荡连携。",
+            desc = "向前突刺（1.75 倍伤害、施加 1 层失衡），命中后顿一下再向后撤步拉开距离。消耗枪势时，命中带挫裂目标触发震荡连携。",
         },
         {
             id = 6, name = "枪阵震地", short = "震", unlockLevel = 9,
@@ -1073,7 +1395,7 @@ Config.ClassSkills = {
         {
             id = 6, name = "掠袭换位", short = "换", unlockLevel = 9,
             cd = 10.0,
-            desc = "瞬移到最近带猎痕的敌人身后，下一次普攻伤害 +25% 并额外施加 2 层猎痕。",
+            desc = "瞬移到最近带猎痕的敌人身后一段距离（不贴脸，留出拉弓空间），下一次普攻伤害 +25% 并额外施加 2 层猎痕。",
         },
     },
     mage = {
@@ -1131,7 +1453,11 @@ Config.Skills = Config.ClassSkills.swordsman
 -- 按住技能键 0.22 秒进入瞄准：dir = 选方向（显示扇形/直线预览），point = 选落点（显示圆圈）
 -- 松手立刻释放；轻点（不到 0.22 秒且没拖动）仍然是原来的自动瞄准
 Config.SkillAim = {
-    swordsman = {},
+    -- tapInstant：点按立即施法（自动索敌），只有真正拖动才进入选方向，
+    -- 不需要等 0.22 秒长按 —— 闪影突进这种应急位移必须瞬发
+    swordsman = {
+        [2] = { mode = "dir", range = 240, arc = math.rad(30), tapInstant = true },
+    },
     spearman = {
         [2] = { mode = "dir", range = 230, arc = math.rad(44) },
         [4] = { mode = "dir", range = 620, arc = math.rad(16) },

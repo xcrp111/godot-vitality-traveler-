@@ -32,6 +32,22 @@ local function Defaults()
         joyMode = "float",      -- 摇杆模式：fixed 固定位置 / float 按下即定位
         joyFollow = true,       -- 拖尾跟随：手指拖出圈时基座跟着走
         aimMode = "button",     -- 选位技能瞄准：button 技能键当摇杆 / screen 拖到屏幕对应位置
+        waterMl = 0,            -- 今日已记录饮水量（毫升）
+        sleptEarly = false,     -- 今日是否已打卡早睡
+        earlySleepPending = false, -- 早睡奖励：次日领取步数时结算
+        playSeconds = 0,        -- 累计游戏时长（秒），满 30 分钟提醒起身活动
+        moveBuffUntil = 0,      -- 起身活动奖励：移速加成到期时间（os.time）
+        cdrBuffUntil = 0,       -- 冥想奖励：冷却缩减加成到期时间（os.time）
+        -- 无尽模式记录（本机排行：日 / 周 / 月 / 历史）
+        endlessBest = 0,        -- 历史最高层数
+        endlessMedal = 0,       -- 记录勋章等级（每破一次个人纪录 +1）
+        endlessDayKey = "",
+        endlessDayBest = 0,
+        endlessWeekKey = "",
+        endlessWeekBest = 0,
+        endlessMonthKey = "",
+        endlessMonthBest = 0,
+        devUnlockEndless = false, -- 测试用：强制解锁无尽模式（不动真实进度）
         -- 画面与性能
         fpsCap = 60,            -- 帧率上限 30 / 60 / 120
         lowQuality = false,     -- 低画质：粒子/拖尾/残影减量
@@ -324,7 +340,10 @@ function Save.RollDay(data)
         data.dayKey = today
         data.todaySteps = 0
         data.claimed = false
+        data.waterMl = 0          -- 饮水量按天重置
+        data.sleptEarly = false   -- 早睡打卡按天重置（待领奖励留到下次领取）
     end
+    Save.RollEndless(data)
     return data
 end
 
@@ -341,6 +360,14 @@ function Save.Claim(data, steps)
     data.gold = data.gold + gain
     data.exp = data.exp + gain
 
+    -- 早睡奖励：昨天打过卡，今天领取时额外给经验
+    local extraExp = 0
+    if data.earlySleepPending then
+        extraExp = math.floor(gain * Config.Health.earlySleepExpPct)
+        data.exp = data.exp + extraExp
+        data.earlySleepPending = false
+    end
+
     local unlocks = 0
     for _, need in ipairs(Config.StepUnlockThresholds) do
         if steps >= need then
@@ -348,7 +375,8 @@ function Save.Claim(data, steps)
         end
     end
     local before = data.unlocked
-    data.unlocked = data.unlocked + unlocks
+    -- 步数解锁是「按今天走到了第几档」算，不是每天累加；只有开发按钮能直接全解锁
+    data.unlocked = math.max(before, math.min(20, 1 + unlocks))
     if data.unlocked > 20 then
         data.unlocked = 20
     end
@@ -380,7 +408,7 @@ function Save.Claim(data, steps)
 
     data.claimed = true
     Save.Write(data)
-    return gain, gotUnlocked, data.streak, rewardGold, rewardSp
+    return gain, gotUnlocked, data.streak, rewardGold, rewardSp, extraExp
 end
 
 -- 开发用：重置今日领取
@@ -463,5 +491,146 @@ function Save.IsSkillUnlocked(level, id)
     return s ~= nil and level >= s.unlockLevel
 end
 
-return Save
+-- ---------------------------------------------------------------- 健康行为（维度二）
+---@param data table
+---@return number
+function Save.WaterMl(data)
+    Save.RollDay(data)
+    return data.waterMl or 0
+end
 
+function Save.WaterGoal()
+    return Config.Health.waterGoalMl
+end
+
+-- 今日饮水是否达标（达标 → 全局基础生命 +10%）
+function Save.WaterMet(data)
+    Save.RollDay(data)
+    return (data.waterMl or 0) >= Save.WaterGoal()
+end
+
+-- 记录一杯水
+function Save.AddWater(data, ml)
+    Save.RollDay(data)
+    data.waterMl = math.min(Save.WaterGoal(), (data.waterMl or 0) + (ml or Config.Health.waterStepMl))
+    Save.Write(data)
+    return data.waterMl
+end
+
+-- 今日记录早睡（奖励在下次领取步数时结算）
+function Save.CheckSleep(data)
+    Save.RollDay(data)
+    if data.sleptEarly then return false end
+    data.sleptEarly = true
+    data.earlySleepPending = true
+    Save.Write(data)
+    return true
+end
+
+-- 某个时间类加成还剩多少秒
+function Save.BuffLeft(data, field)
+    local left = (data[field] or 0) - os.time()
+    if left < 0 then left = 0 end
+    return left
+end
+
+-- ---------------------------------------------------------------- 无尽模式记录
+local function DayNum(data)
+    return math.floor(os.time() / 86400) + (data.dayOffset or 0)
+end
+
+local function WeekKey(data)
+    local day = DayNum(data)
+    -- 以 1970-01-01（周四）为基准，按 7 天切一周
+    return "W" .. tostring(math.floor((day + 3) / 7))
+end
+
+local function MonthKey(data)
+    return os.date("%Y-%m", os.time() + (data.dayOffset or 0) * 86400)
+end
+
+-- 跨天 / 跨周 / 跨月时清掉对应周期的最好成绩
+---@param data table
+function Save.RollEndless(data)
+    local dk, wk, mk = Save.TodayKey(data), WeekKey(data), MonthKey(data)
+    if data.endlessDayKey ~= dk then
+        data.endlessDayKey = dk
+        data.endlessDayBest = 0
+    end
+    if data.endlessWeekKey ~= wk then
+        data.endlessWeekKey = wk
+        data.endlessWeekBest = 0
+    end
+    if data.endlessMonthKey ~= mk then
+        data.endlessMonthKey = mk
+        data.endlessMonthBest = 0
+    end
+    return data
+end
+
+-- 主线通关第 10 关后解锁无尽模式（测试模式里有开关可以强制解锁）
+---@param data table
+---@return boolean
+function Save.EndlessUnlocked(data)
+    if type(data) ~= "table" then return false end
+    if data.devUnlockEndless then return true end
+    return (data.stageCleared or 0) >= Config.Endless.unlockStage
+end
+
+-- 测试模式用：强制解锁 / 取消强制解锁（不动真实主线进度）
+---@param data table
+---@param on boolean
+---@return boolean 现在的解锁状态
+function Save.SetDevEndlessUnlock(data, on)
+    data.devUnlockEndless = on and true or false
+    Save.Write(data)
+    return Save.EndlessUnlocked(data)
+end
+
+-- 到达某一层：刷新日 / 周 / 月 / 历史记录；破个人纪录给奖励并升级记录勋章
+-- 返回 { best, layer, medal, medalUp, gold, exp }
+---@param data table
+---@param layer integer
+---@return table
+function Save.RecordEndless(data, layer)
+    layer = math.floor(layer or 0)
+    Save.RollEndless(data)
+    local res = { best = false, layer = layer, medal = data.endlessMedal or 0,
+        medalUp = 0, gold = 0, exp = 0 }
+    if layer > (data.endlessDayBest or 0) then data.endlessDayBest = layer end
+    if layer > (data.endlessWeekBest or 0) then data.endlessWeekBest = layer end
+    if layer > (data.endlessMonthBest or 0) then data.endlessMonthBest = layer end
+    if layer > (data.endlessBest or 0) then
+        data.endlessBest = layer
+        res.best = true
+        local e = Config.Endless
+        res.gold = e.scoreGold + e.scoreGoldPerLayer * layer
+        res.exp = e.scoreExp + e.scoreExpPerLayer * layer
+        data.gold = (data.gold or 0) + res.gold
+        data.exp = (data.exp or 0) + res.exp
+        -- 破纪录 → 记录勋章升 1 级
+        if (data.endlessMedal or 0) < e.medalMax then
+            data.endlessMedal = (data.endlessMedal or 0) + 1
+            res.medalUp = 1
+        end
+        res.medal = data.endlessMedal or 0
+    end
+    Save.Write(data)
+    return res
+end
+
+-- 无尽模式记录一览（给界面用）
+---@param data table
+---@return table
+function Save.EndlessRecords(data)
+    Save.RollEndless(data)
+    return {
+        best = data.endlessBest or 0,
+        medal = data.endlessMedal or 0,
+        day = data.endlessDayBest or 0,
+        week = data.endlessWeekBest or 0,
+        month = data.endlessMonthBest or 0,
+    }
+end
+
+return Save

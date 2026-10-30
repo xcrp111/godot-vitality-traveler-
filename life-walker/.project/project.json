@@ -9,7 +9,7 @@
     "id": "1b4a3096-b2cb-4981-a5b8-8b5b1eee8913"
   },
   "entry": "main.lua",
-  "version": "1.0.44",
+  "version": "1.0.55",
   "taptap_publish": {
     "title": "生命行者",
     "category": "action",
@@ -19,10 +19,10 @@
     "developer_id": 507371
   },
   "test_qrcode": {
-    "url": "https://tapcode-sce.spark.xd.com/qrcode/m_52rf_1793110376780.png",
-    "generated_at": "2026-10-27T14:12:56.886Z"
+    "url": "https://tapcode-sce.spark.xd.com/qrcode/m_52rf_1793348948071.png",
+    "generated_at": "2026-10-30T08:29:08.226Z"
   },
   "metadata": {
-    "updated_at": "2026-10-27T14:12:56.886Z"
+    "updated_at": "2026-10-30T08:29:08.226Z"
   }
 }

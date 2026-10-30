@@ -84,18 +84,23 @@ end
 
 ---@class RunState
 ---@field level integer
+---@field endless boolean
+---@field layer integer
+---@field map string[][]
+---@field rows? integer
+---@field cols? integer
 ---@field silver integer
 ---@field step integer
----@field posR integer
----@field posC integer
----@field visited table<string, boolean>
----@field cleared table<string, boolean>
+---@field posR? integer
+---@field posC? integer
+---@field visited? table<string, boolean>
+---@field cleared? table<string, boolean>
 ---@field player PlayerState
 ---@field loadout integer[]
 ---@field shop any
 ---@field event any
 ---@field items table[]
----@field roomType string
+---@field roomType? string
 
 local Run = {}
 
@@ -123,6 +128,11 @@ end
 function Run.NewPlayer(classLevel)
     local c = Config.Class()
     local hp, sh, atk = Config.ClassStats(classLevel)
+    local d = S.data or {}
+    -- 健康行为加成：喝够水 → 基础生命 +10%（全局，不局限单局）
+    if Save.WaterMet(d) then
+        hp = math.floor(hp * (1 + Config.Health.waterHpPct) + 0.5)
+    end
     return {
         x = WORLD_W / 2, y = WORLD_H / 2, radius = c.radius or 15,
         classLevel = classLevel,
@@ -130,9 +140,10 @@ function Run.NewPlayer(classLevel)
         maxHp = hp, maxShield = sh, atk = atk,
         hp = hp, shield = math.floor(sh * Config.StartShieldRatio + 0.5),
         attackSpeed = c.attackSpeed or 1.0,
-        moveSpeed = c.speed,
+        moveSpeed = c.speed * ((Save.BuffLeft(d, "moveBuffUntil") > 0) and (1 + Config.Health.restMovePct) or 1),
         crit = 0, critDmg = 1.5, lifesteal = 0, dodge = 0,
-        cdr = 0, basicPct = 0, skillPct = 0, regen = 0,
+        cdr = (Save.BuffLeft(d, "cdrBuffUntil") > 0) and Config.Health.meditateCdrPct or 0,
+        basicPct = 0, skillPct = 0, regen = 0,
         rangePct = 0, hurtHeal = 0, critHeal = 0, revive = 0,
         reviveUsed = false,
         mods = NewMods(),
@@ -156,6 +167,26 @@ function Run.NewPlayer(classLevel)
 end
 
 ---@param p PlayerState
+-- 起身活动奖励：移速 +10%（10 分钟，跨局生效）
+local function HealthMoveMul()
+    local d = S.data
+    if type(d) ~= "table" then return 1 end
+    if Save.BuffLeft(d, "moveBuffUntil") > 0 then
+        return 1 + Config.Health.restMovePct
+    end
+    return 1
+end
+
+-- 冥想奖励：技能冷却 -10%（30 分钟，跨局生效）
+local function HealthCdrBonus()
+    local d = S.data
+    if type(d) ~= "table" then return 0 end
+    if Save.BuffLeft(d, "cdrBuffUntil") > 0 then
+        return Config.Health.meditateCdrPct
+    end
+    return 0
+end
+
 function Run.Recompute(p)
     local m = p.mods
     local oldMaxHp = p.maxHp
@@ -164,12 +195,12 @@ function Run.Recompute(p)
     p.maxShield = math.floor(p.baseShield * (1 + m.shieldPct) + 0.5)
     p.atk = p.baseAtk * (1 + m.atkPct)
     p.attackSpeed = (Config.Class().attackSpeed or 1.0) * (1 + m.asPct)
-    p.moveSpeed = Config.Class().speed * (1 + m.msPct)
+    p.moveSpeed = Config.Class().speed * (1 + m.msPct) * HealthMoveMul()
     p.crit = m.crit
     p.critDmg = 1.5 + m.critDmg
     p.lifesteal = m.lifesteal
     p.dodge = m.dodge
-    p.cdr = math.min(0.60, m.cdrPct)
+    p.cdr = math.min(0.60, m.cdrPct + HealthCdrBonus())
     p.basicPct = m.basicPct
     p.skillPct = m.skillPct
     p.regen = m.regen
@@ -186,20 +217,8 @@ function Run.Recompute(p)
     if p.shield > p.maxShield * 1.5 then p.shield = p.maxShield * 1.5 end
 end
 
-function Run.Start(level, bypassGate)
-    -- 关卡门槛：步数解锁 + 上一关已通关（测试模式传 bypassGate=true 跳过）
-    level = math.max(1, math.min(20, math.floor(level or 1)))
-    if not bypassGate then
-        local maxPlayable = Save.MaxPlayable(S.data)
-        if level > maxPlayable then
-            print(string.format("[Run] level %d 未解锁（当前最高 %d），已自动降到 %d",
-                level, maxPlayable, maxPlayable))
-            level = maxPlayable
-        end
-    end
-    Config.SetClass(Save.ActiveClass(S.data))
-    local classLevel = Save.ClassLevel(S.data)
-    local p = Run.NewPlayer(classLevel)
+-- 出战技能：优先用玩家配置，不足时按解锁顺序补齐
+local function BuildLoadout(classLevel)
     local unlocked = Save.UnlockedSkills(classLevel)
     local saved = Save.Loadout(S.data)
     local used = {}
@@ -218,56 +237,172 @@ function Run.Start(level, bypassGate)
             used[id] = true
         end
     end
+    return loadout
+end
+
+-- 主线的房间表：伪随机（模板 + 按关卡归一难度）
+local function GenMainMap(level)
+    return Config.PickMainMap(level or 1)
+end
+
+-- 无尽模式单层：3x3，强度按等效主线关卡归一
+-- needShop = true 时这一层一定带商店房（用来保证相邻两层之间至少有一个商店）
+local function GenEndlessMap(layer, needShop)
+    return Config.PickEndlessMap(layer or 1, needShop)
+end
+
+-- 把 run 的地图坐标重置到起点
+local function ResetMapPos(run)
+    run.rows = #run.map
+    run.cols = #run.map[1]
+    run.posR = run.rows
+    run.posC = 1
+    run.visited = {}
+    run.cleared = {}
+    run.visited[Key(run.posR, run.posC)] = true
+    run.cleared[Key(run.posR, run.posC)] = true
+    run.roomType = "start"
+end
+
+function Run.Start(level, bypassGate)
+    -- 关卡门槛：步数解锁 + 上一关已通关（测试模式传 bypassGate=true 跳过）
+    level = math.max(1, math.min(20, math.floor(level or 1)))
+    if not bypassGate then
+        local maxPlayable = Save.MaxPlayable(S.data)
+        if level > maxPlayable then
+            print(string.format("[Run] level %d 未解锁（当前最高 %d），已自动降到 %d",
+                level, maxPlayable, maxPlayable))
+            level = maxPlayable
+        end
+    end
+    Config.SetClass(Save.ActiveClass(S.data))
+    local classLevel = Save.ClassLevel(S.data)
+    local p = Run.NewPlayer(classLevel)
     ---@type RunState
     local run = {
         level = level,
+        endless = false,
+        layer = 0,
         silver = 0,
         step = 0,
-        posR = 4,
-        posC = 1,
-        visited = {},
-        cleared = {},
+        map = (GenMainMap(level)),
         player = p,
-        loadout = loadout,
+        loadout = BuildLoadout(classLevel),
         shop = nil,
         event = nil,
         items = {},
-        roomType = "start",
     }
-    run.visited[Key(4, 1)] = true
-    run.cleared[Key(4, 1)] = true
+    ResetMapPos(run)
     S.run = run
     S.screen = "map"
     S.combat = nil
     print("[Run] start level " .. level .. ", class level " .. classLevel)
 end
 
+-- ---------------------------------------------------------------- 无尽模式
+function Run.EndlessUnlocked()
+    return Save.EndlessUnlocked(S.data)
+end
+
+-- 进入无尽模式：第 1 层，强度相当于主线第 10 关
+function Run.StartEndless()
+    Config.SetClass(Save.ActiveClass(S.data))
+    local classLevel = Save.ClassLevel(S.data)
+    local e = Config.Endless
+    ---@type RunState
+    local run = {
+        level = e.levelOffset + 1,
+        endless = true,
+        layer = 1,
+        silver = 0,
+        step = 0,
+        map = (GenEndlessMap(1)),
+        player = Run.NewPlayer(classLevel),
+        loadout = BuildLoadout(classLevel),
+        shop = nil,
+        event = nil,
+        items = {},
+    }
+    ResetMapPos(run)
+    run.lastLayerShop = Config.GridHasRoom(run.map, "shop")
+    S.run = run
+    S.screen = "map"
+    S.combat = nil
+    S.endlessPanel = false
+    local res = Save.RecordEndless(S.data, run.layer)
+    Run.AnnounceEndlessRecord(res)
+    print(string.format("[Run] endless start layer %d (等效第 %d 关)", run.layer, run.level))
+end
+
+-- 破纪录 / 勋章升级的提示
+function Run.AnnounceEndlessRecord(res)
+    if not res or not res.best then return end
+    local msg = string.format("新纪录：第 %d 层！（金币 +%d，经验 +%d）", res.layer, res.gold, res.exp)
+    if (res.medalUp or 0) > 0 then
+        msg = msg .. string.format(" 记录勋章升到 Lv.%d", res.medal)
+    end
+    UI.SetToast(msg, 3.0)
+end
+
+-- 打完本层 Boss：进入下一层（保留生命、银币、强化，地图重新随机）
+function Run.NextEndlessLayer()
+    local run = S.run
+    if not run or not run.endless then return end
+    local e = Config.Endless
+    run.layer = run.layer + 1
+    run.level = e.levelOffset + run.layer
+    run.step = 0
+    -- 上一层没商店 → 这一层必须有；这样任意相邻两层之间至少有一个商店
+    local needShop = not (run.lastLayerShop == true)
+    run.map = GenEndlessMap(run.layer, needShop)
+    run.lastLayerShop = Config.GridHasRoom(run.map, "shop")
+    run.shop = nil
+    run.event = nil
+    ResetMapPos(run)
+    -- 每层开场回一点血，避免高层纯靠运气
+    local p = run.player
+    p.hp = math.min(p.maxHp, p.hp + p.maxHp * 0.2)
+    p.shield = p.maxShield
+    S.reward = false
+    S.combat = nil
+    S.screen = "map"
+    local res = Save.RecordEndless(S.data, run.layer)
+    Run.AnnounceEndlessRecord(res)
+    print(string.format("[Run] endless layer %d (等效第 %d 关)", run.layer, run.level))
+end
+
 function Run.Abort()
     ReleaseInput()
+    local endless = S.run and S.run.endless
     S.reward = false
     S.run = nil
     S.combat = nil
     S.screen = "menu"
-    UI.SetToast("已撤退，本关进度丢失")
+    UI.SetToast(endless and "已撤退，本次无尽挑战结束" or "已撤退，本关进度丢失")
 end
 
 function Run.CellType(r, c)
-    if r < 1 or r > 4 or c < 1 or c > 4 then return nil end
-    return Config.MapLayout[r][c]
+    local run = S.run
+    local map = run and run.map
+    if not map then return nil end
+    if r < 1 or r > (run.rows or #map) or c < 1 or c > (run.cols or #map[1]) then return nil end
+    return map[r][c]
 end
 
 function Run.IsFinal(r, c)
-    return r == 1 and c == 4
+    return Run.CellType(r, c) == "boss"
 end
 
 -- 只能向右 / 上 / 下
 function Run.CanMove(r, c)
     local run = S.run
     if not run then return false end
+    local rows = run.rows or 4
+    local cols = run.cols or 4
     local dr = r - run.posR
     local dc = c - run.posC
     if math.abs(dr) + math.abs(dc) ~= 1 then return false end
-    if r < 1 or r > 4 or c < 1 or c > 4 then return false end
+    if r < 1 or r > rows or c < 1 or c > cols then return false end
     -- 回到走过的房间：允许（空房间可以穿行）
     if run.visited[Key(r, c)] then return true end
     -- 进入新房间：仍然只能向右 / 上 / 下
@@ -315,6 +450,12 @@ function Run.OnRoomCleared()
     if not run then return end
     run.cleared[Key(run.posR, run.posC)] = true
     if run.roomType == "boss" then
+        if run.endless then
+            -- 无尽模式：打完本层 Boss 继续下一层，不结算通关
+            S.screen = "levelclear"
+            S.combat = nil
+            return
+        end
         local data = S.data
         -- 通关记录：下一关要「步数解锁 + 上一关已通关」两个条件都满足才开放
         Save.MarkCleared(data, run.level)
@@ -535,7 +676,11 @@ function Run.OpenCombatReward(roomType)
         options[math.random(1, 3)] = Run.RollAnyBuff(p, nextRarity)
     end
 
-    S.reward = { options = options, roomType = roomType }
+    -- 无尽模式：Buff 满了以后改成「拿新的 + 丢掉一个」
+    local run = S.run
+    local replace = run and run.endless and #p.buffs >= Config.Endless.buffCap
+
+    S.reward = { options = options, roomType = roomType, replace = replace and true or false }
     S.combat = nil
     S.screen = "reward"
 end
@@ -547,14 +692,59 @@ function Run.FinishRoom()
     S.screen = "map"
 end
 
+-- 去掉一个已有强化（数值回退后重算面板）
+---@param p PlayerState
+---@param index integer
+function Run.RemoveBuffAt(p, index)
+    local buff = p.buffs and p.buffs[index]
+    if not buff then return nil end
+    for k, v in pairs(buff.mod or {}) do
+        p.mods[k] = (p.mods[k] or 0) - v
+    end
+    for k, v in pairs(buff.flag or {}) do
+        p.flags[k] = (p.flags[k] or 0) - v
+    end
+    if buff.classBuff then p.classBuffs[buff.id] = nil end
+    table.remove(p.buffs, index)
+    Run.Recompute(p)
+    return buff
+end
+
 function Run.ChooseReward(index)
     local reward = S.reward
     if not reward then return end
     local buff = reward.options[index]
     if not buff then return end
+    if reward.replace then
+        -- 满 10 个：先记下选中的新强化，再让玩家选一个要替换掉的
+        reward.pending = buff
+        return
+    end
     Run.GrantBuff(S.run.player, buff)
     S.reward = false
     Run.FinishRoom()
+end
+
+-- 满 Buff 时：用新强化换掉第 index 个旧强化
+function Run.ApplyReplace(index)
+    local reward = S.reward
+    local run = S.run
+    if not reward or not reward.pending or not run then return end
+    if not run.player.buffs[index] then return end
+    local old = Run.RemoveBuffAt(run.player, index)
+    Run.GrantBuff(run.player, reward.pending)
+    S.reward = false
+    Run.FinishRoom()
+    if old then
+        UI.SetToast("已用「" .. reward.pending.name .. "」替换「" .. old.name .. "」", 2.4)
+    end
+end
+
+-- 放弃这次的新强化（保留原有 10 个）
+function Run.CancelReplace()
+    local reward = S.reward
+    if not reward or not reward.pending then return end
+    reward.pending = nil
 end
 
 function Run.SkipReward()

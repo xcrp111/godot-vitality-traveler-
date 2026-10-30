@@ -219,7 +219,12 @@ function HandleUpdate(eventType, eventData)
 
         UpdateKeyboardInput()
 
-        if S.screen == "combat" and S.combat and not S.combat.paused then
+        -- 健康弹层（久坐提醒 / 冥想）：计时并接管输入
+        Menu.UpdateOverlays(dt)
+        if Menu.OverlayActive() then
+            S.input.x = 0
+            S.input.y = 0
+        elseif S.screen == "combat" and S.combat and not S.combat.paused then
             Combat.Update(dt)
         end
     end, function(e) return tostring(e) end)
@@ -259,6 +264,9 @@ local function DrawFrame()
             Screens.DrawGameOver()
         end
 
+        -- 健康弹层画在最上层
+        Menu.DrawOverlays()
+
         UI.DrawToast()
     end, function(e) return tostring(e) end)
     UI.EndDesign()
@@ -287,6 +295,7 @@ function HandleMouseDown(eventType, eventData)
     local px = eventData["X"]:GetInt()
     local py = eventData["Y"]:GetInt()
     local dx, dy = UI.ToDesign(px, py)
+    if Menu.OverlayPointer("down", dx, dy) then return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("down", dx, dy)
         return
@@ -302,6 +311,7 @@ function HandleMouseMove(eventType, eventData)
     local px = eventData["X"]:GetInt()
     local py = eventData["Y"]:GetInt()
     local dx, dy = UI.ToDesign(px, py)
+    if Menu.OverlayPointer("move", dx, dy) then return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("move", dx, dy)
         return
@@ -318,6 +328,7 @@ function HandleMouseUp(eventType, eventData)
     local px = eventData["X"]:GetInt()
     local py = eventData["Y"]:GetInt()
     local dx, dy = UI.ToDesign(px, py)
+    if Menu.OverlayPointer("up", dx, dy) then return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("up", dx, dy)
         return
@@ -334,6 +345,7 @@ function HandleTouchBegin(eventType, eventData)
     local tid = nil
     pcall(function() tid = eventData["TouchID"]:GetInt() end)
     local dx, dy = UI.ToDesign(px, py)
+    if Menu.OverlayPointer("down", dx, dy) then return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("down", dx, dy)
         return
@@ -351,6 +363,7 @@ function HandleTouchMove(eventType, eventData)
     local tid = nil
     pcall(function() tid = eventData["TouchID"]:GetInt() end)
     local dx, dy = UI.ToDesign(px, py)
+    if Menu.OverlayPointer("move", dx, dy) then return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("move", dx, dy)
         return
@@ -365,6 +378,7 @@ end
 function HandleTouchEnd(eventType, eventData)
     local tid = nil
     pcall(function() tid = eventData["TouchID"]:GetInt() end)
+    if Menu.OverlayPointer("up", 0, 0) then return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("up", 0, 0)
         return
@@ -376,6 +390,7 @@ end
 ---@param eventType string
 ---@param eventData KeyDownEventData
 function HandleKeyDown(eventType, eventData)
+    if Menu.OverlayActive() then return end
     local key = eventData["Key"]:GetInt()
     if key == KEY_W then S.keys.up = true end
     if key == KEY_S then S.keys.down = true end
@@ -404,6 +419,10 @@ function HandleKeyDown(eventType, eventData)
     if key == KEY_ESCAPE then
         if KbLayout.IsOpen() then
             KbLayout.Close(true)
+        elseif S.healthTasks then
+            S.healthTasks = false
+        elseif S.endlessPanel then
+            S.endlessPanel = false
         elseif S.settings then
             S.settings = false
             S.settingsWipeConfirm = false
@@ -426,7 +445,11 @@ function HandleKeyDown(eventType, eventData)
         elseif S.skillPicker then
             S.skillPicker = false
         elseif S.screen == "reward" then
-            Run.SkipReward()
+            if S.reward and S.reward.pending then
+                Run.CancelReplace()
+            else
+                Run.SkipReward()
+            end
         elseif S.screen ~= "menu" then
             Run.ReturnToMenu()
         end

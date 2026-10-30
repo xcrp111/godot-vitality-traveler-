@@ -53,6 +53,21 @@
 ---@field showSkillRange boolean
 ---@field enemyHpBar boolean
 ---@field bossWarn boolean
+---@field waterMl number
+---@field sleptEarly boolean
+---@field earlySleepPending boolean
+---@field playSeconds number
+---@field moveBuffUntil number
+---@field cdrBuffUntil number
+---@field endlessBest integer
+---@field endlessMedal integer
+---@field endlessDayKey string
+---@field endlessDayBest integer
+---@field endlessWeekKey string
+---@field endlessWeekBest integer
+---@field endlessMonthKey string
+---@field endlessMonthBest integer
+---@field devUnlockEndless boolean
 -- SaveData 字段与 Save.lua 的 Defaults 保持一致
 
 ---@class KeyState
@@ -106,6 +121,10 @@
 ---@field kbEdit any
 ---@field settingsTab string
 ---@field settingsWipeConfirm boolean
+---@field healthTasks boolean
+---@field endlessPanel boolean
+---@field restPrompt any
+---@field meditate any
 ---@field col table
 
 ---@type GameState
@@ -144,6 +163,21 @@ local S = {
         joyMode = "float",
         joyFollow = true,
         aimMode = "button",
+        waterMl = 0,
+        sleptEarly = false,
+        earlySleepPending = false,
+        playSeconds = 0,
+        moveBuffUntil = 0,
+        cdrBuffUntil = 0,
+        endlessBest = 0,
+        endlessMedal = 0,
+        endlessDayKey = "",
+        endlessDayBest = 0,
+        endlessWeekKey = "",
+        endlessWeekBest = 0,
+        endlessMonthKey = "",
+        endlessMonthBest = 0,
+        devUnlockEndless = false,
         fpsCap = 60,
         lowQuality = false,
         screenShake = true,
@@ -184,6 +218,10 @@ local S = {
     testSkills = {},
     testLevel = 1,
     testDetail = nil,
+    healthTasks = false,
+    endlessPanel = false,
+    restPrompt = nil,
+    meditate = nil,
     settingsTab = "control",
     settingsWipeConfirm = false,
     confirmReset = false,

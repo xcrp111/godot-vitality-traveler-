@@ -127,8 +127,11 @@ function Start()
     e = PlaceEnemy(cs, 60)
     local px = p.x
     Combat.CastSkill(5)
-    check("回马枪后撤", p.x < px, p.x - px)
-    Step(cs, 30)
+    check("回马枪出招不位移", math.abs(p.x - px) < 0.01, p.x - px)
+    Step(cs, 12)
+    check("回马枪先向前刺", p.x > px, p.x - px)
+    Step(cs, 24)
+    check("回马枪顿后再后撤", p.x < px, p.x - px)
     check("回马枪命中", e.hp < 2000, e.hp)
 
     -- 枪阵震地

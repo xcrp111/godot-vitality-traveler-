@@ -103,7 +103,7 @@ function Start()
     -- 第 7 关起：新怪物进入正常房间
     local function LateSetup(level)
         Save.SetClassLevel(S.data, 10)
-        Run.Start(level)
+        Run.Start(level, true)   -- 关卡门槛会夹到已解锁进度，测试直接绕过
         local c = Combat.Start(S.run, "standard", 1)
         c.enemies = {}
         c.walls = {}

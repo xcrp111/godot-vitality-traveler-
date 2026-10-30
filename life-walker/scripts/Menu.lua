@@ -618,6 +618,24 @@ function Menu.DrawTestLab()
         S.test = false
     end, { fontSize = 16 })
 
+    -- 无尽模式：测试用强制解锁 + 直接进一层看地图
+    local realUnlocked = (S.data.stageCleared or 0) >= Config.Endless.unlockStage
+    local forced = S.data.devUnlockEndless == true
+    TestToggle("test_endless_unlock", 250, 70, 210, 34,
+        forced and "无尽：已解锁（测试）" or (realUnlocked and "无尽：已解锁" or "解锁无尽（测试）"),
+        forced or realUnlocked, function()
+            if realUnlocked then
+                UI.SetToast("主线已通关第 " .. Config.Endless.unlockStage .. " 关，无尽模式已解锁", 2.0)
+                return
+            end
+            local now = Save.SetDevEndlessUnlock(S.data, not forced)
+            UI.SetToast(now and "已强制解锁无尽模式（测试）" or "已取消强制解锁", 1.8)
+        end, 13)
+    UI.Button("test_endless_go", 470, 70, 180, 34, "进入无尽（测试）", function()
+        S.test = false
+        Run.StartEndless()
+    end, { fontSize = 13, fill = { 46, 42, 72, 255 }, stroke = S.col.purple })
+
     -- 分页
     local page = S.testPage
     UI.Button("test_prev", 830, 70, 40, 32, "<", function()
@@ -1095,6 +1113,14 @@ function Menu.Draw()
         Menu.DrawSettings()
         return
     end
+    if S.healthTasks then
+        Menu.DrawHealth()
+        return
+    end
+    if S.endlessPanel then
+        Menu.DrawEndless()
+        return
+    end
     if S.test then
         Menu.DrawTestLab()
         return
@@ -1132,7 +1158,7 @@ function Menu.Draw()
                 S.testBuffs = {}
                 S.testSkills = {}
                 S.testDetail = nil
-                S.selectedLevel = math.min(data.unlocked, math.max(1, S.selectedLevel))
+                S.selectedLevel = math.min(Save.MaxPlayable(data), math.max(1, S.selectedLevel))
                 UI.SetToast("已切换到 " .. c.name, 2.0)
             end, {
                 fontSize = 14,
@@ -1217,12 +1243,18 @@ function Menu.Draw()
     end, { fontSize = 20, enabled = not data.claimed })
 
     local claimLabel = data.claimed and "今日已领取" or "记录步数并领取"
+    UI.Button("health_tasks", 1110, 378, 100, 54, "健康任务", function()
+        S.healthTasks = true
+    end, { fontSize = 15, fill = { 40, 52, 74, 255 }, stroke = S.col.cyan })
     UI.Button("claim", 680, 378, 420, 54, claimLabel, function()
-        local g, unlocks, streak, rg, rsp = Save.Claim(S.data, S.data.todaySteps)
+        local g, unlocks, streak, rg, rsp, extraExp = Save.Claim(S.data, S.data.todaySteps)
         S.selectedLevel = S.data.unlocked
         if g > 0 or unlocks > 0 or rg > 0 then
             local msg = string.format("获得 %d 金币，可分配经验 +%d，解锁 %d 关，连续 %d 天",
-                g, g, unlocks, streak)
+                g, g + (extraExp or 0), unlocks, streak)
+            if (extraExp or 0) > 0 then
+                msg = msg .. string.format("（早睡奖励经验 +%d）", extraExp)
+            end
             if rg > 0 then msg = msg .. string.format("；连续奖励 +%d 金币 +%d 技能点", rg, rsp) end
             UI.SetToast(msg, 3.2)
         else
@@ -1247,18 +1279,36 @@ function Menu.Draw()
 
     -- 底部：关卡选择 + 开始
     local maxLv = Save.MaxPlayable(data)
-    UI.Button("lv_minus", 330, 580, 56, 56, "-", function()
+    UI.Button("lv_minus", 318, 580, 56, 56, "-", function()
         S.selectedLevel = math.max(1, S.selectedLevel - 1)
     end, { fontSize = 26 })
-    UI.Panel(396, 580, 300, 56, 10, S.col.panel2, S.col.line, 1)
-    UI.Text(546, 608, 24, "第 " .. S.selectedLevel .. " 关", S.col.text,
+    UI.Panel(384, 580, 260, 56, 10, S.col.panel2, S.col.line, 1)
+    UI.Text(514, 608, 24, "第 " .. S.selectedLevel .. " 关", S.col.text,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    UI.Button("lv_plus", 706, 580, 56, 56, "+", function()
+    UI.Button("lv_plus", 654, 580, 56, 56, "+", function()
         S.selectedLevel = math.min(maxLv, S.selectedLevel + 1)
     end, { fontSize = 26 })
 
-    UI.Button("start", 790, 574, 300, 68, "开始第 " .. S.selectedLevel .. " 关",
+    UI.Button("start", 724, 574, 248, 68, "开始第 " .. S.selectedLevel .. " 关",
         StartLevel, { fontSize = 24, accent = S.col.green, fill = { 40, 74, 52, 255 } })
+
+    -- 无尽模式：主线通关第 10 关后解锁
+    local endlessOpen = Save.EndlessUnlocked(data)
+    local erec = Save.EndlessRecords(data)
+    UI.Button("endless", 984, 574, 232, 68,
+        endlessOpen and "无尽模式" or ("通关第 " .. Config.Endless.unlockStage .. " 关解锁"),
+        function()
+            S.endlessPanel = true
+        end, {
+            fontSize = endlessOpen and 22 or 14,
+            enabled = endlessOpen,
+            fill = endlessOpen and { 46, 42, 72, 255 } or { 34, 32, 42, 255 },
+            stroke = endlessOpen and S.col.purple or S.col.line,
+        })
+    if endlessOpen then
+        UI.Text(1100, 648, 13, "最高 第 " .. erec.best .. " 层 · 勋章 Lv." .. erec.medal,
+            S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    end
 
     -- 开发模式（正式发布时把 State.lua 里的 S.dev 改成 false 即可整块隐藏）
     if S.dev then
@@ -1300,6 +1350,285 @@ function Menu.Draw()
     if S.confirmReset then
         Menu.DrawResetConfirm()
     end
+end
+
+-- ---------------------------------------------------------------- 健康任务（维度二：喝水 / 早睡 / 冥想 / 久坐提醒）
+local HEALTH_PANEL = { x = 240, y = 96, w = 800, h = 528 }
+local REST_PANEL = { x = 340, y = 190, w = 600, h = 320 }
+local MED_PANEL = { x = 340, y = 150, w = 600, h = 420 }
+
+local function Inside(r, x, y)
+    return x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h
+end
+
+-- 弹层是否占据输入
+function Menu.OverlayActive()
+    return S.restPrompt ~= nil or S.meditate ~= nil
+end
+
+function Menu.UpdateOverlays(dt)
+    local d = S.data
+    if not d then return end
+    if not Menu.OverlayActive() then
+        -- 只有真的在玩（战斗 / 选关）才累计，挂菜单不催
+        if S.screen == "combat" or S.screen == "map" then
+            d.playSeconds = (d.playSeconds or 0) + dt
+            if d.playSeconds >= Config.Health.playReminder then
+                d.playSeconds = 0
+                S.restPrompt = { t = 0 }
+                Save.Write(d)
+            end
+        end
+    end
+    if S.restPrompt then S.restPrompt.t = (S.restPrompt.t or 0) + dt end
+    if S.meditate then S.meditate.t = (S.meditate.t or 0) + dt end
+end
+
+-- 返回 true = 这次输入被弹层吃掉了（外面不要再处理）
+function Menu.OverlayPointer(phase, dx, dy)
+    if S.restPrompt then
+        if phase ~= "down" then return true end
+        local okBtn = { x = REST_PANEL.x + 60, y = REST_PANEL.y + 210, w = 220, h = 56 }
+        local skipBtn = { x = REST_PANEL.x + 320, y = REST_PANEL.y + 210, w = 220, h = 56 }
+        if Inside(okBtn, dx, dy) then
+            S.data.moveBuffUntil = os.time() + Config.Health.restMoveBuffSec
+            Save.Write(S.data)
+            S.restPrompt = nil
+            UI.SetToast("活动完成：移速 +10%（10 分钟）", 2.6)
+        elseif Inside(skipBtn, dx, dy) then
+            S.restPrompt = nil
+            UI.SetToast("已跳过，本次没有移速加成", 1.8)
+        end
+        return true
+    end
+    if S.meditate then
+        if phase ~= "down" then return true end
+        local med = S.meditate
+        local doneBtn = { x = MED_PANEL.x + 60, y = MED_PANEL.y + 300, w = 220, h = 56 }
+        local quitBtn = { x = MED_PANEL.x + 320, y = MED_PANEL.y + 300, w = 220, h = 56 }
+        if Inside(doneBtn, dx, dy) then
+            if med.t >= med.dur then
+                S.data.cdrBuffUntil = os.time() + Config.Health.meditateBuffSec
+                Save.Write(S.data)
+                S.meditate = nil
+                UI.SetToast("冥想完成：技能冷却 -10%（30 分钟）", 2.6)
+            else
+                UI.SetToast("还没到时间，再静一会儿", 1.4)
+            end
+        elseif Inside(quitBtn, dx, dy) then
+            S.meditate = nil
+            UI.SetToast("已结束冥想，没有获得加成", 1.8)
+        end
+        return true
+    end
+    return false
+end
+
+-- 久坐提醒 / 冥想 弹层（画在所有界面最上层）
+function Menu.DrawOverlays()
+    local d = S.data
+    if not d then return end
+    if S.restPrompt then
+        local p = REST_PANEL
+        local left = math.max(0, Config.Health.restPromptDur - (S.restPrompt.t or 0))
+        nvgBeginPath(S.ctx)
+        nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
+        nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 215))
+        nvgFill(S.ctx)
+        UI.Panel(p.x, p.y, p.w, p.h, 18, { 26, 30, 26, 252 }, { 120, 200, 150, 220 }, 2)
+        UI.Text(p.x + 40, p.y + 34, 26, "起来活动一下", { 170, 240, 190 })
+        UI.Text(p.x + 40, p.y + 78, 15, "你已经连续玩了 30 分钟。站起来走两步、看看远处，让眼睛和腰歇一下。", S.col.text)
+        UI.Text(p.x + 40, p.y + 106, 13, "文字有点多？就站起来伸个懒腰、眨眨眼，30 秒就好。", S.col.dim)
+        UI.Text(p.x + p.w / 2, p.y + 150, 40, string.format("%d", math.ceil(left)),
+            { 190, 245, 210 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        UI.Text(p.x + p.w / 2, p.y + 186, 12, "倒计时结束前先别急着继续", S.col.dim,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        UI.Button("rest_ok", p.x + 60, p.y + 210, 220, 56, "我起来活动了", function() end,
+            { fontSize = 18, fill = { 42, 84, 58, 255 }, stroke = { 120, 210, 150, 255 } })
+        UI.Button("rest_skip", p.x + 320, p.y + 210, 220, 56, "继续游戏", function() end,
+            { fontSize = 16, fill = { 46, 42, 58, 255 }, stroke = S.col.line })
+        UI.Text(p.x + p.w / 2, p.y + 284, 12, "点「我起来活动了」→ 移速 +10%（10 分钟）；点「继续游戏」没有加成",
+            S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    end
+    if S.meditate then
+        local p = MED_PANEL
+        local med = S.meditate
+        local left = math.max(0, med.dur - (med.t or 0))
+        nvgBeginPath(S.ctx)
+        nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
+        nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 225))
+        nvgFill(S.ctx)
+        UI.Panel(p.x, p.y, p.w, p.h, 18, { 24, 26, 38, 252 }, { 140, 170, 240, 220 }, 2)
+        UI.Text(p.x + 40, p.y + 30, 26, "深呼吸 · 冥想", { 190, 210, 255 })
+        UI.Text(p.x + 40, p.y + 70, 14, "把手机放下，闭上眼睛，慢慢吸气 4 秒、屏息 2 秒、呼气 6 秒。", S.col.text)
+        UI.Text(p.x + 40, p.y + 94, 13, "这段时间不用做任何操作，游戏会等你。", S.col.dim)
+        -- 呼吸环
+        local cx, cy = p.x + p.w / 2, p.y + 190
+        local phase = (math.sin((med.t or 0) * 0.9) + 1) * 0.5
+        UI.Circle(cx, cy, 62 + phase * 16, { 120, 160, 240, 40 }, { 170, 200, 255, 200 }, 3)
+        UI.Circle(cx, cy, 30, { 150, 190, 255, 30 }, nil, 0)
+        UI.Text(cx, cy - 4, 30, string.format("%d", math.ceil(left)), { 220, 235, 255 },
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        UI.Text(cx, cy + 26, 12, "秒", S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        local ready = (med.t or 0) >= med.dur
+        UI.Button("med_done", p.x + 60, p.y + 300, 220, 56,
+            ready and "完成冥想" or "还需要静一会儿", function() end,
+            { fontSize = 17, enabled = ready,
+              fill = { 42, 62, 96, 255 }, stroke = { 130, 170, 240, 255 } })
+        UI.Button("med_quit", p.x + 320, p.y + 300, 220, 56, "结束（无加成）", function() end,
+            { fontSize = 15, fill = { 46, 42, 58, 255 }, stroke = S.col.line })
+        UI.Text(p.x + p.w / 2, p.y + 374, 12, ready and "完成 → 技能冷却 -10%（30 分钟，跨局保留）"
+            or "时间到了才能领取加成", S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    end
+end
+
+function Menu.DrawHealth()
+    local d = S.data
+    local p = HEALTH_PANEL
+    nvgBeginPath(S.ctx)
+    nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
+    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 210))
+    nvgFill(S.ctx)
+    UI.Panel(p.x, p.y, p.w, p.h, 18, { 28, 24, 38, 252 }, S.col.line, 1)
+    UI.Text(p.x + 32, p.y + 24, 26, "健康任务", S.col.gold)
+    UI.Text(p.x + 32, p.y + 58, 12, "现实里做的小事，换成游戏里的实打实收益；每天 0 点刷新", S.col.dim)
+
+    local water = Save.WaterMl(d)
+    local goal = Save.WaterGoal()
+    local met = water >= goal
+    local y = p.y + 96
+    UI.Text(p.x + 32, y, 18, "① 今日饮水", met and S.col.green or S.col.text)
+    UI.Text(p.x + 32, y + 26, 13,
+        met and string.format("已喝 %d / %d ml · 达标：全局基础生命 +%d%%（所有关卡生效）",
+            water, goal, math.floor(Config.Health.waterHpPct * 100))
+        or string.format("已喝 %d / %d ml · 喝满后全局基础生命 +%d%%", water, goal,
+            math.floor(Config.Health.waterHpPct * 100)),
+        met and S.col.green or S.col.dim)
+    UI.Bar(p.x + 32, y + 52, 520, 14, math.min(1, water / goal), S.col.cyan)
+    UI.Button("water_add", p.x + 584, y + 40, 180, 44,
+        string.format("喝水 +%dml", Config.Health.waterStepMl), function()
+            Save.AddWater(d)
+            UI.SetToast("已记录饮水", 1.2)
+        end, { fontSize = 15, enabled = not met,
+              fill = met and { 40, 70, 52, 255 } or { 40, 60, 84, 255 } })
+    if met then
+        UI.Text(p.x + 584, y + 14, 12, "今日已达标", S.col.green)
+    end
+
+    y = y + 96
+    UI.Text(p.x + 32, y, 18, "② 早睡", d.sleptEarly and S.col.green or S.col.text)
+    UI.Text(p.x + 32, y + 26, 13,
+        d.sleptEarly and string.format("今天已打卡：明天领取步数时经验 +%d%%",
+            math.floor(Config.Health.earlySleepExpPct * 100))
+        or string.format("今晚早点睡，点一下记录；明天领取步数时经验 +%d%%",
+            math.floor(Config.Health.earlySleepExpPct * 100)), S.col.dim)
+    UI.Button("sleep_btn", p.x + 584, y + 6, 180, 44,
+        d.sleptEarly and "已记录" or "记录今天早睡", function()
+            if Save.CheckSleep(d) then
+                UI.SetToast("已记录早睡，明天领步数时经验加成生效", 2.4)
+            end
+        end, { fontSize = 15, enabled = not d.sleptEarly })
+
+    y = y + 96
+    UI.Text(p.x + 32, y, 18, "③ 深呼吸 / 冥想", S.col.text)
+    local cdrLeft = Save.BuffLeft(d, "cdrBuffUntil")
+    UI.Text(p.x + 32, y + 26, 13, string.format("静下来呼吸 %d 秒，完成后技能冷却 -%d%%（30 分钟，跨局生效）",
+        Config.Health.meditateDur, math.floor(Config.Health.meditateCdrPct * 100)), S.col.dim)
+    if cdrLeft > 0 then
+        UI.Text(p.x + 32, y + 46, 12, string.format("当前加成剩余 %d 分 %d 秒",
+            math.floor(cdrLeft / 60), math.floor(cdrLeft % 60)), S.col.green)
+    end
+    local mx = p.x + 496
+    for _, dur in ipairs(Config.Health.meditateChoices) do
+        local d2 = dur
+        UI.Button("med_" .. dur, mx, y + 44, 84, 40, string.format("%d 秒", dur), function()
+            S.meditate = { t = 0, dur = d2 }
+        end, { fontSize = 14, fill = { 40, 48, 74, 255 }, stroke = { 110, 140, 210, 220 } })
+        mx = mx + 90
+    end
+
+    y = y + 110
+    local moveLeft = Save.BuffLeft(d, "moveBuffUntil")
+    UI.Text(p.x + 32, y, 18, "④ 起身活动", S.col.text)
+    UI.Text(p.x + 32, y + 26, 13,
+        string.format("连续玩 %d 分钟会弹一次 30 秒的小提醒；站起来活动完，移速 +%d%%（10 分钟）",
+            math.floor(Config.Health.playReminder / 60), math.floor(Config.Health.restMovePct * 100)),
+        S.col.dim)
+    UI.Text(p.x + 32, y + 46, 12, string.format("本局已累计游玩 %d 分钟 · 移速加成%s",
+        math.floor((d.playSeconds or 0) / 60),
+        moveLeft > 0 and string.format("剩余 %d 分 %d 秒", math.floor(moveLeft / 60), math.floor(moveLeft % 60))
+            or "未激活"), moveLeft > 0 and S.col.green or S.col.dim)
+
+    UI.Button("health_close", p.x + p.w - 180, p.y + p.h - 62, 148, 44, "关闭 (Esc)", function()
+        S.healthTasks = false
+    end, { fontSize = 15, fill = { 44, 92, 62, 255 } })
+end
+
+-- ---------------------------------------------------------------- 无尽模式
+-- 设计文档：无尽模式.docx
+--   解锁：主线通关第 10 关
+--   单层 3×3 共 9 个房间，清掉本层 Boss 房就进下一层
+--   强度：等效主线关卡 = 层数 + 9（每层 +1 关）
+--   强化上限 10 个，满了以后每过一次结算改成「拿 1 个换掉 1 个」
+local ENDLESS_PANEL = { x = 240, y = 86, w = 800, h = 548 }
+
+function Menu.DrawEndless()
+    local d = S.data
+    local p = ENDLESS_PANEL
+    local rec = Save.EndlessRecords(d)
+    local e = Config.Endless
+
+    UI.Panel(p.x, p.y, p.w, p.h, 18, { 28, 24, 38, 250 }, S.col.purple, 2)
+    UI.Text(p.x + 32, p.y + 22, 34, "无尽模式", S.col.gold)
+    UI.Text(p.x + 32, p.y + 70, 15,
+        "无限爬塔：每层 3×3 共 9 个房间，走到 Boss 房就进下一层，层数没有上限。", S.col.dim)
+
+    local lines = {
+        "① 解锁：主线通关第 10 关（已通关 " .. math.min(20, d.stageCleared or 0) .. " 关）",
+        "② 强度：第 1 层相当于主线第 10 关，之后每层 +1 关，数值按主线曲线外推",
+        "③ 强化：身上最多 " .. e.buffCap .. " 个，满了以后每次战斗结算改成「选 1 个新的，换掉 1 个旧的」",
+        "④ 推进：生命、银币、强化都带进下一层；每层开场回 20% 生命并补满护盾",
+    }
+    local ly = p.y + 100
+    for _, line in ipairs(lines) do
+        UI.Text(p.x + 32, ly, 15, line, S.col.text)
+        ly = ly + 26
+    end
+
+    -- 记录
+    local ry = p.y + 216
+    UI.Panel(p.x + 32, ry, p.w - 64, 96, 12, { 34, 30, 46, 255 }, S.col.line, 1)
+    local cols = {
+        { "历史最高", "第 " .. rec.best .. " 层", S.col.gold },
+        { "今日", "第 " .. rec.day .. " 层", S.col.cyan },
+        { "本周", "第 " .. rec.week .. " 层", S.col.cyan },
+        { "本月", "第 " .. rec.month .. " 层", S.col.cyan },
+        { "记录勋章", "Lv." .. rec.medal, S.col.purple },
+    }
+    local cw = (p.w - 64) / #cols
+    for i, c in ipairs(cols) do
+        local cx = p.x + 32 + (i - 1) * cw
+        UI.Text(cx + cw / 2, ry + 18, 13, c[1], S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+        UI.Text(cx + cw / 2, ry + 50, 20, c[2], c[3], NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    end
+
+    UI.Text(p.x + 32, ry + 110, 13,
+        "记录勋章：每突破一次自己的历史纪录升 1 级（最高 Lv." .. e.medalMax .. "）；破纪录另给金币与经验。", S.col.dim)
+    UI.Text(p.x + 32, ry + 132, 13,
+        "排行榜目前只记本机成绩（日 / 周 / 月 / 历史），联网榜单等服务器就绪后再接。", S.col.dim)
+
+    local unlocked = Save.EndlessUnlocked(d)
+    UI.Button("endless_start", p.x + 32, p.y + p.h - 92, 460, 64,
+        unlocked and "开始挑战" or ("需先通关第 " .. e.unlockStage .. " 关"),
+        function()
+            Run.StartEndless()
+        end, {
+            fontSize = 22, enabled = unlocked,
+            fill = { 46, 42, 72, 255 }, stroke = S.col.purple,
+        })
+    UI.Button("endless_close", p.x + p.w - 232, p.y + p.h - 92, 200, 64, "返回 (Esc)", function()
+        S.endlessPanel = false
+    end, { fontSize = 20 })
 end
 
 return Menu

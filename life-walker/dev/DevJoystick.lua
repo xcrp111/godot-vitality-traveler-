@@ -78,7 +78,9 @@ function Start()
     baseX0 = js.baseX
     Combat.JoystickPointer("down", js.baseX, js.baseY)
     Combat.JoystickPointer("move", js.baseX + 400, js.baseY)
-    check("拖尾开启时基座跟随", js.baseX > baseX0 + 100, js.baseX)
+    check("拖尾开启时基座会跟一点", js.baseX > baseX0 + 5, js.baseX - baseX0)
+    check("拖尾跟随不会把基座拖飞（漂移 ≤ 半径一半）", js.baseX - baseX0 <= js.radius * 0.5 + 0.01,
+        string.format("drift %.1f / radius %.1f", js.baseX - baseX0, js.radius))
     check("拖尾时仍是满速", math.abs(S.input.x - 1) < 0.05, S.input.x)
     Combat.JoystickPointer("up", 0, 0)
     check("松手后基座回锚点", math.abs(js.baseX - js.anchorX) < 0.01, js.baseX)

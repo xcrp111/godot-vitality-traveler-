@@ -997,9 +997,20 @@ local function JoystickApply(js, x, y)
     if len > js.radius and len > 0 then
         local over = len - js.radius
         if js.follow then
-            -- 拖尾跟随：基座朝手指方向挪，摇杆头始终留在边缘，手指拖远了也不会脱手
-            js.baseX = js.baseX + dx / len * over
-            js.baseY = js.baseY + dy / len * over
+            -- 拖尾跟随：基座只朝手指方向挪一小部分（0.18），并且相对"按下点"最多漂半径的 0.5
+            -- 原来 1:1 跟随，手指一拖基座就飞走，方向手感就飘了
+            local k = 0.18
+            js.baseX = js.baseX + dx / len * over * k
+            js.baseY = js.baseY + dy / len * over * k
+            local px = js.pressX or js.anchorX
+            local py = js.pressY or js.anchorY
+            local ax, ay = js.baseX - px, js.baseY - py
+            local ad = math.sqrt(ax * ax + ay * ay)
+            local maxDrift = js.radius * 0.5
+            if ad > maxDrift and ad > 0 then
+                js.baseX = px + ax / ad * maxDrift
+                js.baseY = py + ay / ad * maxDrift
+            end
             js.baseX = math.max(js.radius, math.min(Config.DESIGN_W - js.radius, js.baseX))
             js.baseY = math.max(js.radius, math.min(Config.DESIGN_H - js.radius, js.baseY))
             dx, dy = x - js.baseX, y - js.baseY
@@ -1056,6 +1067,7 @@ function Combat.CreateControls(cs)
     local data = S.data or {}
     cs.joystick = {
         anchorX = jx, anchorY = jy,      -- 固定位置 / 浮动模式的待机提示位置
+        pressX = jx, pressY = jy,        -- 本次按下的原点（拖尾跟随的漂移上限以它为基准）
         baseX = jx, baseY = jy,          -- 当前基座（浮动/拖尾时会移动）
         kx = jx, ky = jy,
         radius = jr,
@@ -1089,6 +1101,7 @@ function Combat.JoystickPointer(phase, x, y, id)
                 js.touchId = id
                 js.baseX = math.max(js.radius, math.min(Config.DESIGN_W - js.radius, x))
                 js.baseY = math.max(js.radius, math.min(Config.DESIGN_H - js.radius, y))
+                js.pressX, js.pressY = js.baseX, js.baseY
                 js.kx, js.ky = js.baseX, js.baseY
                 S.input.x = 0
                 S.input.y = 0
@@ -1102,6 +1115,7 @@ function Combat.JoystickPointer(phase, x, y, id)
         if dx * dx + dy * dy <= grab * grab then
             js.active = true
             js.touchId = id
+            js.pressX, js.pressY = js.baseX, js.baseY
             JoystickApply(js, x, y)
             return true
         end
@@ -1271,7 +1285,9 @@ function Combat.AimPointer(phase, dx, dy, id)
             UI.SetToast("已取消施法", 0.8)
             return true
         end
-        if aim.t >= AimHoldValue() or aim.moved then
+        -- tapInstant 技能（闪影突进）：点按就瞬发自动索敌，只有真的拖动了才锁方向
+        local manual = aim.moved or (not aim.spec.tapInstant and aim.t >= AimHoldValue())
+        if manual then
             cs.facing = aim.angle
             cs.aimLock = true
             if aim.spec.mode == "point" then cs.aimPoint = aim.point end
@@ -1513,18 +1529,27 @@ function Combat.SummonMinions(cs, boss, count)
 end
 
 -- ---------------------------------------------------------------- 伤害
-local function Lifesteal(cs, dmg)
+-- 吸血：普攻与技能分开计算（generic lifesteal 两者通吃）
+-- 单次回血上限 = 本次伤害的 100%（多目标仍然可以各回各的，续航靠打多个）
+local function Lifesteal(cs, dmg, isSkill)
     local p = cs.player
     local ls = p.lifesteal
+    if isSkill then
+        ls = ls + F(p, "skillLifesteal")
+    else
+        ls = ls + F(p, "basicLifesteal")
+    end
     if cs.swordHeartTimer > 0 then ls = ls + 0.06 + F(p, "stanceLifesteal") end
     if cs.parryLifestealTimer and cs.parryLifestealTimer > 0 then ls = ls + F(p, "parryLifesteal") end
     if p.hp < p.maxHp * 0.4 then ls = ls + F(p, "lowLifesteal") end
     if ls > 0 then
-        local heal = math.min(dmg * ls, dmg * 0.5)
-        HealPlayer(p, heal)
-        if heal >= 1 and (cs.healTextTimer or 0) <= 0 then
-            AddText(cs, p.x, p.y - 74, "+" .. math.floor(heal), S.col.green, 15)
-            cs.healTextTimer = 0.45
+        local heal = math.min(dmg * ls, dmg)
+        if heal > 0 then
+            HealPlayer(p, heal)
+            if heal >= 1 and (cs.healTextTimer or 0) <= 0 then
+                AddText(cs, p.x, p.y - 74, "+" .. math.floor(heal), S.col.green, 15)
+                cs.healTextTimer = 0.45
+            end
         end
     end
 end
@@ -1556,7 +1581,7 @@ function Combat.HitEnemy(cs, e, amount, isSkill, physical, noCrit, src, forceCri
     AddParticles(cs, e.x, e.y, { 255, 236, 190 }, 3)
     DmgText(cs, e.x, e.y - e.radius - 16, string.format("%d", math.floor(dmg)),
         crit and S.col.gold or S.col.text, crit and 34 or 28, crit)
-    Lifesteal(cs, dmg)
+    Lifesteal(cs, dmg, isSkill)
     if crit and p.critHeal > 0 then
         p.hp = math.min(p.maxHp, p.hp + p.critHeal)
     end
@@ -1787,6 +1812,8 @@ function Combat.DamagePlayer(cs, amount)
             cs.shieldFlash = 0.22
         end
     end
+    -- 护盾吸收 / 减伤会留下 1e-16 级小数残值，血量显示成 0 却永远不死：直接抹平
+    if dmg < 0.5 then dmg = 0 end
     if dmg > 0 then
         p.hp = p.hp - dmg
         cs.playerHitFlash = 0.18
@@ -1813,7 +1840,8 @@ function Combat.DamagePlayer(cs, amount)
         end
     end
 
-    if p.hp <= 0 then
+    -- 血量不足 1 点直接判死：避免浮点残血显示成 0 却“锁血”
+    if p.hp < 0.5 then
         if p.revive > 0 and not p.reviveUsed then
             p.reviveUsed = true
             p.hp = p.maxHp * 0.3
@@ -2008,19 +2036,6 @@ local function ApplyStoredDebuffs(cs, e)
 end
 
 function Combat.BasicAttack(cs)
-    -- 弹幕清除：普通攻击挥出去的同时，把攻击范围内的敌人子弹打碎
-    local cp = cs.player
-    if F(cp, "clearBullet") > 0 then
-        local base = Config.Class().basicRange or 80
-        local clearR = base * (1 + (cp.rangePct or 0)) * 1.15
-        for i = #cs.bullets, 1, -1 do
-            local b = cs.bullets[i]
-            if not b.shock and Dist(b.x, b.y, cp.x, cp.y) <= clearR then
-                AddParticles(cs, b.x, b.y, b.color or { 200, 225, 255 }, 3)
-                table.remove(cs.bullets, i)
-            end
-        end
-    end
     if IsSpear() then return Combat.SpearBasicAttack(cs) end
     if IsRanger() then return Combat.RangerBasicAttack(cs) end
     if IsMage() then return Combat.MageBasicAttack(cs) end
@@ -2028,9 +2043,13 @@ function Combat.BasicAttack(cs)
     local range = Config.Classes.swordsman.basicRange * (1 + p.rangePct)
     local arc = Config.Classes.swordsman.basicArc
 
-    -- 鬼剑术：剑意满时改为远程拔刀剑气
+    -- 鬼剑术：剑意满时普攻改为远程拔刀剑气（3.4 倍、贯穿、沿路清弹幕），并清空剑意
+    -- 注意：这里必须消耗剑意，否则满层时会一直放剑气、永远不回落
     if F(p, "oni") > 0 and p.intent >= IntentMax(p) then
         SwordWave(cs, 3.4, true)
+        p.intent = 0
+        p.intentTimer = 0
+        cs.attackFlash = 0.16
         return
     end
 
@@ -2424,7 +2443,8 @@ function Combat.RangerCastSkill(slot)
         if target then
             local ang = math.atan(target.y - p.y, target.x - p.x)
             -- 穿到目标身后落地，回头面对它
-            local behind = (target.radius or 14) + p.radius + 24
+            -- 落在目标身后「一段距离」，不是贴着怪站位：留出拉弓的空间，也别一落地就被贴脸
+            local behind = (target.radius or 14) + p.radius + 100
             local nx = target.x + math.cos(ang) * behind
             local ny = target.y + math.sin(ang) * behind
             local rx, ry = ResolveCircleWalls(cs, nx, ny, p.radius)
@@ -2437,6 +2457,8 @@ function Combat.RangerCastSkill(slot)
                 color = { 190, 245, 200 }, life = 0.34 })
             AddTelegraph(cs, { kind = "circle", x = p.x, y = p.y, r = 130,
                 color = { 190, 245, 200 }, life = 0.42 })
+            -- 瞬移落地也无敌一小段，避免刚换位就被贴脸打死
+            p.invulnTimer = math.max(p.invulnTimer, 0.25)
             cs.rangerSwap = 1
             cs.rangerSwapCombo = F(p, "swapCombo") > 0 and 1 or 0
             cs.rapidTimer = math.max(cs.rapidTimer or 0, 1.0)
@@ -2920,14 +2942,14 @@ function Combat.CastSkill(slot)
 
         segment(0.05, 82, 120, 1.0 * (1 + tp + F(p, "triple1Pct")), math.floor(F(p, "triple1Crack")), nil, false)
         segment(0.20, 86, 120, 1.1 * (1 + tp), 0, nil, false)
+        -- 第三段：先走近战判定（贴脸也不会漏），带剑气波强化时再额外放一道剑气
+        -- 这样「断势重击」和「小幅震荡」同时带也能一起生效，不会互相顶掉
+        segment(0.36, 92, 130, 1.3 * (1 + tp + F(p, "triple3Pct")), 0, F(p, "triple3CrackChance"), true)
         if wind then
             cs.pendingHits[#cs.pendingHits + 1] = { t = 0.36 * fast, fn = function()
                 SwordWave(cs, 1.4 * (1 + tp), true)
-                cs.tripleSegments = (cs.tripleSegments or 0) + 1
                 cs.shake = math.max(cs.shake, 4)
             end }
-        else
-            segment(0.36, 92, 130, 1.3 * (1 + tp + F(p, "triple3Pct")), 0, F(p, "triple3CrackChance"), true)
         end
 
         -- 段数结算 / 空放返还
@@ -2995,16 +3017,19 @@ function Combat.CastSkill(slot)
         AddText(cs, p.x, p.y - 48, "格挡姿态", S.col.cyan, 18)
         AddRing(cs, p.x, p.y, 66, { 150, 235, 255 }, 0.26, 5)
     elseif id == 6 then
-        -- 瞬影连斩
+        -- 瞬影连斩：第一段短促、中间停一下、第二段更亮更重，两段区分得开
         local stages = 2 + math.floor(F(p, "blinkStages"))
         local coef = 1.2 * (1 + F(p, "blinkPct"))
         local speed = 900 * (1 + F(p, "blinkDist"))
-        StartDash(cs, coef, speed, 0.14, "blink")
+        StartDash(cs, coef, speed * 1.15, 0.10, "blink")
         p.invulnTimer = 0.45
         for i = 2, stages do
-            cs.pendingHits[#cs.pendingHits + 1] = { t = 0.18 * (i - 1), fn = function()
-                StartDash(cs, coef, speed, 0.14, "blink")
-                p.invulnTimer = 0.2
+            cs.pendingHits[#cs.pendingHits + 1] = { t = 0.30 + 0.22 * (i - 2), fn = function()
+                StartDash(cs, coef * 1.1, speed, 0.16, "blink")
+                cs.dash.bright = true
+                p.invulnTimer = 0.22
+                AddRing(cs, p.x, p.y, 62, { 205, 180, 255 }, 0.2, 5)
+                cs.shake = math.max(cs.shake, 4)
             end }
         end
     end
@@ -3115,7 +3140,7 @@ function Combat.SpearCastSkill(slot)
         AimAt(cs, 360, math.rad(90))
         local dashSpeed = 1080 * (1 + F(p, "dashDist"))
         SpearStartDash(cs, 1.6 * (1 + F(p, "dashPct")), dashSpeed, 0.20,
-            F(p, "dashInvuln") > 0, 0.10)
+            true, 0.10)   -- 位移类技能默认全程无敌，撞上去不该吃伤害
         cs.dash.usedMomentum = usedMomentum
         AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = cs.facing,
             len = dashSpeed * 0.20 + 40, width = 62, color = { 255, 205, 150 }, life = 0.36 })
@@ -3147,51 +3172,70 @@ function Combat.SpearCastSkill(slot)
         if F(p, "momentumOnSkill") > 0 then GainMomentum(p, 1) end
     elseif id == 5 then
         AimAt(cs, 360, math.rad(100))
-        local back = 60 * (1 + F(p, "backDist"))
-        local bx = p.x - math.cos(cs.facing) * back
-        local by = p.y - math.sin(cs.facing) * back
-        local rx, ry = ResolveCircleWalls(cs, bx, by, p.radius)
-        local fromX, fromY = p.x, p.y
-        p.x = Config.Clamp(rx, p.radius, WORLD_W - p.radius)
-        p.y = Config.Clamp(ry, p.radius, WORLD_H - p.radius)
-        AddTrail(cs, p.x, p.y, { 255, 205, 150 }, 13)
-        AddTelegraph(cs, { kind = "line", x = fromX, y = fromY, x2 = p.x, y2 = p.y,
-            color = { 255, 205, 150 }, life = 0.3 })
+        -- 回马枪：角色真的先向前冲出去（看得见的位移）→ 刺中后顿一下 → 再向后撤
+        local castFacing = cs.facing
         local thrustRange = 170
         local thrustArc = math.rad(85)
-        AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = cs.facing,
-            range = thrustRange + 32, arc = thrustArc, color = { 255, 205, 150 }, life = 0.42 })
+        local thrustDist = 120
+        local backDist = 140 * (1 + F(p, "backDist"))   -- 撤得比冲得远一点，落地在出手点后方
+        local holdSec = 0.14
+
+        local tipX = p.x + math.cos(castFacing) * thrustDist
+        local tipY = p.y + math.sin(castFacing) * thrustDist
+        AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = castFacing,
+            len = thrustDist + 30, width = 58, color = { 255, 205, 150 }, life = 0.2 })
+        AddTelegraph(cs, { kind = "sector", x = tipX, y = tipY, facing = castFacing,
+            range = thrustRange, arc = thrustArc, color = { 255, 205, 150 }, life = 0.55 })
+
         if F(p, "backMs") > 0 then cs.spearMsTimer = 2 end
         if F(p, "momentumOnSkill") > 0 then GainMomentum(p, 1) end
-        cs.pendingHits[#cs.pendingHits + 1] = { t = 0.14, fn = function()
-            -- 后撤之后向前补一段突刺身位，缩掉“撤了打不到”的断层
-            local lunge = 52
-            local lx = p.x + math.cos(cs.facing) * lunge
-            local ly = p.y + math.sin(cs.facing) * lunge
-            local lrx, lry = ResolveCircleWalls(cs, lx, ly, p.radius)
-            p.x = Config.Clamp(lrx, p.radius, WORLD_W - p.radius)
-            p.y = Config.Clamp(lry, p.radius, WORLD_H - p.radius)
-            AddTrail(cs, p.x, p.y, { 255, 205, 150 }, 13)
 
-            local tx = p.x + math.cos(cs.facing) * 20
-            local ty = p.y + math.sin(cs.facing) * 20
-            Combat.ArcHitAt(cs, tx, ty, cs.facing, thrustRange, thrustArc,
-                1.75 * (1 + F(p, "backPct")), true, 0,
-                { src = "skill", slashColor = { 255, 205, 150 }, slashWidth = 8 })
-            for _, e in ipairs(ArcTargets(cs, tx, ty, cs.facing, thrustRange, thrustArc)) do
-                AddStagger(cs, e, 1)
-                if usedMomentum and (e.crack or 0) > 0 then TryCombo(cs, e, "震荡") end
-                if F(p, "backMomentum") > 0 and math.random() < F(p, "backMomentum") then
-                    GainMomentum(p, 1)
-                end
-                if F(p, "backStaggerChance") > 0 and math.random() < F(p, "backStaggerChance") then
-                    for _, o in ipairs(cs.enemies) do
-                        if o ~= e and Dist(e.x, e.y, o.x, o.y) < 110 then AddStagger(cs, o, 1) end
+        cs.facing = castFacing
+        -- 回马枪是"刺出去再退回来"，不靠穿过敌人造成伤害，所以位移段不给无敌
+        cs.lunge = {
+            dirx = math.cos(castFacing), diry = math.sin(castFacing),
+            speed = thrustDist / 0.16, t = 0.16, color = { 255, 215, 160 },
+            onEnd = function()
+                cs.facing = castFacing
+                local tx = p.x + math.cos(castFacing) * 20
+                local ty = p.y + math.sin(castFacing) * 20
+                Combat.ArcHitAt(cs, tx, ty, castFacing, thrustRange, thrustArc,
+                    1.75 * (1 + F(p, "backPct")), true, 0,
+                    { src = "skill", slashColor = { 255, 205, 150 }, slashWidth = 9 })
+                for _, e in ipairs(ArcTargets(cs, tx, ty, castFacing, thrustRange, thrustArc)) do
+                    AddStagger(cs, e, 1)
+                    if usedMomentum and (e.crack or 0) > 0 then TryCombo(cs, e, "震荡") end
+                    if F(p, "backMomentum") > 0 and math.random() < F(p, "backMomentum") then
+                        GainMomentum(p, 1)
+                    end
+                    if F(p, "backStaggerChance") > 0 and math.random() < F(p, "backStaggerChance") then
+                        for _, o in ipairs(cs.enemies) do
+                            if o ~= e and Dist(e.x, e.y, o.x, o.y) < 110 then AddStagger(cs, o, 1) end
+                        end
                     end
                 end
-            end
-            cs.shake = math.max(cs.shake, 5)
-        end }
+                cs.shake = math.max(cs.shake, 7)
+                AddRing(cs, p.x, p.y, 72, { 255, 215, 160 }, 0.18, 5)
+                AddParticles(cs, p.x, p.y, { 255, 220, 170 }, 6)
+
+                -- 顿一下（原地不动）之后再向后撤
+                cs.pendingHits[#cs.pendingHits + 1] = { t = holdSec, fn = function()
+                    local fromX, fromY = p.x, p.y
+                    local ex = p.x - math.cos(castFacing) * backDist
+                    local ey = p.y - math.sin(castFacing) * backDist
+                    AddTelegraph(cs, { kind = "line", x = fromX, y = fromY, x2 = ex, y2 = ey,
+                        color = { 255, 205, 150 }, life = 0.26 })
+                    cs.facing = castFacing
+                    cs.lunge = {
+                        dirx = -math.cos(castFacing), diry = -math.sin(castFacing),
+                        speed = backDist / 0.14, t = 0.14, color = { 235, 215, 185 },
+                        onEnd = function()
+                            AddParticles(cs, p.x, p.y, { 230, 210, 180 }, 5)
+                        end,
+                    }
+                end }
+            end,
+        }
     elseif id == 6 then
         SpearShock(cs, usedMomentum)
         if F(p, "shockWaves") > 0 then
@@ -3339,6 +3383,27 @@ function Combat.UpdatePlayer(cs, dt)
         p.shield = math.min(p.maxShield, p.shield + p.maxShield * 0.10 * dt)
     end
 
+    -- 突刺位移（回马枪这种：先真的冲出去，刺完再退回来）
+    if cs.lunge then
+        local L = cs.lunge
+        L.t = L.t - dt
+        local step = L.speed * dt
+        local nx = p.x + L.dirx * step
+        local ny = p.y + L.diry * step
+        local rx, ry = ResolveCircleWalls(cs, nx, ny, p.radius)
+        p.x = Config.Clamp(rx, p.radius, WORLD_W - p.radius)
+        p.y = Config.Clamp(ry, p.radius, WORLD_H - p.radius)
+        L.trailTimer = (L.trailTimer or 0) - dt
+        if L.trailTimer <= 0 then
+            L.trailTimer = 0.02
+            AddTrail(cs, p.x, p.y, L.color or { 255, 205, 150 }, 13)
+        end
+        if L.t <= 0 then
+            cs.lunge = nil
+            if L.onEnd then L.onEnd() end
+        end
+    end
+
     -- 移动
     local ix, iy = S.input.x, S.input.y
     local mag = math.sqrt(ix * ix + iy * iy)
@@ -3358,7 +3423,7 @@ function Combat.UpdatePlayer(cs, dt)
         end
     end
 
-    if mag > 0.12 then
+    if mag > 0.12 and not cs.lunge then
         local nx, ny = ix / mag, iy / mag
         p.x = p.x + nx * speed * mag * dt
         p.y = p.y + ny * speed * mag * dt
@@ -3373,7 +3438,9 @@ function Combat.UpdatePlayer(cs, dt)
         if d.trailTimer <= 0 then
             d.trailTimer = 0.025
             AddTrail(cs, p.x, p.y,
-                d.src == "blink" and { 190, 160, 255 } or { 130, 205, 255 }, 12)
+                (d.src == "blink"
+                    and (d.bright and { 225, 200, 255 } or { 190, 160, 255 })
+                    or { 130, 205, 255 }), 12)
         end
         p.x = p.x + d.dirx * d.speed * dt
         p.y = p.y + d.diry * d.speed * dt
@@ -3450,6 +3517,11 @@ function Combat.UpdatePlayer(cs, dt)
                 local sk6 = Config.SkillByID(6)
                 local base = (sk6 and sk6.cd or 7.0) * (1 - p.cdr)
                 p.cooldowns[6] = math.max(0, (p.cooldowns[6] or 0) - base * F(p, "missRefund"))
+            end
+            -- 枪客冲刺收尾：破空突袭之类的词条在这里补一段无敌尾巴
+            if d.spear then
+                local tail = F(p, "dashInvuln")
+                if tail > 0 then p.invulnTimer = math.max(p.invulnTimer, tail) end
             end
             cs.dash = nil
         end
@@ -3604,7 +3676,7 @@ function Combat.UpdatePlayer(cs, dt)
                             end
                         end
                         if pr.lifesteal and pr.lifesteal > 0 then
-                            HealPlayer(p, amount * pr.lifesteal)
+                            HealPlayer(p, math.min(amount * pr.lifesteal, amount))
                         end
                         if pr.boom and pr.boom > 0 then
                             for _, o in ipairs(ArcTargets(cs, e.x, e.y, 0, 80, math.pi * 2)) do
@@ -3806,7 +3878,7 @@ local function ApplyEnemyDebuff(cs, e)
     local p = cs.player
     if e.id == "abscess" then
         p.infectTimer = 4
-        p.infectDps = e.atk * 0.8
+        p.infectDps = e.atk * 0.45
         p.infectTick = 0.5
         AddText(cs, p.x, p.y - 86, "感染", S.col.red, 14)
     elseif e.id == "golem" then
@@ -3818,9 +3890,10 @@ local function ApplyEnemyDebuff(cs, e)
     end
 end
 
-local function AddHazard(cs, x, y, r, life, dps, slow)
+local function AddHazard(cs, x, y, r, life, dps, slow, kind)
     cs.hazardFields[#cs.hazardFields + 1] = {
         x = x, y = y, r = r, t = 0, life = life, dps = dps, slow = slow, tick = 0,
+        kind = kind or "pus",
     }
 end
 
@@ -3931,7 +4004,7 @@ function Combat.UpdateEnemies(cs, dt)
             end
             if e.id == "abscess" and not e.pusDone and e.hp < e.maxHp * 0.4 then
                 e.pusDone = true
-                AddHazard(cs, e.x, e.y, 60, 5, e.atk * 0.4, true)
+                AddHazard(cs, e.x, e.y, 54, 5, e.atk * 0.22, true, "pus")
                 AddParticles(cs, e.x, e.y, { 190, 150, 100 }, 10)
             end
         end
@@ -3953,17 +4026,31 @@ function Combat.UpdateEnemies(cs, dt)
             e.stompCd = (e.stompCd or 4.0) - dt
             if e.stompCd <= 0 then
                 e.stompCd = 5.0
-                AddHazard(cs, e.x, e.y, 85, 4.0, e.atk * 0.5, true)
+                AddHazard(cs, e.x, e.y, 85, 4.0, e.atk * 0.42, true, "rot")
                 AddRing(cs, e.x, e.y, 90, { 180, 130, 80 }, 0.3, 5)
                 AddParticles(cs, e.x, e.y, { 160, 120, 80 }, 10)
             end
         elseif e.behavior == "colossus" then
-            e.decayCd = (e.decayCd or 0) - dt
-            if e.decayCd <= 0 then
-                e.decayCd = 0.5
-                if Dist(e.x, e.y, p.x, p.y) < 180 then
-                    Combat.DamagePlayer(cs, e.atk * 0.3)
-                    p.hazardSlowTimer = 0.6
+            -- 衰竭疫域改成“技能”：开 3 秒 → 关 5~7 秒（狂暴后间隔更短、范围更大）
+            -- 原来常驻，近战根本贴不上去；现在有明确的输出窗口
+            local auraR = e.enraged and 220 or 180
+            e.auraCd = (e.auraCd or 4.0) - dt
+            if e.auraCd <= 0 then
+                e.auraOn = 3.0
+                e.auraCd = e.enraged and 5.0 or 7.0
+                e.decayCd = 0
+                AddRing(cs, e.x, e.y, auraR, { 175, 115, 215 }, 0.45, 7)
+                AddText(cs, e.x, e.y - e.radius - 34, "衰竭疫域", { 205, 160, 255 }, 18)
+            end
+            if (e.auraOn or 0) > 0 then
+                e.auraOn = e.auraOn - dt
+                e.decayCd = (e.decayCd or 0) - dt
+                if e.decayCd <= 0 then
+                    e.decayCd = 0.5
+                    if Dist(e.x, e.y, p.x, p.y) < auraR then
+                        Combat.DamagePlayer(cs, e.atk * 0.3)
+                        p.hazardSlowTimer = 0.6
+                    end
                 end
             end
             e.bossSkillCd = (e.bossSkillCd or 4.0) - dt
@@ -3974,7 +4061,7 @@ function Combat.UpdateEnemies(cs, dt)
                     dmg = e.atk * 1.2, hit = false, shock = true,
                     segCount = 72, segments = MakeRingSegments(72),
                 }
-                AddHazard(cs, e.x, e.y, 150, 3.0, e.atk * 0.3, true)
+                AddHazard(cs, e.x, e.y, 150, 3.0, e.atk * 0.3, true, "decay")
             end
             if not e.enraged and e.hp < e.maxHp * 0.5 then
                 e.enraged = true
@@ -3984,7 +4071,7 @@ function Combat.UpdateEnemies(cs, dt)
             end
             if not e.exploded and e.hp < e.maxHp * 0.3 then
                 e.exploded = true
-                AddHazard(cs, e.x, e.y, 200, 5.0, e.atk * 0.5, true)
+                AddHazard(cs, e.x, e.y, 200, 5.0, e.atk * 0.5, true, "decay")
                 AddRing(cs, e.x, e.y, 220, { 200, 100, 200 }, 0.5, 10)
             end
         elseif e.behavior == "elite" then
@@ -4314,6 +4401,14 @@ end
 
 local function DrawEnemy(cs, e)
     local r = e.radius
+    -- 瘟衰巨像的衰竭疫域：开着的时候画一圈紫色范围，关掉就没有
+    if e.behavior == "colossus" and (e.auraOn or 0) > 0 then
+        local auraR = e.enraged and 220 or 180
+        local pulse = 0.5 + 0.5 * math.sin(cs.time * 7)
+        UI.Circle(e.x, e.y, auraR, { 150, 100, 200, math.floor(26 + 16 * pulse) },
+            { 190, 140, 245, math.floor(150 + 70 * pulse) }, 3)
+        UI.Circle(e.x, e.y, auraR * 0.62, nil, { 170, 120, 225, 70 }, 2)
+    end
     -- 光晕
     nvgBeginPath(S.ctx)
     nvgCircle(S.ctx, e.x, e.y, r + 8)
@@ -4892,8 +4987,8 @@ local function DrawTelegraphs(cs)
         local a = math.floor(70 + 110 * pulse * prog)
         local c = { 255, 230, 150 }
         UI.Line(ch.x, ch.y, ch.x + math.cos(ch.facing) * len, ch.y + math.sin(ch.facing) * len,
-            { c[1], c[2], c[3], a }, warnW)
-        UI.Circle(ch.x, ch.y, 26 + 10 * prog, nil, { c[1], c[2], c[3], a }, warnW)
+            { c[1], c[2], c[3], a }, 3)
+        UI.Circle(ch.x, ch.y, 26 + 10 * prog, nil, { c[1], c[2], c[3], a }, 3)
     end
 end
 
@@ -4955,10 +5050,26 @@ end
 
 local function DrawRangedFx(cs)
     for _, h in ipairs(cs.hazardFields or {}) do
+        -- 怪物地面：按类型上色 + 呼吸脉动 + 内圈 + 冒泡，站进去一眼能看出来
         local k = math.min(1, h.t / h.life)
-        local a = math.floor(90 * (1 - k))
-        UI.Circle(h.x, h.y, h.r, { 150, 110, 80, math.floor(a * 0.3) },
-            { 190, 150, 100, a }, 2)
+        local fade = 1 - k
+        local col = { 196, 152, 96 }                       -- 脓水（脓肿岩行者）
+        if h.kind == "rot" then
+            col = { 152, 182, 96 }                          -- 腐液（疫蚀石魔）
+        elseif h.kind == "decay" then
+            col = { 178, 122, 218 }                         -- 衰竭疫域（瘟衰巨像）
+        end
+        local pulse = 0.5 + 0.5 * math.sin(cs.time * 6 + (h.x + h.y) * 0.01)
+        local a = math.floor((150 + 70 * pulse) * fade)
+        UI.Circle(h.x, h.y, h.r, { col[1], col[2], col[3], math.floor(a * 0.32) },
+            { col[1], col[2], col[3], a }, 3)
+        UI.Circle(h.x, h.y, h.r * 0.6, nil, { col[1], col[2], col[3], math.floor(a * 0.5) }, 2)
+        for i = 1, 5 do
+            local ang = cs.time * 1.7 + i * (math.pi * 2 / 5)
+            local rr = h.r * (0.28 + 0.5 * ((i % 3) / 3))
+            UI.Circle(h.x + math.cos(ang) * rr, h.y + math.sin(ang) * rr, 3,
+                { col[1], col[2], col[3], math.floor(a * 0.85) })
+        end
     end
     for _, tr in ipairs(cs.rangerTraps or {}) do
         -- 夹子外形：底座 + 上下两片锯齿夹颚 + 中心触发板
@@ -5037,6 +5148,46 @@ local function DrawHUD(cs)
     UI.Text(338, 96, 12, string.format("护盾 %d / %d", math.floor(p.shield), p.maxShield),
         S.col.cyan, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
 
+    -- 持续状态图标条：剩余时长一眼看得到（先玩家负面，再自己身上的增益）
+    local chips = {}
+    if (p.infectTimer or 0) > 0 then
+        chips[#chips + 1] = { "感染", p.infectTimer, { 214, 120, 92 } }
+    end
+    if (p.weakenTimer or 0) > 0 then
+        chips[#chips + 1] = { "衰弱", p.weakenTimer, { 200, 150, 240 } }
+    end
+    if (p.necrosisTimer or 0) > 0 then
+        chips[#chips + 1] = { "坏死", p.necrosisTimer, { 176, 132, 210 } }
+    end
+    if (cs.swordHeartTimer or 0) > 0 then
+        chips[#chips + 1] = { "剑心护体", cs.swordHeartTimer, { 110, 225, 255 } }
+    end
+    if (p.parryTimer or 0) > 0 then
+        chips[#chips + 1] = { "格挡", p.parryTimer, { 150, 235, 255 } }
+    end
+    if (cs.guardTimer or 0) > 0 then
+        chips[#chips + 1] = { "铁枪固守", cs.guardTimer, { 255, 220, 160 } }
+    end
+    if (cs.spearBuffTimer or 0) > 0 then
+        chips[#chips + 1] = { "枪式 x" .. math.floor(cs.spearBuffHits or 0), cs.spearBuffTimer, { 255, 200, 130 } }
+    end
+    if (cs.rapidTimer or 0) > 0 then
+        chips[#chips + 1] = { "速射 x" .. math.floor(cs.rapidStacks or 0), cs.rapidTimer, { 150, 240, 175 } }
+    end
+    if (p.rageTimer or 0) > 0 then
+        chips[#chips + 1] = { "狂暴", p.rageTimer, { 255, 160, 120 } }
+    end
+    local chipX = 24
+    for _, c in ipairs(chips) do
+        local col = c[3]
+        UI.Panel(chipX, 136, 96, 26, 8, { 18, 16, 26, 220 },
+            { col[1], col[2], col[3], 200 }, 1)
+        UI.Text(chipX + 8, 149, 13, c[1], col, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        UI.Text(chipX + 88, 149, 12, string.format("%.1f", c[2]), S.col.text,
+            NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+        chipX = chipX + 102
+    end
+
     UI.Text(640, 24, 22, Config.RoomNames[cs.roomType] or cs.roomType, S.col.text,
         NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
     UI.Text(640, 54, 14, "第 " .. cs.waveIndex .. " / " .. #cs.waves .. " 波", S.col.dim,
@@ -5046,7 +5197,13 @@ local function DrawHUD(cs)
     UI.Text(1006, 36, 16, "银币", S.col.dim)
     UI.Text(1064, 32, 22, tostring(run.silver), S.col.gold)
     UI.Text(1006, 62, 16, "关卡", S.col.dim)
-    UI.Text(1064, 58, 18, "第 " .. run.level .. " 关 · 房 " .. cs.step, S.col.text)
+    local where
+    if run.endless then
+        where = "第 " .. run.layer .. " 层 · 房 " .. cs.step
+    else
+        where = "第 " .. run.level .. " 关 · 房 " .. cs.step
+    end
+    UI.Text(1064, 58, 18, where, S.col.text)
 
     if p.rageTimer > 0 then
         UI.Text(640, 80, 16, string.format("狂暴 %.1fs", p.rageTimer), S.col.orange,
