@@ -1,0 +1,446 @@
+-- Screens.lua — 地图 / 商店 / 事件 / 通关 / 失败
+
+local Save = require "Save"
+local Config = require "Config"
+local Run = require "Run"
+local UI = require "UI"
+local S = require "State"
+local Combat = require "Combat"
+local Guild = require "Guild"
+local Economy = require "Economy"
+
+local Screens = {}
+
+-- 关卡内的金币显示：固定右上角，所有关卡内界面都用同一个样式
+function Screens.DrawGoldChip(x, y)
+    x = x or 1044
+    y = y or 22
+    local w, h = 172, 46
+    UI.Panel(x, y, w, h, 10, { 18, 16, 26, 230 }, S.col.gold, 1)
+    UI.Text(x + 14, y + 7, 13, "金币", S.col.dim)
+    UI.Text(x + w - 14, y + 5, 20, UI.FormatNumber(Economy.Gold(S.data)), S.col.gold,
+        NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+    UI.Text(x + 14, y + 27, 10, string.format("上限 %s · 每关重置",
+        UI.FormatNumber(Economy.GoldCap(S.data))), S.col.dim)
+end
+
+-- ---------------------------------------------------------------- 地图
+function Screens.DrawMap()
+    local run = S.run
+    if not run then return end
+    local p = run.player
+
+    -- 选关时也能查看状态/强化面板
+    if S.showStatus then
+        S.statusPanel = S.statusPanel or { page = 1, detail = nil }
+        Combat.DrawStatusPanel(p, run, S.statusPanel,
+            "选关界面 · 点击强化名字查看效果 · Esc 返回",
+            function()
+                S.showStatus = false
+                S.statusPanel.detail = nil
+            end)
+        return
+    end
+
+    local endless = run.endless
+    if endless then
+        UI.Text(64, 36, 38, "无尽 · 第 " .. run.layer .. " 层", S.col.text)
+        UI.Text(64, 88, 16, string.format("怪物强度 ≈ 主线第 %d 关 · 选择相邻房间前进", run.level), S.col.dim)
+        UI.Text(64, 108, 15, "清空本层 Boss 房即进入下一层；强化上限 " .. Config.Endless.buffCap .. " 个，满了改成替换。", S.col.dim)
+    else
+        UI.Text(64, 36, 38, "第 " .. run.level .. " 关", S.col.text)
+        UI.Text(64, 88, 16, "选择一个相邻房间前进", S.col.dim)
+    end
+
+    UI.Panel(980, 34, 236, 72, 12, S.col.panel, S.col.line, 1)
+    UI.Text(998, 48, 15, "金币", S.col.dim)
+    UI.Text(1056, 44, 22, UI.FormatNumber(Economy.Gold(S.data)), S.col.gold)
+    UI.Text(998, 76, 15, "生命", S.col.dim)
+    UI.Text(1056, 72, 18, math.floor(p.hp) .. " / " .. p.maxHp, S.col.text)
+    UI.Button("map_status", 980, 114, 236, 34, "状态面板", function()
+        S.showStatus = true
+        S.statusPanel = S.statusPanel or { page = 1, detail = nil }
+    end, { fontSize = 14 })
+
+    local rows = run.rows or 4
+    local cols = run.cols or 4
+    -- 房间少的时候把格子放大，别让地图缩成一团
+    local cell, gap, y0
+    if cols >= 4 then
+        cell, gap, y0 = 120, 16, 140
+    else
+        cell, gap, y0 = 140, 18, 168
+    end
+    local x0 = (Config.DESIGN_W - (cols * cell + (cols - 1) * gap)) / 2
+
+    for r = 1, rows do
+        for c = 1, cols do
+            local x = x0 + (c - 1) * (cell + gap)
+            local y = y0 + (r - 1) * (cell + gap)
+            local key = Run.Key(r, c)
+            local visited = run.visited[key]
+            local isCurrent = (r == run.posR and c == run.posC)
+            local canMove = Run.CanMove(r, c)
+            local roomType = Run.CellType(r, c)
+            local label = Config.RoomIcons[roomType] or "?"
+            if not visited and not canMove then label = "?" end
+
+            local fill = { 40, 36, 52, 255 }
+            local stroke = S.col.line
+            local textColor = S.col.dim
+            if visited then
+                fill = { 34, 54, 46, 255 }
+                stroke = { 80, 140, 110, 255 }
+                textColor = S.col.text
+            end
+            if canMove then
+                if not visited then
+                    fill = { 50, 46, 72, 255 }
+                end
+                stroke = S.col.cyan
+                textColor = S.col.text
+            end
+            if isCurrent then
+                fill = { 42, 78, 90, 255 }
+                stroke = S.col.cyan
+                textColor = S.col.text
+            end
+
+            UI.Panel(x, y, cell, cell, 14, fill, stroke, isCurrent and 3 or 1)
+            UI.Text(x + cell / 2, y + cell / 2 - 6, 34, label, textColor,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            if visited or canMove or isCurrent then
+                local name = isCurrent and "当前位置" or (Config.RoomNames[roomType] or "")
+                UI.Text(x + cell / 2, y + cell - 24, 14, name, S.col.dim,
+                    NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+            end
+
+            -- 公会特权·精英怪预警：提前标出精英 / Boss 房
+            if run.guildEliteWarn and not visited then
+                if roomType == "elite" or roomType == "double" or roomType == "boss" then
+                    UI.Circle(x + cell - 22, y + 22, 15, { 120, 48, 52, 235 }, { 220, 110, 110, 255 }, 2)
+                    UI.Text(x + cell - 22, y + 22, 13, "险", S.col.text,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+                end
+            end
+
+            if canMove then
+                UI.Region("cell_" .. r .. "_" .. c, x, y, cell, cell, function()
+                    Run.Move(r, c)
+                end, true)
+            end
+        end
+    end
+
+    -- 连线
+    for r = 1, rows do
+        for c = 1, cols do
+            local x = x0 + (c - 1) * (cell + gap)
+            local y = y0 + (r - 1) * (cell + gap)
+            if c < cols then
+                UI.Line(x + cell, y + cell / 2, x + cell + gap, y + cell / 2, { 60, 54, 78, 160 }, 2)
+            end
+            if r < rows then
+                UI.Line(x + cell / 2, y + cell, x + cell / 2, y + cell + gap, { 60, 54, 78, 160 }, 2)
+            end
+        end
+    end
+
+    UI.Text(64, 126, 15, "白框 = 新房间（向右 / 上 / 下）；绿色 = 已清空，可以回头穿行。", S.col.dim)
+
+    UI.Button("retreat", 1100, 640, 120, 44, "撤退", function()
+        Run.Abort()
+    end, { fontSize = 18, fill = { 52, 34, 38, 255 }, stroke = { 120, 60, 66, 255 } })
+
+    -- 公会钥匙：在地图上额外开一次三选一奖励房
+    if (run.guildKeys or 0) > 0 then
+        UI.Button("map_guild_key", 920, 640, 168, 44, "钥匙开箱 ×" .. run.guildKeys, function()
+            local ok, msg = Guild.UseKey(run, S.data)
+            if not ok then
+                UI.SetToast(msg)
+                return
+            end
+            Save.Write(S.data)
+            UI.SetToast(msg)
+            Run.OpenCombatReward("light")
+        end, { fontSize = 15, fill = { 40, 52, 70, 255 }, stroke = { 76, 110, 150, 255 } })
+    end
+end
+
+-- ---------------------------------------------------------------- 商店
+function Screens.DrawShop()
+    local run = S.run
+    local shop = run and run.shop
+    if not shop then return end
+
+    UI.Text(64, 34, 34, "商店", S.col.text)
+    UI.Text(180, 46, 16, "金币跨房间累积，每一关开头重置", S.col.dim)
+    Screens.DrawGoldChip()
+
+    for i = 1, 10 do
+        local slot = shop.slots[i]
+        local col = (i - 1) % 2
+        local row = math.floor((i - 1) / 2)
+        local x = 64 + col * 590
+        local y = 116 + row * 98
+        local w, h = 560, 86
+
+        local fill = { 38, 34, 50, 255 }
+        local stroke = S.col.line
+        if slot.kind == "buff" then
+            local c = Config.Rarity[slot.rarity].color
+            stroke = c
+        end
+        if slot.sold then
+            fill = { 30, 28, 38, 255 }
+            stroke = { 56, 52, 66, 255 }
+        end
+        UI.Panel(x, y, w, h, 12, fill, stroke, 1)
+
+        if slot.kind == "empty" or slot.sold then
+            UI.Text(x + w / 2, y + h / 2, 18, "已售出", S.col.dim,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        else
+            local nameColor = S.col.text
+            if slot.kind == "buff" then
+                nameColor = Config.Rarity[slot.rarity].color
+            elseif slot.kind == "potion" then
+                nameColor = S.col.red
+            elseif slot.kind == "consumable" then
+                nameColor = S.col.cyan
+            end
+            UI.Text(x + 20, y + 14, 20, slot.name, nameColor)
+            if slot.classBuff then
+                UI.Text(x + w - 150, y + 18, 13, Config.Class().name .. "专属", S.col.orange,
+                    NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+            end
+            UI.TextBox(x + 20, y + 43, w - 165, 10.5, slot.desc, S.col.dim)
+            UI.Text(x + w - 20, y + 20, 22, tostring(slot.price) .. " 金币", S.col.gold,
+                NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+            local affordable = Economy.Gold(S.data) >= slot.price
+            UI.Button("buy_" .. i, x + w - 130, y + h - 40, 110, 30,
+                affordable and "购买" or "金币不足", function()
+                    Run.BuySlot(i)
+                end, { fontSize = 16, enabled = affordable,
+                    fill = { 44, 64, 52, 255 }, stroke = { 80, 130, 96, 255 } })
+        end
+    end
+
+    UI.Text(64, 628, 15, "药水 / 道具购买后进入道具栏，战斗中按 E 或点道具按钮；每店首次刷新免费，之后 20 金币 / 次，最多 3 次。",
+        S.col.dim)
+    local refreshLabel = shop.freeRefreshUsed and ("刷新 (" .. shop.paidRefresh .. "/3)") or "免费刷新"
+    UI.Button("refresh", 920, 648, 150, 44, refreshLabel, function()
+        Run.Refresh()
+    end, { fontSize = 17 })
+    UI.Button("leave_shop", 1088, 648, 130, 44, "离开", function()
+        Run.CloseShop()
+    end, { fontSize = 18, fill = { 40, 62, 48, 255 }, stroke = { 80, 130, 96, 255 } })
+end
+
+-- ---------------------------------------------------------------- 事件
+function Screens.DrawEvent()
+    local run = S.run
+    local ev = run and run.event
+    if not ev then return end
+
+    UI.Panel(180, 96, 920, 528, 18, { 28, 24, 38, 245 }, S.col.line, 1)
+    Screens.DrawGoldChip()
+    UI.Text(220, 124, 30, ev.title, S.col.gold)
+    UI.TextBox(220, 174, 840, 19, ev.text, S.col.text)
+
+    if not ev.result then
+        local y = 270
+        for i, opt in ipairs(ev.options) do
+            local enabled = opt.enabled ~= false
+            UI.Button("event_opt_" .. i, 260, y, 760, 54, opt.label, function()
+                Run.ChooseEvent(i)
+            end, { fontSize = 19, enabled = enabled,
+                fill = enabled and { 44, 48, 66, 255 } or { 38, 36, 46, 255 } })
+            y = y + 66
+        end
+    else
+        UI.Panel(240, 300, 800, 130, 12, { 34, 40, 50, 255 }, S.col.cyan, 1)
+        UI.TextBox(264, 322, 752, 20, ev.result, S.col.text)
+        UI.Button("event_leave", 500, 470, 280, 56, "离开事件房", function()
+            Run.CloseEvent()
+        end, { fontSize = 20, fill = { 40, 62, 48, 255 }, stroke = { 80, 130, 96, 255 } })
+    end
+end
+
+-- ---------------------------------------------------------------- 战斗奖励
+function Screens.DrawReward()
+    local reward = S.reward
+    local run = S.run
+    if not reward or not run then return end
+    local p = run.player
+
+    -- 满 Buff 时的第二步：从已有强化里挑一个丢掉的
+    if reward.pending then
+        local pending = reward.pending
+        local rc = Config.Rarity[pending.rarity].color
+        UI.Text(640, 40, 34, "强化已满 · 替换掉一个", S.col.gold,
+            NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+        UI.Text(640, 88, 16,
+            string.format("新强化「%s」：%s", pending.name, pending.desc), rc,
+            NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+        UI.Text(640, 114, 15, "点一个已有的强化把它换掉（上限 " .. Config.Endless.buffCap .. " 个）", S.col.dim,
+            NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+
+        local cols = 5
+        local w, h, gap = 228, 74, 14
+        local x0 = (Config.DESIGN_W - (cols * w + (cols - 1) * gap)) / 2
+        local y0 = 158
+        for i, buff in ipairs(p.buffs) do
+            local col = (i - 1) % cols
+            local row = math.floor((i - 1) / cols)
+            local x = x0 + col * (w + gap)
+            local y = y0 + row * (h + gap)
+            local c = Config.Rarity[buff.rarity] and Config.Rarity[buff.rarity].color or S.col.line
+            UI.Panel(x, y, w, h, 10, { 34, 30, 46, 255 }, c, 1)
+            UI.Text(x + 12, y + 10, 16, buff.name, S.col.text)
+            UI.Text(x + 12, y + 36, 12, Config.Rarity[buff.rarity] and Config.Rarity[buff.rarity].name or "",
+                S.col.dim)
+            UI.Region("replace_" .. i, x, y, w, h, function()
+                Run.ApplyReplace(i)
+            end, true)
+        end
+
+        local listBottom = y0 + math.ceil(#p.buffs / cols) * (h + gap)
+        UI.Button("replace_cancel", 440, math.max(560, listBottom), 400, 52,
+            "算了，保留原来的强化", function()
+                Run.CancelReplace()
+            end, { fontSize = 18 })
+        return
+    end
+
+    UI.Text(640, 54, 36,
+        reward.replace and "战斗胜利 · 强化已满，选一个替换" or "战斗胜利 · 选择一项强化",
+        S.col.gold, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    UI.Text(640, 108, 16, "房间难度越高，高品质 Buff 的出现概率越大", S.col.dim,
+        NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    Screens.DrawGoldChip()
+    if reward.replace then
+        UI.Text(640, 136, 14,
+            string.format("当前强化 %d / %d 个：选完新强化后，再选一个丢掉的", #p.buffs, Config.Endless.buffCap),
+            S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    end
+
+    for i, buff in ipairs(reward.options) do
+        local x = 100 + (i - 1) * 370
+        local y = 176
+        local w, h = 340, 330
+        local rarity = Config.Rarity[buff.rarity]
+        local rc = rarity.color
+
+        UI.Panel(x, y, w, h, 16, { 34, 30, 46, 255 }, rc, 3)
+        UI.Text(x + 20, y + 18, 16, rarity.name, rc)
+        if buff.classBuff then
+            UI.Text(x + w - 20, y + 18, 14, Config.Class().name .. "专属", S.col.orange,
+                NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        end
+        UI.Text(x + 20, y + 52, 26, buff.name, S.col.text)
+        UI.TextBox(x + 20, y + 98, w - 40, 16, buff.desc, S.col.dim)
+        UI.Button("reward_btn_" .. i, x + 20, y + h - 62, w - 40, 44,
+            reward.replace and "选它，再挑一个换掉" or "选择", function()
+            Run.ChooseReward(i)
+        end, { fontSize = 16, fill = { 42, 58, 48, 255 }, stroke = { 80, 120, 90, 255 } })
+        UI.Region("reward_card_" .. i, x, y, w, h, function()
+            Run.ChooseReward(i)
+        end, true)
+    end
+
+    UI.Button("skip_reward", 490, 550, 300, 52, "跳过，拿 15 金币", function()
+        Run.SkipReward()
+    end, { fontSize = 18 })
+
+    -- 公会重随券：免费刷新三个选项
+    if (run.guildRerolls or 0) > 0 then
+        UI.Button("reward_reroll", 150, 550, 300, 52, "公会重随券（剩 " .. run.guildRerolls .. "）", function()
+            if Run.RerollReward() then
+                UI.SetToast("公会重随券：已刷新三个选项")
+            end
+        end, { fontSize = 17, fill = { 44, 42, 70, 255 }, stroke = { 96, 90, 160, 255 } })
+    end
+end
+
+-- ---------------------------------------------------------------- 结算
+function Screens.DrawLevelClear()
+    local run = S.run
+    local endless = run and run.endless
+    if endless and run then
+        UI.Text(640, 132, 54, "第 " .. run.layer .. " 层 突破", S.col.gold,
+            NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+        UI.Text(640, 212, 20, "下一层怪物更强，强化与金币都带走。", S.col.dim,
+            NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+        local rec = Save.EndlessRecords(S.data)
+        UI.Panel(390, 268, 500, 158, 14, S.col.panel, S.col.line, 1)
+        UI.Text(420, 292, 18, "历史最高", S.col.dim)
+        UI.Text(860, 292, 20, "第 " .. rec.best .. " 层", S.col.gold, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Text(420, 330, 18, "记录勋章", S.col.dim)
+        UI.Text(860, 330, 20, "Lv." .. rec.medal, S.col.purple, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Text(420, 368, 18, "下一层强度", S.col.dim)
+        UI.Text(860, 368, 20, "≈ 主线第 " .. (Config.Endless.levelOffset + run.layer + 1) .. " 关",
+            S.col.text, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Text(420, 400, 14, string.format("强化 %d / %d · 金币 %d",
+            #run.player.buffs, Config.Endless.buffCap, Economy.Gold(S.data)), S.col.dim)
+
+        UI.Button("endless_next", 400, 500, 480, 64, "进入第 " .. (run.layer + 1) .. " 层", function()
+            Run.NextEndlessLayer()
+        end, { fontSize = 22, fill = { 40, 62, 48, 255 }, stroke = { 80, 130, 96, 255 } })
+        UI.Button("clear_menu", 490, 590, 300, 46, "见好就收，返回主菜单", function()
+            Run.ReturnToMenu()
+        end, { fontSize = 18 })
+        return
+    end
+
+    UI.Text(640, 150, 54, "第 " .. (run and run.level or 0) .. " 关 通关", S.col.gold,
+        NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    UI.Text(640, 230, 20, "疾病派系被击退，主线又前进了一步。", S.col.dim,
+        NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+
+    if run then
+        UI.Panel(440, 296, 400, 150, 14, S.col.panel, S.col.line, 1)
+        UI.Text(466, 330, 18, "本关金币", S.col.dim)
+        UI.Text(814, 330, 20, UI.FormatNumber(Economy.Gold(S.data)), S.col.gold, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Text(466, 368, 18, "获得 Buff", S.col.dim)
+        UI.Text(814, 368, 20, tostring(#run.player.buffs), S.col.text, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Text(466, 406, 18, Config.Class().name .. "等级", S.col.dim)
+        UI.Text(814, 406, 20, "Lv." .. Save.ClassLevel(S.data), S.col.text, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Text(640, 264, 12, "下一关开始时金币会重置为 0", S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    end
+
+    UI.Button("clear_menu", 490, 500, 300, 64, "返回主菜单", function()
+        Run.ReturnToMenu()
+    end, { fontSize = 22, fill = { 40, 62, 48, 255 }, stroke = { 80, 130, 96, 255 } })
+end
+
+function Screens.DrawGameOver()
+    local run = S.run
+    if run and run.endless then
+        local rec = Save.EndlessRecords(S.data)
+        UI.Text(640, 140, 56, "倒下了", S.col.red, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+        UI.Text(640, 220, 22, "止步第 " .. run.layer .. " 层", S.col.text,
+            NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+        UI.Panel(390, 268, 500, 140, 14, S.col.panel, S.col.line, 1)
+        UI.Text(420, 292, 18, "历史最高", S.col.dim)
+        UI.Text(860, 292, 20, "第 " .. rec.best .. " 层", S.col.gold, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Text(420, 330, 18, "今日 / 本周 / 本月", S.col.dim)
+        UI.Text(860, 330, 18, rec.day .. " / " .. rec.week .. " / " .. rec.month,
+            S.col.text, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Text(420, 368, 18, "记录勋章", S.col.dim)
+        UI.Text(860, 368, 20, "Lv." .. rec.medal, S.col.purple, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.Button("over_menu", 490, 460, 300, 64, "返回主菜单", function()
+            Run.ReturnToMenu()
+        end, { fontSize = 22, fill = { 52, 34, 38, 255 }, stroke = { 120, 60, 66, 255 } })
+        return
+    end
+
+    UI.Text(640, 160, 56, "倒下了", S.col.red, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    UI.Text(640, 240, 20, "本关进度丢失，调整构筑再来一次。", S.col.dim,
+        NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    UI.Button("over_menu", 490, 340, 300, 64, "返回主菜单", function()
+        Run.ReturnToMenu()
+    end, { fontSize = 22, fill = { 52, 34, 38, 255 }, stroke = { 120, 60, 66, 255 } })
+end
+
+return Screens

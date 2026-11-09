@@ -1,0 +1,862 @@
+-- Save.lua
+-- 本地存档：金币（局内）/ 精粹（局外）/ 职业等级 / 今日步数 / 关卡进度 / 技能配置
+--
+-- 经济口径见 Economy.lua：金币与精粹是两条互不换算的线。
+--   精粹 essence ← 每日能量消耗结算，用于角色升级与局外养成
+--   金币 gold    ← 局内房间掉落，用于局内商店，上限 = 账号等级 × 300
+
+local Config = require "Config"
+local Guild = require "Guild"
+local Economy = require "Economy"
+local Camp = require "Camp"
+local Pet = require "Pet"
+
+local Save = {}
+
+local SAVE_FILE = "save.json"
+
+-- ---------------------------------------------------------------- 存档版本史
+-- v1（初版）：单一职业（level / loadout）；「可分配经验 exp」本身就是局外货币；
+--             金币既是局内掉落也当局外货币用。
+-- v2（双币线）：四职业各自等级与出战技能；货币拆成
+--             「精粹 essence（局外，每日结算）」与「金币 gold（局内，每关清零）」；
+--             账号等级改为「累计获得精粹」的里程碑。
+-- 规则：MIGRATIONS[n] 只负责把 n 升到 n+1，必须幂等（同一份存档跑两次结果一样）；
+--       新增字段一律走 Defaults() + EnsureShape()，不要往迁移里塞「顺手修数据」的逻辑。
+local SAVE_VERSION = 2
+
+local function Defaults()
+    return {
+        version = SAVE_VERSION,
+        class = "swordsman",    -- 当前出战职业
+        gold = 0,               -- 金币（局内掉落，跨关累积，上限 = 账号等级 × 300）
+        essence = 0,            -- 精粹（每日能量消耗结算产出，用于角色升级 / 局外养成）
+        essenceEarned = 0,      -- 累计获得的精粹（账号等级里程碑，不消耗）
+        accountLevel = 1,       -- 账号等级（由累计获得精粹决定）
+        bodyFat = 0,            -- 体脂率（%）≥25 判为超重肥胖，走另一条精粹单价阶梯
+        levels = { swordsman = 1, spearman = 1, ranger = 1, mage = 1 },   -- 各职业等级
+        classExp = { swordsman = 0, spearman = 0, ranger = 0, mage = 0 }, -- 各职业已投入、尚未消耗的经验
+        unlocked = 1,           -- 步数解锁到的最高关卡
+        stageCleared = 0,       -- 已通关的最高关卡（必须通关上一关才能进下一关）
+        dayKey = "",
+        todaySteps = 0,
+        claimed = false,
+        streak = 0,             -- 连续健康天数
+        lastActiveDay = 0,      -- 最近一次达标的日序号
+        dayOffset = 0,          -- 开发用：虚拟推进的天数
+        skillPoints = 0,        -- 技能点（v1 先积累，技能升级后续开放）
+        streakRewardIndex = 0,  -- 已领取到第几档连续奖励
+        musicOn = true,         -- 背景音乐开关
+        musicVolume = 0.32,     -- 背景音乐音量 0~1
+        layout = nil,           -- 按键布局（由 Save.Layout 补齐默认值）
+        joyMode = "float",      -- 摇杆模式：fixed 固定位置 / float 按下即定位
+        joyFollow = true,       -- 拖尾跟随：手指拖出圈时基座跟着走
+        aimMode = "button",     -- 选位技能瞄准：button 技能键当摇杆 / screen 拖到屏幕对应位置
+        waterMl = 0,            -- 今日已记录饮水量（毫升）
+        sleptEarly = false,     -- 今日是否已打卡早睡
+        earlySleepPending = false, -- 早睡奖励：次日领取步数时结算
+        playSeconds = 0,        -- 累计游戏时长（秒），满 30 分钟提醒起身活动
+        moveBuffUntil = 0,      -- 起身活动奖励：移速加成到期时间（os.time）
+        cdrBuffUntil = 0,       -- 冥想奖励：冷却缩减加成到期时间（os.time）
+        -- 无尽模式记录（本机排行：日 / 周 / 月 / 历史）
+        endlessBest = 0,        -- 历史最高层数
+        endlessMedal = 0,       -- 记录勋章等级（每破一次个人纪录 +1）
+        endlessDayKey = "",
+        endlessDayBest = 0,
+        endlessWeekKey = "",
+        endlessWeekBest = 0,
+        endlessMonthKey = "",
+        endlessMonthBest = 0,
+        devUnlockEndless = false, -- 测试用：强制解锁无尽模式（不动真实进度）
+        -- 画面与性能
+        fpsCap = 60,            -- 帧率上限 30 / 60 / 120
+        lowQuality = false,     -- 低画质：粒子/拖尾/残影减量
+        screenShake = true,     -- 屏幕震动
+        damageText = "full",    -- 伤害数字：full 完整 / simple 简化 / off 关闭
+        -- 操作手感
+        joySensitivity = "mid", -- 摇杆灵敏度：low / mid / high
+        aimHold = 0.22,         -- 长按施法阈值（秒）
+        autoAttack = true,      -- 自动攻击：进入普攻范围后自动出刀
+        aimIndicator = true,    -- 瞄准时显示按键摇杆指示线
+        -- 战斗显示
+        showSkillRange = true,  -- 常驻显示普攻范围
+        enemyHpBar = true,      -- 怪物血条
+        bossWarn = true,        -- 敌方预警加强
+        loadouts = {
+            swordsman = { 1, 2, 3 },
+            spearman = { 1, 2, 4 },
+            ranger = { 1, 2, 5 },
+            mage = { 1, 2, 3 },
+        },
+    }
+end
+
+local CLASS_DEFAULT_LOADOUT = {
+    swordsman = { 1, 2, 3 },
+    spearman = { 1, 2, 4 },
+    ranger = { 1, 2, 5 },
+    mage = { 1, 2, 3 },
+}
+
+-- 按键布局默认值：{x, y, 半径}，设计坐标 1280x720
+local LAYOUT_DEFAULTS = {
+    joy    = { 140, 578, 74 },
+    attack = { 1186, 626, 48 },
+    skill1 = { 1080, 624, 36 },
+    skill2 = { 1110, 526, 36 },
+    skill3 = { 1202, 514, 32 },
+    items  = { 1080, 420, 27 },
+    aim_cancel = { 1170, 378, 80 },   -- 瞄准时的「取消施法」框（中心 + 半径，宽 2r 高 1.2r）
+}
+
+local LAYOUT_IDS = { "joy", "attack", "skill1", "skill2", "skill3", "items", "aim_cancel" }
+
+-- 读取（并补齐）按键布局，返回 data.layout
+---@param data table
+---@return table
+function Save.Layout(data)
+    if type(data.layout) ~= "table" then data.layout = {} end
+    local L = data.layout
+    for _, id in ipairs(LAYOUT_IDS) do
+        local d = LAYOUT_DEFAULTS[id]
+        local cur = L[id]
+        if type(cur) ~= "table" then
+            L[id] = { x = d[1], y = d[2], r = d[3] }
+        else
+            if type(cur.x) ~= "number" then cur.x = d[1] end
+            if type(cur.y) ~= "number" then cur.y = d[2] end
+            if type(cur.r) ~= "number" then cur.r = d[3] end
+        end
+    end
+    return L
+end
+
+-- 恢复默认布局
+---@param data table
+function Save.ResetLayout(data)
+    data.layout = nil
+    Save.Layout(data)
+    Save.Write(data)
+end
+
+---@param data table
+---@return string
+function Save.ActiveClass(data)
+    return (data and data.class) or "swordsman"
+end
+
+local function EnsureMaps(data)
+    if type(data.levels) ~= "table" then data.levels = {} end
+    if type(data.classExp) ~= "table" then data.classExp = {} end
+    for id in pairs(Config.Classes) do
+        if type(data.levels[id]) ~= "number" then data.levels[id] = 1 end
+        if type(data.classExp[id]) ~= "number" then data.classExp[id] = 0 end
+    end
+end
+
+---@param data table
+---@return integer
+function Save.ClassLevel(data)
+    EnsureMaps(data)
+    return data.levels[Save.ActiveClass(data)] or 1
+end
+
+---@param data table
+---@param level integer
+function Save.SetClassLevel(data, level)
+    EnsureMaps(data)
+    -- 角色等级上限 20（与 Config.LevelCost 的 19 个阶梯对应），任何入口都不得越过
+    data.levels[Save.ActiveClass(data)] = math.max(1, math.min(Config.ClassMaxLevel, math.floor(level)))
+end
+
+---@param data table
+---@return number
+function Save.ClassExp(data)
+    EnsureMaps(data)
+    return data.classExp[Save.ActiveClass(data)] or 0
+end
+
+-- 从精粹池投入当前职业（已废弃：升级现在直接从总池扣，保留只为兼容旧调用）
+---@param data table
+---@param amount number
+---@return number 实际投入
+function Save.AllocateExp(data, amount)
+    amount = math.floor(math.min(amount, Economy.Essence(data)))
+    if amount <= 0 then return 0 end
+    EnsureMaps(data)
+    Economy.SpendEssence(data, amount)
+    local class = Save.ActiveClass(data)
+    data.classExp[class] = (data.classExp[class] or 0) + amount
+    Save.Write(data)
+    return amount
+end
+
+---@param data table
+---@return integer[]
+function Save.Loadout(data)
+    local class = Save.ActiveClass(data)
+    data.loadouts = data.loadouts or {}
+    local lo = data.loadouts[class]
+    if type(lo) ~= "table" then
+        lo = {}
+        local def = CLASS_DEFAULT_LOADOUT[class] or { 1, 2, 3 }
+        for i = 1, 3 do lo[i] = def[i] or i end
+        data.loadouts[class] = lo
+    end
+    return lo
+end
+
+function Save.SetClass(data, id)
+    if Config.Classes[id] then
+        data.class = id
+        Config.SetClass(id)
+        Save.Loadout(data)
+        Save.Write(data)
+        return true
+    end
+    return false
+end
+
+-- ---------------------------------------------------------------- 版本迁移
+-- 存档是玩家能直接改的 JSON，也可能来自很早的版本：这里只做「结构升级」，
+-- 一律不触发任何写盘、发奖、扣费，保证读档纯函数、可反复执行。
+
+---@param data table
+---@return integer
+local function VersionOf(data)
+    local v = tonumber(data and data.version)
+    if not v or v ~= v or v < 1 then v = 1 end
+    return math.floor(v)
+end
+
+-- v1 -> v2：货币拆线 + 多职业结构
+--   · 旧「可分配经验 exp」并入精粹
+--   · 旧「已投入职业经验 classExp」退回总池（升级已改成直接从池里扣）
+--   · 单一 loadout / level 迁移到当前职业名下
+--   · 金币从 v2 起只在关卡内有效：读档时没有关卡在进行，清 0
+--   （「旧存档缺通关数时按解锁进度补齐」属于结构矫正，放在 EnsureShape 里，所有版本通用）
+local function MigrateV1ToV2(data)
+    local class = (type(data.class) == "string" and Config.Classes[data.class]) and data.class or "swordsman"
+
+    local carry = 0
+    if type(data.exp) == "number" and data.exp > 0 then carry = carry + data.exp end
+    data.exp = nil
+
+    if type(data.classExp) == "table" then
+        for id, v in pairs(data.classExp) do
+            if type(v) == "number" and v > 0 then
+                carry = carry + v
+                data.classExp[id] = 0
+            end
+        end
+    end
+    if carry > 0 then
+        data.essence = math.floor((type(data.essence) == "number" and data.essence or 0) + carry)
+    end
+
+    if type(data.loadout) == "table" then
+        if type(data.loadouts) ~= "table" then data.loadouts = {} end
+        if type(data.loadouts[class]) ~= "table" then
+            data.loadouts[class] = {
+                data.loadout[1] or 1, data.loadout[2] or 2, data.loadout[3] or 3,
+            }
+        end
+    end
+    data.loadout = nil
+
+    if type(data.level) == "number" then
+        if type(data.levels) ~= "table" then data.levels = {} end
+        if type(data.levels[class]) ~= "number" then
+            data.levels[class] = math.max(1, math.floor(data.level))
+        end
+        data.level = nil
+    end
+
+    data.gold = 0
+end
+
+local MIGRATIONS = {
+    [1] = MigrateV1ToV2,
+}
+
+--- 把存档升到当前结构版本（不写盘）。返回 data, 原版本号。
+---@param data table
+---@return table, integer
+function Save.Migrate(data)
+    if type(data) ~= "table" then return data, SAVE_VERSION end
+    local from = VersionOf(data)
+    local v = from
+    while v < SAVE_VERSION do
+        local step = MIGRATIONS[v]
+        if not step then break end      -- 缺级就停在这里，不硬跑后面的迁移
+        local ok, err = pcall(step, data)
+        if not ok then
+            print(string.format("[save] migrate v%d->v%d failed: %s", v, v + 1, tostring(err)))
+            break
+        end
+        v = v + 1
+    end
+    -- 比当前版本更新的存档（回退安装旧包）不能把版本号写小，否则下次会重跑迁移
+    data.version = math.max(from, SAVE_VERSION)
+    return data, from
+end
+
+--- 当前存档结构版本
+---@return integer
+function Save.SchemaVersion()
+    return SAVE_VERSION
+end
+
+-- ---------------------------------------------------------------- 结构矫正
+-- 类型 / 取值域兜底：任何一处类型不对（"60" 当数字、枚举写成别的值、数组少一格）
+-- 都会在 UI 里表现成难查的错乱，所以读档时统一纠正一次，游戏代码就不用到处防御。
+local ENUM_FIELDS = {
+    joyMode        = { float = true, fixed = true },
+    aimMode        = { button = true, screen = true },
+    damageText     = { full = true, simple = true, off = true },
+    joySensitivity = { low = true, mid = true, high = true },
+}
+local FPS_VALUES = { [30] = true, [60] = true, [120] = true }
+local AIM_HOLD_VALUES = { [0.15] = true, [0.22] = true, [0.30] = true }
+local LOADOUT_SLOTS = 3
+
+local function AsNumber(v, def, lo, hi, integer)
+    if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then v = def end
+    if integer then v = math.floor(v) end
+    if lo and v < lo then v = lo end
+    if hi and v > hi then v = hi end
+    return v
+end
+
+local function AsBool(v, def)
+    if type(v) == "boolean" then return v end
+    if v == 1 or v == "true" then return true end
+    if v == 0 or v == "false" then return false end
+    return def
+end
+
+local BOOL_FIELDS = {
+    "claimed", "sleptEarly", "earlySleepPending", "musicOn", "joyFollow",
+    "lowQuality", "screenShake", "autoAttack", "aimIndicator", "showSkillRange",
+    "enemyHpBar", "bossWarn", "devUnlockEndless",
+}
+local DAYKEY_FIELDS = { "dayKey", "endlessDayKey", "endlessWeekKey", "endlessMonthKey" }
+
+--- 补齐缺字段 + 纠正类型（幂等）
+---@param data table
+local function EnsureShape(data)
+    -- 早期存档没有通关记录：按步数解锁进度补齐。必须放在补默认值之前，否则会被填成 0
+    if type(data.stageCleared) ~= "number" then
+        local u = tonumber(data.unlocked) or 1
+        data.stageCleared = math.max(0, math.floor(u) - 1)
+    end
+
+    local def = Defaults()
+    for k, v in pairs(def) do
+        if data[k] == nil then data[k] = v end
+    end
+
+    if type(data.class) ~= "string" or not Config.Classes[data.class] then
+        data.class = def.class
+    end
+
+    data.gold          = AsNumber(data.gold, 0, 0, nil, true)
+    data.essence       = AsNumber(data.essence, 0, 0, nil, true)
+    data.essenceEarned = AsNumber(data.essenceEarned, 0, 0, nil, true)
+    if data.essenceEarned < data.essence then data.essenceEarned = data.essence end
+    data.accountLevel  = AsNumber(data.accountLevel, 1, 1, nil, true)
+    data.bodyFat       = AsNumber(data.bodyFat, 0, 0, 60, true)
+    data.unlocked      = AsNumber(data.unlocked, 1, 1, 20, true)
+    data.stageCleared  = AsNumber(data.stageCleared, 0, 0, 20, true)
+    data.todaySteps    = AsNumber(data.todaySteps, 0, 0, 200000, true)
+    data.streak        = AsNumber(data.streak, 0, 0, 36500, true)
+    data.lastActiveDay = AsNumber(data.lastActiveDay, 0, 0, nil, true)
+    data.dayOffset     = AsNumber(data.dayOffset, 0, 0, nil, true)
+    data.skillPoints   = AsNumber(data.skillPoints, 0, 0, nil, true)
+    data.streakRewardIndex = AsNumber(data.streakRewardIndex, 0, 0, #Config.StreakRewards, true)
+    data.waterMl       = AsNumber(data.waterMl, 0, 0, Config.Health.waterGoalMl, true)
+    data.playSeconds   = AsNumber(data.playSeconds, 0, 0, nil, false)
+    data.moveBuffUntil = AsNumber(data.moveBuffUntil, 0, 0, nil, true)
+    data.cdrBuffUntil  = AsNumber(data.cdrBuffUntil, 0, 0, nil, true)
+    data.endlessBest      = AsNumber(data.endlessBest, 0, 0, nil, true)
+    data.endlessMedal     = AsNumber(data.endlessMedal, 0, 0, Config.Endless.medalMax, true)
+    data.endlessDayBest   = AsNumber(data.endlessDayBest, 0, 0, nil, true)
+    data.endlessWeekBest  = AsNumber(data.endlessWeekBest, 0, 0, nil, true)
+    data.endlessMonthBest = AsNumber(data.endlessMonthBest, 0, 0, nil, true)
+    data.musicVolume   = AsNumber(data.musicVolume, def.musicVolume, 0, 1, false)
+
+    -- 菜单里只有 30/60/120 三档帧率；长期按 0 帧会直接把游戏卡死
+    local fps = AsNumber(data.fpsCap, def.fpsCap, 30, 120, true)
+    data.fpsCap = FPS_VALUES[fps] and fps or def.fpsCap
+    -- 长按施法阈值同理，只认菜单给的三档
+    local hold = AsNumber(data.aimHold, def.aimHold, 0.05, 1.0, false)
+    data.aimHold = AIM_HOLD_VALUES[hold] and hold or def.aimHold
+
+    for _, k in ipairs(BOOL_FIELDS) do
+        data[k] = AsBool(data[k], def[k] == true)
+    end
+    for _, k in ipairs(DAYKEY_FIELDS) do
+        if type(data[k]) ~= "string" then data[k] = "" end
+    end
+    for k, allowed in pairs(ENUM_FIELDS) do
+        if not allowed[data[k]] then data[k] = def[k] end
+    end
+
+    -- 四职业各自等级（1..ClassMaxLevel）与已投入经验（>=0）
+    EnsureMaps(data)
+    for id in pairs(Config.Classes) do
+        data.levels[id] = math.max(1, math.min(Config.ClassMaxLevel,
+            math.floor(AsNumber(data.levels[id], 1, 1, Config.ClassMaxLevel, true))))
+        data.classExp[id] = math.max(0, math.floor(AsNumber(data.classExp[id], 0, 0, nil, true)))
+    end
+
+    -- 出战技能：只留本职业真实存在的 id，去重后补满 3 格
+    if type(data.loadouts) ~= "table" then data.loadouts = {} end
+    for class, fallback in pairs(CLASS_DEFAULT_LOADOUT) do
+        local lo = data.loadouts[class]
+        if type(lo) ~= "table" then lo = {} end
+        local seen, out = {}, {}
+        for i = 1, LOADOUT_SLOTS do
+            local id = lo[i]
+            local hit = nil
+            if type(id) == "number" then
+                for _, s in ipairs(Config.ClassSkills[class] or {}) do
+                    if s.id == id then hit = id break end
+                end
+            end
+            if hit and not seen[hit] then
+                seen[hit] = true
+                out[#out + 1] = hit
+            end
+        end
+        for _, id in ipairs(fallback) do
+            if #out >= LOADOUT_SLOTS then break end
+            if not seen[id] then seen[id] = true; out[#out + 1] = id end
+        end
+        for i = 1, LOADOUT_SLOTS do out[i] = out[i] or fallback[i] or i end
+        data.loadouts[class] = out
+    end
+    -- 迁移后理论上已经没有这些旧字段，再兜一次，防止手改存档把它们带回来
+    data.loadout = nil
+    data.exp = nil
+    data.level = nil
+
+    Save.Layout(data)
+end
+
+-- 读档统一入口：补版本 → 迁移 → 纠正结构 → 派生数据 → 子系统结构
+local function MergeDefaults(data)
+    data = Save.Migrate(data or {})
+    EnsureShape(data)
+    -- 账号等级按「累计获得精粹」重算（升级发技能点的副作用也在这里）
+    Economy.SyncAccountLevel(data)
+    -- 金币只在关卡内有效：启动读档时没有任何关卡在进行，直接清 0（进关时也会再清一次）
+    data.gold = 0
+    Guild.Ensure(data)   -- 公会存档结构（缺字段补默认）
+    Camp.Ensure(data)    -- 营地存档结构（局外商店 / 农场 / 窝）
+    Pet.Ensure(data)     -- 宠物存档结构（独立的宠物系统）
+    return data
+end
+
+function Save.TodayKey(data)
+    local offset = (data and data.dayOffset) or 0
+    return os.date("%Y-%m-%d", os.time() + offset * 86400)
+end
+
+-- 全新存档（不读文件）。手机/网页端读写不可用时用它兜底，保证游戏能跑
+---@return SaveData
+function Save.Fresh()
+    local data = MergeDefaults({})
+    Save.RollDay(data)
+    return data
+end
+
+-- 设置页「恢复默认设置」用：拿到一份默认值（不动存档）
+function Save.Defaults()
+    return Defaults()
+end
+
+---@return SaveData
+function Save.Load()
+    local data = nil
+    -- 移动端 / 网页端可能没有 fileSystem 或 File，统一用 pcall 兜底
+    pcall(function()
+        if fileSystem and fileSystem:FileExists(SAVE_FILE) then
+            local f = File(SAVE_FILE, FILE_READ)
+            if f and f:IsOpen() then
+                local text = f:ReadString()
+                f:Close()
+                local ok, decoded = pcall(cjson.decode, text)
+                if ok and type(decoded) == "table" then
+                    data = decoded
+                end
+            end
+        end
+    end)
+    data = MergeDefaults(data or {})
+    Save.RollDay(data)
+    return data
+end
+
+-- 实际可挑战的最高关卡：既要步数解锁，也要把上一关打完
+---@param data table
+---@return integer
+function Save.MaxPlayable(data)
+    local stepUnlocked = math.max(1, math.min(20, data.unlocked or 1))
+    local cleared = math.max(0, data.stageCleared or 0)
+    return math.max(1, math.min(stepUnlocked, cleared + 1))
+end
+
+-- 通关某一关后调用
+---@param data table
+---@param level integer
+function Save.MarkCleared(data, level)
+    data.stageCleared = math.max(data.stageCleared or 0, level)
+    -- 宠物系统：主线阶段性通关追加少量宠物代币（每 3 关一次）
+    pcall(function() Pet.OnStageCleared(data, level) end)
+    Save.Write(data)
+end
+
+-- 开发用：直接把关卡进度推满
+---@param data table
+function Save.DebugUnlockAll(data)
+    data.unlocked = 20
+    data.stageCleared = 19
+    Save.Write(data)
+end
+
+---@return boolean
+function Save.Write(data)
+    if type(data) ~= "table" then return false end
+    local ok, result = pcall(function()
+        local f = File(SAVE_FILE, FILE_WRITE)
+        if f and f:IsOpen() then
+            f:WriteString(cjson.encode(data))
+            f:Close()
+            return true
+        end
+        return false
+    end)
+    return ok and result == true
+end
+
+-- 跨天重置
+---@return SaveData
+function Save.RollDay(data)
+    local today = Save.TodayKey(data)
+    if data.dayKey ~= today then
+        data.dayKey = today
+        data.todaySteps = 0
+        data.claimed = false
+        data.waterMl = 0          -- 饮水量按天重置
+        data.sleptEarly = false   -- 早睡打卡按天重置（待领奖励留到下次领取）
+    end
+    Save.RollEndless(data)
+    Camp.RollDay(data)
+    return data
+end
+
+-- 领取今日步数：返回 获得精粹, 解锁关卡数, 当前连续天数, 连续奖励精粹, 连续奖励技能点, 早睡额外精粹, 账号升级数, 明细
+---@return number, number, number, number, number, number, number, table
+function Save.Claim(data, steps)
+    Save.RollDay(data)
+    data.todaySteps = steps
+    if data.claimed then
+        return 0, 0, data.streak, 0, 0, 0, 0, nil
+    end
+
+    local pct = Config.ActivityPercent(steps)
+
+    -- 1) 先更新连续天数：连击倍率用的是「今天结算后」的天数
+    local dayNum = math.floor(os.time() / 86400) + (data.dayOffset or 0)
+    local usedCard = false
+    if pct >= Config.Economy.streakGatePercent then
+        if data.lastActiveDay == dayNum - 1 then
+            data.streak = data.streak + 1
+        elseif data.lastActiveDay ~= dayNum then
+            -- 断签了：有间断卡就补一天（1 表：补一次健康断签，限 1 天）
+            local camp = Camp.Ensure(data)
+            if (camp.streakCards or 0) > 0 and data.lastActiveDay < dayNum - 1 and data.streak > 0 then
+                camp.streakCards = camp.streakCards - 1
+                data.streak = data.streak + 1
+                usedCard = true
+            else
+                data.streak = 1
+            end
+        end
+        data.lastActiveDay = dayNum
+    else
+        data.streak = 0
+    end
+
+    -- 2) 精粹结算（2 表：累计精粹 × 连击倍率 + 每日固定项）
+    local total, detail = Economy.DailyEssence(data, steps, data.streak)
+    -- 公会科技·经济线：局外收益 +1%/级
+    total = math.floor(total * Guild.GoldMul(data) + 0.5)
+    local _, levelsUp = Economy.AddEssence(data, total)
+
+    -- 早睡奖励：昨天打过卡，今天领取时额外给精粹
+    local extraEssence = 0
+    if data.earlySleepPending then
+        extraEssence = math.floor(total * Config.Health.earlySleepExpPct)
+        local _, up2 = Economy.AddEssence(data, extraEssence)
+        levelsUp = levelsUp + up2
+        data.earlySleepPending = false
+    end
+
+    local unlocks = 0
+    for _, need in ipairs(Config.StepUnlockThresholds) do
+        if steps >= need then
+            unlocks = unlocks + 1
+        end
+    end
+    local before = data.unlocked
+    -- 步数解锁是「按今天走到了第几档」算，不是每天累加；只有开发按钮能直接全解锁
+    data.unlocked = math.max(before, math.min(20, 1 + unlocks))
+    if data.unlocked > 20 then
+        data.unlocked = 20
+    end
+    local gotUnlocked = data.unlocked - before
+
+    -- 3) 连续 3/7/14/30 天奖励包（精粹 + 技能点）
+    local rewardEssence, rewardSp = 0, 0
+    for i = data.streakRewardIndex + 1, #Config.StreakRewards do
+        local r = Config.StreakRewards[i]
+        if data.streak >= r.days then
+            data.streakRewardIndex = i
+            local _, up3 = Economy.AddEssence(data, r.essence)
+            levelsUp = levelsUp + up3
+            data.skillPoints = data.skillPoints + r.sp
+            rewardEssence = rewardEssence + r.essence
+            rewardSp = rewardSp + r.sp
+        end
+    end
+
+    data.claimed = true
+    Save.Write(data)
+    return total, gotUnlocked, data.streak, rewardEssence, rewardSp, extraEssence, levelsUp, detail, usedCard
+end
+
+-- 开发用：重置今日领取
+function Save.ResetToday(data)
+    data.dayKey = Save.TodayKey(data)
+    data.todaySteps = 0
+    data.claimed = false
+    Save.Write(data)
+end
+
+-- 开发用：推进到下一天（用于测试连续健康天数 / 等级门槛）
+function Save.NextDay(data)
+    data.dayOffset = (data.dayOffset or 0) + 1
+    data.dayKey = Save.TodayKey(data)
+    data.todaySteps = 0
+    data.claimed = false
+    Save.Write(data)
+    return data.dayOffset
+end
+
+-- 开发用：把存档恢复成初始状态（等级 / 金币 / 经验 / 关卡 / 连续天数全部清空）
+function Save.Reset(data)
+    local def = Defaults()
+    for k in pairs(data) do data[k] = nil end
+    for k, v in pairs(def) do data[k] = v end
+    Save.RollDay(data)
+    Save.Write(data)
+    return data
+end
+
+-- 下一级消耗，满级返回 nil
+---@return number|nil
+function Save.NextCost(data)
+    local level = Save.ClassLevel(data)
+    if level >= 20 then return nil end
+    return Config.LevelCost[level]
+end
+
+-- 升级：直接从精粹池里扣掉这一级需要的量（4 表 B 段：满级累计 7260）
+-- 返回 ok, 失败原因|成功文案
+---@return boolean, string
+function Save.LevelUp(data)
+    local level = Save.ClassLevel(data)
+    if level >= 20 then
+        return false, "已经满级"
+    end
+    local needGate, gateName = Config.LevelGate(level + 1)
+    if data.streak < needGate then
+        return false, "需要连续健康 " .. needGate .. " 天（" .. gateName .. "）"
+    end
+    local cost = Config.LevelCost[level]
+    if not cost then
+        return false, "已经满级"
+    end
+    local have = Economy.Essence(data)
+    if have < cost then
+        return false, string.format("精粹不足，还差 %d", math.ceil(cost - have))
+    end
+    local class = Save.ActiveClass(data)
+    Economy.SpendEssence(data, cost)
+    data.levels[class] = level + 1
+    Save.Write(data)
+    return true, Config.Class().name .. "升到 Lv." .. (level + 1)
+end
+
+-- 当前等级已解锁的技能 id 列表
+---@return integer[]
+function Save.UnlockedSkills(level)
+    local list = {}
+    for _, s in ipairs(Config.Skills) do
+        if level >= s.unlockLevel then
+            list[#list + 1] = s.id
+        end
+    end
+    return list
+end
+
+---@return boolean
+function Save.IsSkillUnlocked(level, id)
+    local s = Config.SkillByID(id)
+    return s ~= nil and level >= s.unlockLevel
+end
+
+-- ---------------------------------------------------------------- 健康行为（维度二）
+---@param data table
+---@return number
+function Save.WaterMl(data)
+    Save.RollDay(data)
+    return data.waterMl or 0
+end
+
+function Save.WaterGoal()
+    return Config.Health.waterGoalMl
+end
+
+-- 今日饮水是否达标（达标 → 全局基础生命 +10%）
+function Save.WaterMet(data)
+    Save.RollDay(data)
+    return (data.waterMl or 0) >= Save.WaterGoal()
+end
+
+-- 记录一杯水
+function Save.AddWater(data, ml)
+    Save.RollDay(data)
+    data.waterMl = math.min(Save.WaterGoal(), (data.waterMl or 0) + (ml or Config.Health.waterStepMl))
+    Save.Write(data)
+    return data.waterMl
+end
+
+-- 今日记录早睡（奖励在下次领取步数时结算）
+function Save.CheckSleep(data)
+    Save.RollDay(data)
+    if data.sleptEarly then return false end
+    data.sleptEarly = true
+    data.earlySleepPending = true
+    Save.Write(data)
+    return true
+end
+
+-- 某个时间类加成还剩多少秒
+function Save.BuffLeft(data, field)
+    local left = (data[field] or 0) - os.time()
+    if left < 0 then left = 0 end
+    return left
+end
+
+-- ---------------------------------------------------------------- 无尽模式记录
+local function DayNum(data)
+    return math.floor(os.time() / 86400) + (data.dayOffset or 0)
+end
+
+local function WeekKey(data)
+    local day = DayNum(data)
+    -- 以 1970-01-01（周四）为基准，按 7 天切一周
+    return "W" .. tostring(math.floor((day + 3) / 7))
+end
+
+local function MonthKey(data)
+    return os.date("%Y-%m", os.time() + (data.dayOffset or 0) * 86400)
+end
+
+-- 跨天 / 跨周 / 跨月时清掉对应周期的最好成绩
+---@param data table
+function Save.RollEndless(data)
+    local dk, wk, mk = Save.TodayKey(data), WeekKey(data), MonthKey(data)
+    if data.endlessDayKey ~= dk then
+        data.endlessDayKey = dk
+        data.endlessDayBest = 0
+    end
+    if data.endlessWeekKey ~= wk then
+        data.endlessWeekKey = wk
+        data.endlessWeekBest = 0
+    end
+    if data.endlessMonthKey ~= mk then
+        data.endlessMonthKey = mk
+        data.endlessMonthBest = 0
+    end
+    return data
+end
+
+-- 主线通关第 10 关后解锁无尽模式（测试模式里有开关可以强制解锁）
+---@param data table
+---@return boolean
+function Save.EndlessUnlocked(data)
+    if type(data) ~= "table" then return false end
+    if data.devUnlockEndless then return true end
+    return (data.stageCleared or 0) >= Config.Endless.unlockStage
+end
+
+-- 测试模式用：强制解锁 / 取消强制解锁（不动真实主线进度）
+---@param data table
+---@param on boolean
+---@return boolean 现在的解锁状态
+function Save.SetDevEndlessUnlock(data, on)
+    data.devUnlockEndless = on and true or false
+    Save.Write(data)
+    return Save.EndlessUnlocked(data)
+end
+
+-- 到达某一层：刷新日 / 周 / 月 / 历史记录；破个人纪录给精粹并升级记录勋章
+-- 返回 { best, layer, medal, medalUp, essence, levelsUp }
+---@param data table
+---@param layer integer
+---@return table
+function Save.RecordEndless(data, layer)
+    layer = math.floor(layer or 0)
+    Save.RollEndless(data)
+    local res = { best = false, layer = layer, medal = data.endlessMedal or 0,
+        medalUp = 0, essence = 0, levelsUp = 0 }
+    if layer > (data.endlessDayBest or 0) then data.endlessDayBest = layer end
+    if layer > (data.endlessWeekBest or 0) then data.endlessWeekBest = layer end
+    if layer > (data.endlessMonthBest or 0) then data.endlessMonthBest = layer end
+    if layer > (data.endlessBest or 0) then
+        data.endlessBest = layer
+        res.best = true
+        local e = Config.Endless
+        res.essence = e.scoreEssence + e.scoreEssencePerLayer * layer
+        local _, levelsUp = Economy.AddEssence(data, res.essence)
+        res.levelsUp = levelsUp
+        -- 破纪录 → 记录勋章升 1 级
+        if (data.endlessMedal or 0) < e.medalMax then
+            data.endlessMedal = (data.endlessMedal or 0) + 1
+            res.medalUp = 1
+        end
+        res.medal = data.endlessMedal or 0
+    end
+    Save.Write(data)
+    return res
+end
+
+-- 无尽模式记录一览（给界面用）
+---@param data table
+---@return table
+function Save.EndlessRecords(data)
+    Save.RollEndless(data)
+    return {
+        best = data.endlessBest or 0,
+        medal = data.endlessMedal or 0,
+        day = data.endlessDayBest or 0,
+        week = data.endlessWeekBest or 0,
+        month = data.endlessMonthBest or 0,
+    }
+end
+
+return Save

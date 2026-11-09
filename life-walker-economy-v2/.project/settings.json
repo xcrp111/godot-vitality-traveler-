@@ -1,0 +1,52 @@
+{
+  "$schema": "../schemas/settings.schema.json",
+  "sources": {
+    "engine": {
+      "tag": "stable"
+    },
+    "engine-res": {
+      "tag": "stable"
+    },
+    "official-res": {
+      "tag": "stable"
+    }
+  },
+  "build": {
+    "generate_fs_path": true,
+    "output_dir": "../dist",
+    "asset_dirs": [
+      "../assets",
+      "../scripts"
+    ],
+    "asset_ignores": [
+      "../.cache",
+      "../.build",
+      "../dist",
+      "../.project",
+      "../.emmylua",
+      "../docs",
+      "../engine-docs",
+      "../plugin-docs",
+      "../editor-docs",
+      "../examples",
+      "../schemas",
+      "../templates",
+      "../urhox-libs",
+      "../.claude",
+      "../.codex",
+      "../.cursor",
+      "../.gemini",
+      "../logs",
+      "../tools",
+      "../devtools",
+      "../.cli",
+      "../.installer",
+      "../.tmp"
+    ]
+  },
+  "@runtime": {
+    "multiplayer": {
+      "enabled": false
+    }
+  }
+}
