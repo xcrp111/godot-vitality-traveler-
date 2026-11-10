@@ -25,7 +25,9 @@ local ROOM = {
     boss      = { fill = { 125, 42, 54 }, text = { 255, 208, 214 }, ch = "B",  name = "Boss 房" },
     encounter = { fill = { 122, 101, 38 }, text = { 255, 240, 184 }, ch = "遇", name = "不期而遇" },
     wish      = { fill = { 42, 95, 110 }, text = { 200, 240, 255 }, ch = "愿", name = "得偿所愿" },
-    event     = { fill = { 70, 70, 70 },  text = { 221, 221, 221 }, ch = "?",  name = "旧事件房" },
+    -- 模板里的 event 格 = 老的三个硬编码事件，进层时会被改造成「不期而遇 / 得偿所愿」，
+    -- 所以卡片上用「机遇占位」而不是「?」，和右侧「机遇 N」那个数字对得上
+    event     = { fill = { 82, 70, 44 },  text = { 255, 238, 190 }, ch = "遇", name = "机遇房（进层时确定）" },
 }
 local function Room(kind) return ROOM[kind] or ROOM.event end
 
@@ -222,8 +224,9 @@ local function DrawSideInfo(x0, y0, w)
         UI.Text(rx + 9, ry + 9, 11, room.ch, room.text, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         UI.Text(rx + 26, ry + 2, 13, room.name, S.col.dim)
     end
+    UI.Text(x0, y + 5 * 24 + 2, 13, "卡片上的「遇」= 机遇占位（进层后才定具体类型）", S.col.dim)
 
-    local noteY = y + 5 * 24 + 10
+    local noteY = y + 5 * 24 + 26
     UI.Text(x0, noteY, 13, "每层固定 1 个机遇房；村落改为战斗房 12% 掉落；", S.col.dim)
     UI.Text(x0, noteY + 20, 13, "「命运」收进得偿所愿的第五个方向「搏」。", S.col.dim)
 end
