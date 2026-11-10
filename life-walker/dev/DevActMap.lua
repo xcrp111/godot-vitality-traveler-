@@ -490,16 +490,27 @@ local function TestVillageDrop()
 end
 
 -- ---------------------------------------------------------------- 入口
+-- 引擎里跑的时候日志是逐行落盘的，加一组进度标记，卡住时能一眼看出是哪组
+local GROUPS = {
+    { "幕结构", TestActs },
+    { "层卡", TestCards },
+    { "节点图", TestLayers },
+    { "机遇池预算", TestBudget },
+    { "命运地板", TestChanceFloor },
+    { "抽取分布", TestOffers },
+    { "结算", TestResolve },
+    { "村落掉落", TestVillageDrop },
+}
+
 function Start()
     print("========== DevActMap ==========")
-    TestActs()
-    TestCards()
-    TestLayers()
-    TestBudget()
-    TestChanceFloor()
-    TestOffers()
-    TestResolve()
-    TestVillageDrop()
+    for _, g in ipairs(GROUPS) do
+        local t0 = os.clock and os.clock() or 0
+        print("[Act] ---- " .. g[1] .. " 开始 ----")
+        g[2]()
+        local t1 = os.clock and os.clock() or 0
+        print(string.format("[Act] ---- %s 结束 (%.2fs) ----", g[1], t1 - t0))
+    end
     print(string.format("[Act] done, failures = %d", fails))
 end
 
