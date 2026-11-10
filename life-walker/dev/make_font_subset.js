@@ -22,12 +22,17 @@ const OUT = path.join(ROOT, "assets", "Fonts", "MiSans-Regular.ttf");
 const EXTRA = "×·—…「」『』【】、。，：；！？（）《》“”‘’±%‰℃①②③④⑤·・－";
 
 (async () => {
-    const dir = path.join(ROOT, "scripts");
+    // scripts/ 与 dev/ 都要扫：dev 视图跑的是同一份子集字体，早期只扫 scripts/ 导致
+    // dev 预览新加的文案在界面上是空白（例如「本层机遇房」的「遇」）。
     const chars = new Set();
-    for (const f of fs.readdirSync(dir)) {
-        if (!f.endsWith(".lua")) continue;
-        const text = fs.readFileSync(path.join(dir, f), "utf8");
-        for (const ch of text) chars.add(ch);
+    for (const sub of ["scripts", "dev"]) {
+        const dir = path.join(ROOT, sub);
+        if (!fs.existsSync(dir)) continue;
+        for (const f of fs.readdirSync(dir)) {
+            if (!f.endsWith(".lua")) continue;
+            const text = fs.readFileSync(path.join(dir, f), "utf8");
+            for (const ch of text) chars.add(ch);
+        }
     }
     for (let c = 0x20; c <= 0x7e; c++) chars.add(String.fromCodePoint(c));
     for (const ch of EXTRA) chars.add(ch);

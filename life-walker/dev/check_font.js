@@ -17,11 +17,15 @@ const FONT = path.join(ROOT, "assets", "Fonts", "MiSans-Regular.ttf");
 
 function main() {
     const font = fontkit.openSync(FONT);
-    const dir = path.join(ROOT, "scripts");
+    // scripts/ 与 dev/ 都查：dev 视图用同一份子集字体，只扫 scripts/ 会放过 dev 文案里的缺字。
     const chars = new Set();
-    for (const f of fs.readdirSync(dir)) {
-        if (!f.endsWith(".lua")) continue;
-        for (const ch of fs.readFileSync(path.join(dir, f), "utf8")) chars.add(ch);
+    for (const sub of ["scripts", "dev"]) {
+        const dir = path.join(ROOT, sub);
+        if (!fs.existsSync(dir)) continue;
+        for (const f of fs.readdirSync(dir)) {
+            if (!f.endsWith(".lua")) continue;
+            for (const ch of fs.readFileSync(path.join(dir, f), "utf8")) chars.add(ch);
+        }
     }
     const missing = [];
     for (const ch of chars) {

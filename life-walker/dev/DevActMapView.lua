@@ -105,10 +105,15 @@ local function DrawCards()
         UI.Text(x + 18, y0 + 14, 20, card.templateName, S.col.text)
         UI.Text(x + 18, y0 + 44, 14, "× " .. card.modName, ACCENT.cyan)
 
-        -- 风险徽标
+        -- 风险徽标：三选一里最该先被看见的就是「这关多难」，所以给它带色的实心底 +
+        -- 大一号的字，边框加粗。以前是近乎黑色的底 + 13px 字，跟旁边的小数字一个重量，
+        -- 两张「轻松」几乎看不出区别。
         local rc = RiskColor(card.risk)
-        UI.Panel(x + cardW - 116, y0 + 16, 98, 26, 13, { 26, 22, 36, 255 }, rc, 1)
-        UI.Text(x + cardW - 67, y0 + 29, 13,
+        local badgeW, badgeH = 104, 28
+        local badgeX = x + cardW - 18 - badgeW
+        UI.Panel(badgeX, y0 + 16, badgeW, badgeH, 14,
+            { rc[1], rc[2], rc[3], 58 }, rc, 2)
+        UI.Text(badgeX + badgeW / 2, y0 + 16 + badgeH / 2, 15,
             string.format("%s %+.2f", card.riskLabel, card.risk), rc,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 
@@ -127,7 +132,9 @@ local function DrawCards()
         UI.Text(tx, y0 + 146, 14, "机遇", S.col.dim)
         UI.Text(tx + 44, y0 + 146, 15, tostring(p.special), ACCENT.purple)
         UI.Text(tx, y0 + 174, 14, "全清期望", S.col.dim)
-        UI.Text(tx + 64, y0 + 172, 17, p.silver .. " 银币", ACCENT.green)
+        -- 银币以前是 17px 亮绿，比难度徽标还抢眼（玩家先看到「能扫多少钱」）。
+        -- 压回普通数字的重量，让风险排在收益前面。
+        UI.Text(tx + 64, y0 + 172, 15, p.silver .. " 银币", S.col.text)
 
         UI.Region("card_" .. i, x, y0, cardW, cardH, function()
             BuildLayer(i)

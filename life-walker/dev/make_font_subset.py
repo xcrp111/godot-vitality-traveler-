@@ -25,14 +25,28 @@ CHARS_FILE = os.path.join(ROOT, ".tmp", "subset_chars.txt")
 EXTRA = "×·—…「」『』【】、。，：；！？（）《》“”‘’±%‰℃①②③④⑤"
 
 
+def lua_texts():
+    """scripts/ 与 dev/ 下的全部 .lua。
+
+    早期只扫 scripts/，结果 dev 预览（DevActMapView 等）里新加的文案从来没进过子集，
+    屏幕上就出现「本层机　房」这种缺字空洞。dev/ 不进构建包，但 dev 视图跑的是同一份
+    assets/Fonts/MiSans-Regular.ttf，所以必须一起扫。
+    """
+    for sub in ("scripts", "dev"):
+        for path in sorted(glob.glob(os.path.join(ROOT, sub, "*.lua"))):
+            with io.open(path, encoding="utf-8") as f:
+                yield path, f.read()
+
+
 def main() -> int:
     chars = set()
-    for path in glob.glob(os.path.join(ROOT, "scripts", "*.lua")):
-        with io.open(path, encoding="utf-8") as f:
-            chars.update(f.read())
+    for _path, text in lua_texts():
+        chars.update(text)
     chars.update(chr(c) for c in range(0x20, 0x7F))
     chars.update(EXTRA)
-    chars = {c for c in chars if c.isprintable() or c == " "}
+    # U+3000 全角空格：isprintable() 对它返回 False，但 Menu.lua 拿它做对齐，
+    # 字体里没字形的话那处直接搜成一团，所以要显式保留。
+    chars = {c for c in chars if c.isprintable() or c in (" ", "\u3000")}
 
     os.makedirs(os.path.dirname(CHARS_FILE), exist_ok=True)
     with io.open(CHARS_FILE, "w", encoding="utf-8") as f:
