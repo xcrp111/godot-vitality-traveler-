@@ -282,7 +282,11 @@ ActMap.ApplyMod = ApplyMod
 -- 不这么做的话「精英重压」模板自己就 +0.33，叠上病巢直接爆表，
 -- 玩家看到的会是「三张卡全都打不过」——那选择等于不存在。
 local DOWN = { double = "elite", elite = "mixed", mixed = "standard", standard = "light" }
-local UP = { light = "standard", standard = "mixed" }
+-- 阶梯：DOWN 逐级降、UP 逐级升。
+-- mixed → elite 这一档是 2026-11-10 补的：没有它，第 20 关（目标 1.75）的卡
+-- 最多只能归一到混战房（1.4），risk 恒为负，三张卡全变成「轻松」——
+-- 玩家看到的不是「选难的那个」，而是「三张一样」。
+local UP = { light = "standard", standard = "mixed", mixed = "elite" }
 
 local function NormalizeGrid(grid, level, mod)
     local target = Config.MapTargetCost(level) + ((mod and mod.risk) or 0)

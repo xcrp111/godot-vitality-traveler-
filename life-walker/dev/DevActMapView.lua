@@ -69,10 +69,18 @@ local function EnvLevel()
 end
 
 -- ---------------------------------------------------------------- 绘制
-local function RiskColor(risk)
-    if risk <= 0.02 then return ACCENT.green end
-    if risk <= 0.28 then return ACCENT.gold end
-    return ACCENT.red
+-- 颜色必须跟 RiskLabel 的档位一一对应，不能自己另用一套阈值：
+-- 旧版是 risk<=0.02 算绿、<=0.28 算金，而 RiskLabel 是 -0.20 / 0.10 / 0.32，
+-- 结果「轻松 -0.22」和「常规 -0.18」都是绿的，三张卡看起来还是一样。
+local RISK_COLOR = {
+    ["轻松"] = ACCENT.green,
+    ["常规"] = { 148, 170, 200 },   -- 软蓝灰：中性档，又和选中框的青区分开
+    ["吃紧"] = ACCENT.gold,
+    ["险恶"] = ACCENT.red,
+}
+
+local function RiskColor(label)
+    return RISK_COLOR[label] or ACCENT.red
 end
 
 local function DrawMiniGrid(grid, x, y, cell, gap)
@@ -108,7 +116,7 @@ local function DrawCards()
         -- 风险徽标：三选一里最该先被看见的就是「这关多难」，所以给它带色的实心底 +
         -- 大一号的字，边框加粗。以前是近乎黑色的底 + 13px 字，跟旁边的小数字一个重量，
         -- 两张「轻松」几乎看不出区别。
-        local rc = RiskColor(card.risk)
+        local rc = RiskColor(card.riskLabel)
         local badgeW, badgeH = 104, 28
         local badgeX = x + cardW - 18 - badgeW
         UI.Panel(badgeX, y0 + 16, badgeW, badgeH, 14,

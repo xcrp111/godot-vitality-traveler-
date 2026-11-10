@@ -88,8 +88,8 @@ local function TestCards()
                 if card.risk <= 0.02 then hasSafe = true; safeCount = safeCount + 1 end
                 if math.abs(card.risk) > maxAbsRisk then maxAbsRisk = math.abs(card.risk) end
                 if card.risk < -0.45 or card.risk > 0.45 then
-                    -- 说明：低等级模板（轻战起步 / 双商补给线）在 15 关以后拉不到目标强度，
-                    -- 因为 Config 的归一阶梯只往上到混战为止（这部分和 Config.NormalizeMap 一致），
+                    -- 说明：低强度模板（轻战起步 / 双商补给线）在 15 关以后仍可能拉不到目标强度，
+                    -- 格子数有限、每次升降一档的粒度也粗（这部分和 Config.NormalizeMap 一致），
                     -- 所以「偏简单」是允许的，真正不能出现的是「三张卡都偏难」。
                     if card.risk > 0.45 then
                         check("难度偏移不超过 +0.45", false, string.format("%s risk=%.3f", card.id, card.risk))
@@ -114,8 +114,8 @@ local function TestCards()
             if allOk then check("第 " .. level .. " 关三张卡结构合法", true) end
             check("至少一张低风险卡（第 " .. level .. " 关）", hasSafe, nil)
 
-            -- 三张卡必须真的不一样：难度都归一之后 risk 会收得很紧（高阶模板本来就拉不到目标
-            -- 强度，因为归一阶梯只到混战为止），所以差异用「收益」和「风险档」两个维度看。
+            -- 三张卡必须真的不一样：难度都归一之后 risk 会收得很紧（每次只升/降一档，
+            -- 所以差异用「收益」和「风险档」两个维度看。
             local loS, hiS = 1e9, -1e9
             for _, card in ipairs(cards) do
                 if card.preview.silver < loS then loS = card.preview.silver end

@@ -245,7 +245,11 @@ Config.EndlessTemplates = {
 Config.RoomCost = { light = 0.6, standard = 1.0, mixed = 1.4, elite = 2.2, double = 3.0 }
 
 -- 目标平均强度：第 1 关约 1.2，之后每关 +0.03（第 20 关约 1.75）
--- 战斗房的组成只做小幅调整：只降级 / 只升到混战，不会凭空造精英房
+-- 战斗房的组成按阶梯逐步升/降：light → standard → mixed → elite。
+-- 2026-11-10 补了一档：阶梯原本最高只能升到混战（mixed，权重 1.4），
+-- 第 20 关目标 1.75 根本够不到，归一永远是「差一截」，三张卡就全被判成「轻松」。
+-- 加上 mixed → elite 之后，归一才真能把强度拉到目标值上。
+-- 仍然不会凭空造双精英：double 只由模板给出，归一阶梯不升到 double。
 function Config.MapTargetCost(level)
     level = math.max(1, math.min(60, math.floor(level or 1)))
     return 1.15 + 0.03 * level
@@ -253,7 +257,7 @@ end
 
 local COMBAT_SET = { light = true, standard = true, mixed = true, elite = true, double = true }
 local DOWN = { double = "elite", elite = "mixed", mixed = "standard", standard = "light" }
-local UP = { light = "standard", standard = "mixed" }
+local UP = { light = "standard", standard = "mixed", mixed = "elite" }
 
 local function CloneGrid(grid)
     local out = {}
