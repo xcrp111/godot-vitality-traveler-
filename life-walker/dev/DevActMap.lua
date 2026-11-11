@@ -59,11 +59,13 @@ end
 
 -- ---------------------------------------------------------------- ② 层卡
 local function TestCards()
-    local totalCards, safeCount, maxAbsRisk = 0, 0, 0
+    local totalCards, safeCount, maxAbsRisk, totalRolls = 0, 0, 0, 0
+    local sameLabelRolls, normalCollapse = 0, 0
     local minSilver, maxSilver = 1e9, 0
     for level = 1, 20 do
         for _ = 1, 10 do
             local cards = ActMap.RollCards(level)
+            totalRolls = totalRolls + 1
             check("第 " .. level .. " 关出 3 张卡", #cards == 3, #cards)
             local tplSeen, modSeen, hasSafe = {}, {}, false
             local allOk = true
@@ -123,10 +125,33 @@ local function TestCards()
             end
             check("三张卡的收益差 >= 5%（第 " .. level .. " 关）",
                 (hiS - loS) >= hiS * 0.05, string.format("%d~%d", loS, hiS))
+
+            -- 回归护栏（2026-11-11 提交 dc86218）：三张卡的风险档不能全是同一个。
+            -- 曾经第 20 关三张全「轻松」——归一阶梯最高只到混战，永远够不到
+            -- MapTargetCost(20)=1.75，risk 恒为负。玩家在界面上看到的是三张一模一样的卡，
+            -- 而当时 DevActMap 只断言结构合法，这种「看起来没问题」的退化它抓不到。
+            local label0 = cards[1].riskLabel
+            local labelSame = true
+            for _, card in ipairs(cards) do
+                if card.riskLabel ~= label0 then labelSame = false end
+            end
+            if labelSame then
+                sameLabelRolls = sameLabelRolls + 1
+                if label0 == "常规" then
+                    -- 宽档（-0.20~0.10，0.30 宽）：低级关卡三张卡都落在里面很正常，
+                    -- 不是归一坏了，是「绝对阈值分不开轻重」——那是方案 B 的事。
+                    normalCollapse = normalCollapse + 1
+                else
+                    check("三张卡的风险档不全同名（第 " .. level .. " 关）", false,
+                        label0 .. " ×3")
+                end
+            end
         end
     end
     print(string.format("[Act] 层卡：%d 张，其中低风险 %d 张（%.0f%%），最大 |risk|=%.3f，银币区间 %d~%d",
         totalCards, safeCount, safeCount / math.max(1, totalCards) * 100, maxAbsRisk, minSilver, maxSilver))
+    print("[Act] 风险档：" .. sameLabelRolls .. "/" .. totalRolls .. " 次抽卡三张同名，其中三张全「常规」"
+        .. normalCollapse .. " 次")
     check("低风险卡占比合理（>=30%）", safeCount / math.max(1, totalCards) >= 0.30,
         safeCount .. "/" .. totalCards)
 end
