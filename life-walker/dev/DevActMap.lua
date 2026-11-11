@@ -61,6 +61,7 @@ end
 local function TestCards()
     local totalCards, safeCount, maxAbsRisk, totalRolls = 0, 0, 0, 0
     local sameLabelRolls, normalCollapse = 0, 0
+    local paretoPairs, paretoWorst, paretoRolls = 0, nil, 0
     local minSilver, maxSilver = 1e9, 0
     for level = 1, 20 do
         for _ = 1, 10 do
@@ -146,12 +147,44 @@ local function TestCards()
                         label0 .. " ×3")
                 end
             end
+
+            -- 帕累托（诊断，不断言）：不该存在「既更难、又给得更少」的卡——
+            -- 那种卡在三选一里永远没有选它的理由。2026-11-11 第 10 关就是：
+            -- 「轻松 -0.22」那张全清期望只有 281，而「吃紧 +0.13」那张是 599。
+            local pairsBefore, gapWorst = paretoPairs, 0
+            for i = 1, 3 do
+                for j = 1, 3 do
+                    if i ~= j then
+                        local a, b = cards[i], cards[j]
+                        local harsher = a.risk > b.risk + 1e-9
+                        local sameRisk = math.abs(a.risk - b.risk) <= 1e-9
+                        local paysNoMore = a.preview.silver <= b.preview.silver + 1e-9
+                        if (harsher or sameRisk) and paysNoMore then
+                            paretoPairs = paretoPairs + 1
+                            local gap = b.preview.silver - a.preview.silver
+                            if gap > gapWorst then
+                                gapWorst = gap
+                                paretoWorst = {
+                                    level = level, gap = gap,
+                                    desc = string.format("%s 比 %s 更难(%+.2f vs %+.2f)却少给 %d 银币（%d vs %d）",
+                                        a.templateId, b.templateId, a.risk, b.risk,
+                                        gap, a.preview.silver, b.preview.silver),
+                                }
+                            end
+                        end
+                    end
+                end
+            end
+            if paretoPairs > pairsBefore then paretoRolls = paretoRolls + 1 end
         end
     end
     print(string.format("[Act] 层卡：%d 张，其中低风险 %d 张（%.0f%%），最大 |risk|=%.3f，银币区间 %d~%d",
         totalCards, safeCount, safeCount / math.max(1, totalCards) * 100, maxAbsRisk, minSilver, maxSilver))
     print("[Act] 风险档：" .. sameLabelRolls .. "/" .. totalRolls .. " 次抽卡三张同名，其中三张全「常规」"
         .. normalCollapse .. " 次")
+    print("[Act] 帕累托诊断：" .. paretoRolls .. "/" .. totalRolls .. " 次抽卡存在被支配的卡（共 "
+        .. paretoPairs .. " 个卡-卡支配对）"
+        .. (paretoWorst and ("；最极端：第 " .. paretoWorst.level .. " 关 " .. paretoWorst.desc) or ""))
     check("低风险卡占比合理（>=30%）", safeCount / math.max(1, totalCards) >= 0.30,
         safeCount .. "/" .. totalCards)
 end
