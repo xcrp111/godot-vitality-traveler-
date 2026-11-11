@@ -398,6 +398,121 @@ end
 --   · 至少一张 risk <= 0（给一条不冒险的路）
 --   · 每张卡的 risk 在 [-0.45, +0.45]
 --   · 每张卡都通过 Config.CheckMap
+-- ---------------------------------------------------------------- 三张卡的整体修复
+-- 支配卡：一张卡既更难（或同难度）、又给得更少。这种卡在三选一里永远没有选它的理由，
+-- 玩家只是多了一个废选项。实测（2026-11-11）200 次抽卡里有 55 次（27.5%）存在这种卡。
+-- 「轻松 = 房间战斗弱」已是定稿语义，所以修复方向是**把银币补上去**，不是改标签。
+local DOM_EPS = 1e-9
+
+--- a 是否被 b 支配（b 至少一样好，且有一项严格更好）
+function ActMap.IsDominated(a, b)
+    if a == nil or b == nil or a == b then return false end
+    local harsher = a.risk > b.risk + DOM_EPS
+    local sameRisk = math.abs(a.risk - b.risk) <= DOM_EPS
+    if harsher then return a.preview.silver <= b.preview.silver end
+    if sameRisk then return a.preview.silver < b.preview.silver end
+    return false
+end
+
+-- 战斗房升/降一级。只改类型不改数量，所以 CheckMap 的「首房为战斗房 / 商店事件各 ≥1」
+-- 不受影响（IsAnchor 会保护起点、首领、首房）。
+local BUMP_UP = { light = "standard", standard = "mixed", mixed = "elite" }
+local BUMP_DOWN = { elite = "mixed", mixed = "standard", standard = "light" }
+
+local function ChangeOneRoom(card, level, order)
+    local grid = card.grid
+    for r = 1, #grid do
+        for c = 1, #grid[r] do
+            local from = grid[r][c]
+            local to = order[from]
+            if to and not IsAnchor(grid, r, c) then
+                grid[r][c] = to
+                if Config.CheckMap(grid) then
+                    card.preview = ActMap.PreviewOf(grid, card.mod)
+                    card.risk = ActMap.RiskOf(grid, level)
+                    card.riskLabel = ActMap.RiskLabel(card.risk)
+                    card.baseSilver = card.preview.silver
+                    card.silverFix = 0
+                    return true
+                end
+                grid[r][c] = from
+            end
+        end
+    end
+    return false
+end
+
+-- 把被支配的卡修到「不再被支配」。
+-- 只补银币是不够的：两张卡**强度完全一样**时，无论怎么调银币，穷的那张都会被富的支配
+-- （同强度、更少钱）——所以得先把「强度撞车」拆开，给其中一张升/降一个战斗房。
+function ActMap.RepairPareto(cards, level, cap)
+    cap = cap or 1.00
+    local fixes, added, bumped = 0, 0, 0
+    for _ = 1, 4 do
+        -- ① 拆强度撞车：同强度且给得不更多的那张，升一个战斗房（升不了就把另一张降一个）
+        for i = 1, #cards do
+            for j = 1, #cards do
+                local a, b = cards[i], cards[j]
+                if i ~= j and math.abs(a.risk - b.risk) <= DOM_EPS
+                    and a.preview.silver <= b.preview.silver then
+                    if ChangeOneRoom(a, level, BUMP_UP) then
+                        bumped = bumped + 1
+                    elseif ChangeOneRoom(b, level, BUMP_DOWN) then
+                        bumped = bumped + 1
+                    end
+                end
+            end
+        end
+
+        -- ② 补银币：更难（或同难度）却给得更少的那张，补到严格多于对方
+        for i = 1, #cards do
+            local a = cards[i]
+            for j = 1, #cards do
+                local b = cards[j]
+                if ActMap.IsDominated(a, b) then
+                    local base = a.baseSilver or a.preview.silver
+                    local harsher = a.risk > b.risk + DOM_EPS
+                    -- 同难度要求银币严格更多，否则会被反向支配；更难则至少持平
+                    local target = harsher and (b.preview.silver + 1) or b.preview.silver
+                    -- 封顶 +1：卡在封顶线时也要保证「严格多于对方」，否则会留下 1 银币的残留支配
+                    local limit = math.floor(base * (1 + cap) + 0.5) + 1
+                    if target > limit then target = limit end
+                    if target > limit then
+                        -- 差距大到补不起（>cap）：把这张「又难又穷」的卡降一级，让它不再更难。
+                        -- 降不下来（已经全是浅滩房）就只能留着，下一轮再说。
+                        ChangeOneRoom(a, level, BUMP_DOWN)
+                    elseif target > a.preview.silver then
+                        local d = target - a.preview.silver
+                        a.silverFix = (a.silverFix or 0) + d
+                        a.preview.silver = target
+                        fixes = fixes + 1
+                        added = added + d
+                    end
+                end
+            end
+        end
+    end
+    return fixes, added, bumped
+end
+
+-- M2：收益分档（三张卡相对排名，不引入新的绝对阈值）
+-- 标签只表达战斗强度，所以「选哪张」这个决策只能靠收益分档承担。
+function ActMap.AssignSilverTiers(cards)
+    -- 三张卡 → 1/2/3 星，卡片数变了也能用（星数 = 相对排名）
+    local STAR = { [1] = "★☆☆", [2] = "★★☆", [3] = "★★★" }
+    local LABEL = { [1] = "偏少", [2] = "一般", [3] = "偏多" }
+    for i = 1, #cards do
+        local c = cards[i]
+        local n = 0
+        for j = 1, #cards do
+            if cards[j].preview.silver < c.preview.silver - DOM_EPS then n = n + 1 end
+        end
+        c.silverTier = math.min(3, n + 1)   -- 1 = 最穷 … 3 = 最富
+        c.silverStars = STAR[c.silverTier]
+        c.silverLabel = LABEL[c.silverTier]
+    end
+end
+
 ---@param level integer
 ---@param opts table|nil  { rand, needShop, templates }
 ---@return table[] cards
@@ -482,6 +597,11 @@ function ActMap.RollCards(level, opts)
             forceEncounter = false,
         }
     end
+
+    -- 三张卡都齐了才做整体修复：先记基准收益（用于封顶和统计），再修帕累托，最后分档
+    for _, c in ipairs(cards) do c.baseSilver = c.preview.silver end
+    ActMap.RepairPareto(cards, level)
+    ActMap.AssignSilverTiers(cards)
     return cards
 end
 

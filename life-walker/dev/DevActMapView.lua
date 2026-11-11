@@ -142,7 +142,12 @@ local function DrawCards()
         UI.Text(tx, y0 + 174, 14, "全清期望", S.col.dim)
         -- 银币以前是 17px 亮绿，比难度徽标还抢眼（玩家先看到「能扫多少钱」）。
         -- 压回普通数字的重量，让风险排在收益前面。
+        -- M2（2026-11-11）：「轻松」只表达战斗强度，不再当收益承诺，所以收益必须自己可读——
+        -- 数字后面加三张卡相对排名得出的星级 + 「偏少/一般/偏多」，不用玩家去比数字。
+        local tierColor = (card.silverTier == 3) and ACCENT.gold or S.col.dim
         UI.Text(tx + 64, y0 + 172, 15, p.silver .. " 银币", S.col.text)
+        UI.Text(tx + 64, y0 + 194, 13, (card.silverStars or "") .. " " .. (card.silverLabel or ""),
+            tierColor)
 
         UI.Region("card_" .. i, x, y0, cardW, cardH, function()
             BuildLayer(i)

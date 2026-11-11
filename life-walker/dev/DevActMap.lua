@@ -62,6 +62,8 @@ local function TestCards()
     local totalCards, safeCount, maxAbsRisk, totalRolls = 0, 0, 0, 0
     local sameLabelRolls, normalCollapse = 0, 0
     local paretoPairs, paretoWorst, paretoRolls = 0, nil, 0
+    local baseSilverSum, nowSilverSum, silverFixCards = 0, 0, 0
+    local maxFixRatio = 1
     local minSilver, maxSilver = 1e9, 0
     for level = 1, 20 do
         for _ = 1, 10 do
@@ -124,8 +126,15 @@ local function TestCards()
                 if card.preview.silver < loS then loS = card.preview.silver end
                 if card.preview.silver > hiS then hiS = card.preview.silver end
             end
-            check("三张卡的收益差 >= 5%（第 " .. level .. " 关）",
-                (hiS - loS) >= hiS * 0.05, string.format("%d~%d", loS, hiS))
+            -- 三张卡必须真的不一样。M1 之后银币会向同强度的那张靠齐（那正是设计意图），
+            -- 所以不能再用「收益差 >= 5%」卡——改成「不能有完全同质的两张卡」。
+            local function SameCard(a, b)
+                return math.abs(a.risk - b.risk) <= 1e-9 and a.preview.silver == b.preview.silver
+            end
+            check("三张卡不完全同质（第 " .. level .. " 关）",
+                not (SameCard(cards[1], cards[2]) or SameCard(cards[1], cards[3]) or SameCard(cards[2], cards[3])),
+                string.format("%d/%d/%d 银币", cards[1].preview.silver, cards[2].preview.silver,
+                    cards[3].preview.silver))
 
             -- 回归护栏（2026-11-11 提交 dc86218）：三张卡的风险档不能全是同一个。
             -- 曾经第 20 关三张全「轻松」——归一阶梯最高只到混战，永远够不到
@@ -148,43 +157,65 @@ local function TestCards()
                 end
             end
 
-            -- 帕累托（诊断，不断言）：不该存在「既更难、又给得更少」的卡——
+            -- 帕累托（M1 后变成硬断言）：不该存在「既更难、又给得更少」的卡——
             -- 那种卡在三选一里永远没有选它的理由。2026-11-11 第 10 关就是：
-            -- 「轻松 -0.22」那张全清期望只有 281，而「吃紧 +0.13」那张是 599。
-            local pairsBefore, gapWorst = paretoPairs, 0
+            -- 两张都叫「轻松」，-0.30 那张 242 银币，被 -0.22 那张 281 银币完全支配。
+            local dominantPairs = 0
             for i = 1, 3 do
                 for j = 1, 3 do
                     if i ~= j then
                         local a, b = cards[i], cards[j]
-                        local harsher = a.risk > b.risk + 1e-9
-                        local sameRisk = math.abs(a.risk - b.risk) <= 1e-9
-                        local paysNoMore = a.preview.silver <= b.preview.silver + 1e-9
-                        if (harsher or sameRisk) and paysNoMore then
-                            paretoPairs = paretoPairs + 1
-                            local gap = b.preview.silver - a.preview.silver
-                            if gap > gapWorst then
-                                gapWorst = gap
-                                paretoWorst = {
-                                    level = level, gap = gap,
-                                    desc = string.format("%s 比 %s 更难(%+.2f vs %+.2f)却少给 %d 银币（%d vs %d）",
-                                        a.templateId, b.templateId, a.risk, b.risk,
-                                        gap, a.preview.silver, b.preview.silver),
-                                }
-                            end
+                        if ActMap.IsDominated(a, b) then
+                            dominantPairs = dominantPairs + 1
+                            paretoWorst = paretoWorst or {
+                                level = level,
+                                desc = string.format("%s 比 %s 更难(%+.2f vs %+.2f)却少给 %d 银币",
+                                    a.templateId, b.templateId, a.risk, b.risk,
+                                    b.preview.silver - a.preview.silver),
+                            }
                         end
                     end
                 end
             end
-            if paretoPairs > pairsBefore then paretoRolls = paretoRolls + 1 end
+            if dominantPairs > 0 then
+                paretoRolls = paretoRolls + 1
+                paretoPairs = paretoPairs + dominantPairs
+            end
+            check("三张卡都在帕累托前沿（第 " .. level .. " 关）", dominantPairs == 0,
+                dominantPairs .. " 对 " .. string.format(
+                    "risk=%+.3f/%+.3f/%+.3f silver=%d/%d/%d fix=%d/%d/%d",
+                    cards[1].risk, cards[2].risk, cards[3].risk,
+                    cards[1].preview.silver, cards[2].preview.silver, cards[3].preview.silver,
+                    cards[1].silverFix or 0, cards[2].silverFix or 0, cards[3].silverFix or 0))
+
+            -- M1 的代价：补偿不能把经济抬高太多（对比修前基準）
+            for _, card in ipairs(cards) do
+                baseSilverSum = baseSilverSum + (card.baseSilver or card.preview.silver)
+                nowSilverSum = nowSilverSum + card.preview.silver
+                if (card.silverFix or 0) > 0 then
+                    silverFixCards = silverFixCards + 1
+                    local base = card.baseSilver or card.preview.silver
+                    local ratio = card.preview.silver / math.max(1, base)
+                    if ratio > maxFixRatio then maxFixRatio = ratio end
+                end
+                local t = card.silverTier
+                if not (t == 1 or t == 2 or t == 3) then
+                    check("收益分档在 1~3（第 " .. level .. " 关）", false, tostring(t))
+                end
+            end
         end
     end
     print(string.format("[Act] 层卡：%d 张，其中低风险 %d 张（%.0f%%），最大 |risk|=%.3f，银币区间 %d~%d",
         totalCards, safeCount, safeCount / math.max(1, totalCards) * 100, maxAbsRisk, minSilver, maxSilver))
     print("[Act] 风险档：" .. sameLabelRolls .. "/" .. totalRolls .. " 次抽卡三张同名，其中三张全「常规」"
         .. normalCollapse .. " 次")
-    print("[Act] 帕累托诊断：" .. paretoRolls .. "/" .. totalRolls .. " 次抽卡存在被支配的卡（共 "
+    print("[Act] 帕累托：" .. paretoRolls .. "/" .. totalRolls .. " 次抽卡存在被支配的卡（共 "
         .. paretoPairs .. " 个卡-卡支配对）"
-        .. (paretoWorst and ("；最极端：第 " .. paretoWorst.level .. " 关 " .. paretoWorst.desc) or ""))
+        .. (paretoWorst and ("；例：第 " .. paretoWorst.level .. " 关 " .. paretoWorst.desc) or ""))
+    print(string.format("[Act] 收益修复（M1）：%d 张卡被补过银币；总量 %d -> %d（%+.1f%%），单张最大 %+.0f%%",
+        silverFixCards, baseSilverSum, nowSilverSum,
+        (nowSilverSum - baseSilverSum) / math.max(1, baseSilverSum) * 100,
+        (maxFixRatio - 1) * 100))
     check("低风险卡占比合理（>=30%）", safeCount / math.max(1, totalCards) >= 0.30,
         safeCount .. "/" .. totalCards)
 end
