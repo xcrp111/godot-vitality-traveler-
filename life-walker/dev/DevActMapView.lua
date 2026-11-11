@@ -85,71 +85,161 @@ end
 
 local function DrawMiniGrid(grid, x, y, cell, gap)
     local rows, cols = #grid, #grid[1]
+    -- 卡牌上格子只有 17px，字会糊成一点：小于 24px 就只画色块，让它当「地形指纹」用
+    local showText = cell >= 24
     for r = 1, rows do
         for c = 1, cols do
             local room = Room(grid[r][c])
             local cx = x + (c - 1) * (cell + gap)
             local cy = y + (r - 1) * (cell + gap)
-            UI.Panel(cx, cy, cell, cell, 5, room.fill, { 20, 16, 28, 255 }, 1)
-            UI.Text(cx + cell / 2, cy + cell / 2, math.floor(cell * 0.44), room.ch, room.text,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            UI.Panel(cx, cy, cell, cell, 4, room.fill, { 20, 16, 28, 255 }, 1)
+            if showText then
+                UI.Text(cx + cell / 2, cy + cell / 2, math.floor(cell * 0.44), room.ch, room.text,
+                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            end
         end
     end
     return cols * cell + (cols - 1) * gap, rows * cell + (rows - 1) * gap
 end
 
+local function RGBA(c, a) return nvgRGBA(c[1], c[2], c[3], a or 255) end
+
+-- UTF-8 取首字（中文 3 字节，ASCII 1 字节）
+local function FirstChar(s)
+    if not s or s == "" then return "" end
+    local b = string.byte(s, 1) or 65
+    if b >= 240 then return string.sub(s, 1, 4) end
+    if b >= 224 then return string.sub(s, 1, 3) end
+    if b >= 192 then return string.sub(s, 1, 2) end
+    return string.sub(s, 1, 1)
+end
+
+-- 牌面纹章：同心环 + 放射刻线 + 多边形，参数全从卡片数据推，
+-- 所以同一次抽卡里三张天然不一样（锐度/精英数/风险档都不同），不需要美术资源。
+local function DrawSigil(cx, cy, r, card, tint)
+    local ctx = S.ctx
+    local pip = math.max(3, math.min(12, card.preview.combat + card.preview.elite * 2))
+
+    -- 外轮廓按风险档变：轻松 = 圆，常规 = 六边，吃紧 = 四角星，险恶 = 八角星。
+    -- 用形状而不是色差来区分档位——徽标颜色再鲜，离得远也看不出来。
+    local label = card.riskLabel
+    local pts, inner = 48, 1.0
+    if label == "常规" then pts, inner = 6, 1.0
+    elseif label == "吃紧" then pts, inner = 4, 0.58
+    elseif label == "险恶" then pts, inner = 8, 0.62 end
+
+    nvgBeginPath(ctx)
+    for k = 0, pts - 1 do
+        local a = (k / pts) * math.pi * 2 - math.pi / 2
+        local rr = r * ((k % 2 == 0) and 1.0 or inner)
+        local px, py = cx + math.cos(a) * rr, cy + math.sin(a) * rr
+        if k == 0 then nvgMoveTo(ctx, px, py) else nvgLineTo(ctx, px, py) end
+    end
+    nvgClosePath(ctx)
+    nvgStrokeColor(ctx, RGBA(tint, 190))
+    nvgStrokeWidth(ctx, 2)
+    nvgStroke(ctx)
+
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, cx, cy, r * (inner < 1 and 0.46 or 0.74))
+    nvgStrokeColor(ctx, RGBA(tint, 70))
+    nvgStrokeWidth(ctx, 1)
+    nvgStroke(ctx)
+
+    -- 放射刻线（条数跟着房间数走）
+    for k = 0, pip - 1 do
+        local a = (k / pip) * math.pi * 2 - math.pi / 2
+        local r1 = r * (inner < 1 and 0.50 or 0.80)
+        local r2 = r * 0.92
+        nvgBeginPath(ctx)
+        nvgMoveTo(ctx, cx + math.cos(a) * r1, cy + math.sin(a) * r1)
+        nvgLineTo(ctx, cx + math.cos(a) * r2, cy + math.sin(a) * r2)
+        nvgStrokeColor(ctx, RGBA(tint, 85))
+        nvgStrokeWidth(ctx, 1)
+        nvgStroke(ctx)
+    end
+end
+
 local function DrawCards()
-    local cardW, cardH, gap = 384, 214, 18
+    local cardW, cardH, gap = 232, 300, 20
     local totalW = cardW * 3 + gap * 2
     local x0 = (Config.DESIGN_W - totalW) / 2
-    local y0 = 96
+    local y0 = 76
 
     for i, card in ipairs(View.cards) do
         local x = x0 + (i - 1) * (cardW + gap)
+        local y = y0
         local picked = (i == View.picked)
-        local border = picked and ACCENT.cyan or S.col.line
-        UI.Panel(x, y0, cardW, cardH, 12, picked and { 36, 42, 58, 255 } or S.col.panel, border, picked and 2 or 1)
-
-        UI.Text(x + 18, y0 + 14, 20, card.templateName, S.col.text)
-        UI.Text(x + 18, y0 + 44, 14, "× " .. card.modName, ACCENT.cyan)
-
-        -- 风险徽标：三选一里最该先被看见的就是「这关多难」，所以给它带色的实心底 +
-        -- 大一号的字，边框加粗。以前是近乎黑色的底 + 13px 字，跟旁边的小数字一个重量，
-        -- 两张「轻松」几乎看不出区别。
         local rc = RiskColor(card.riskLabel)
-        local badgeW, badgeH = 104, 28
-        local badgeX = x + cardW - 18 - badgeW
-        UI.Panel(badgeX, y0 + 16, badgeW, badgeH, 14,
-            { rc[1], rc[2], rc[3], 58 }, rc, 2)
-        UI.Text(badgeX + badgeW / 2, y0 + 16 + badgeH / 2, 15,
-            string.format("%s %+.2f", card.riskLabel, card.risk), rc,
+
+        -- 牌背景：卡片自己的微色偏（按风险档取色），选中时更亮
+        local lift = picked and 16 or 0
+        local bg = {
+            30 + math.floor(rc[1] * 0.06) + lift,
+            26 + math.floor(rc[2] * 0.06) + lift,
+            40 + math.floor(rc[3] * 0.06) + lift,
+            255,
+        }
+        UI.Panel(x, y, cardW, cardH, 14, bg, picked and ACCENT.cyan or RGBA(rc, 150), picked and 3 or 2)
+
+        -- 内框（真卡都有的一圈压边），让它看起来是印出来的而不是画在一块面板上
+        UI.Panel(x + 7, y + 7, cardW - 14, cardH - 14, 10, { 0, 0, 0, 0 },
+            picked and RGBA(ACCENT.cyan, 90) or RGBA(rc, 70), 1)
+
+        -- 左上角标：关卡号（对应实体卡的花色/点数位置）
+        UI.Text(x + 16, y + 16, 10, "第 " .. View.level .. " 关", { 158, 150, 178, 255 })
+
+        -- 牌面窗：深色内凹 + 纹章 + 大字（词条首字）
+        local winX, winY, winW, winH = x + 14, y + 32, cardW - 28, 112
+        UI.Panel(winX, winY, winW, winH, 8,
+            { 18 + math.floor(rc[1] * 0.05), 15 + math.floor(rc[2] * 0.05), 25 + math.floor(rc[3] * 0.05), 255 },
+            RGBA(rc, 60), 1)
+        local cx, cy = winX + winW / 2, winY + winH / 2 + 2
+        DrawSigil(cx, cy, 40, card, rc)
+        local glyph = FirstChar(card.modName)
+        if glyph ~= "" then
+            UI.Text(cx, cy, 40, glyph, RGBA(rc, 205), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        end
+
+        -- 牌顶色带：卡片身份的第一眼信号（实体卡的色条/烫边）
+        UI.Panel(x + 7, y + 7, cardW - 14, 5, 3, RGBA(rc, 230), nil)
+
+        -- 风险徽标浮在牌面右上角：实心亮底 + 深色字，拉远也能读
+        local badgeW, badgeH = 92, 24
+        local badgeX, badgeY = winX + winW - badgeW - 8, winY + 8
+        UI.Panel(badgeX, badgeY, badgeW, badgeH, 12, rc, { 24, 20, 32, 200 }, 1)
+        UI.Text(badgeX + badgeW / 2, badgeY + badgeH / 2, 13,
+            string.format("%s %+.2f", card.riskLabel, card.risk), { 24, 20, 32, 255 },
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 
-        -- 迷你地图
-        DrawMiniGrid(card.grid, x + 18, y0 + 72, 30, 4)
+        -- 牌名条
+        UI.Text(x + 16, y + 150, 17, card.templateName, S.col.text)
+        UI.Text(x + 16, y + 172, 12, "× " .. card.modName, ACCENT.cyan)
+        UI.Line(x + 14, y + 188, x + cardW - 14, y + 188, RGBA(rc, 55), 1)
 
-        -- 数据
-        local tx = x + 18 + 4 * 30 + 3 * 4 + 20
+        -- 左下：迷你地图（4×4），右下：四项房数 + 银币
+        DrawMiniGrid(card.grid, x + 16, y + 196, 17, 3)
+
+        local tx = x + 112
         local p = card.preview
-        UI.Text(tx, y0 + 74, 14, "战斗", S.col.dim)
-        UI.Text(tx + 44, y0 + 74, 15, tostring(p.combat), S.col.text)
-        UI.Text(tx, y0 + 98, 14, "精英", S.col.dim)
-        UI.Text(tx + 44, y0 + 98, 15, tostring(p.elite), ACCENT.red)
-        UI.Text(tx, y0 + 122, 14, "商店", S.col.dim)
-        UI.Text(tx + 44, y0 + 122, 15, tostring(p.shop), ACCENT.gold)
-        UI.Text(tx, y0 + 146, 14, "机遇", S.col.dim)
-        UI.Text(tx + 44, y0 + 146, 15, tostring(p.special), ACCENT.purple)
-        UI.Text(tx, y0 + 174, 14, "全清期望", S.col.dim)
-        -- 银币以前是 17px 亮绿，比难度徽标还抢眼（玩家先看到「能扫多少钱」）。
-        -- 压回普通数字的重量，让风险排在收益前面。
-        -- M2（2026-11-11）：「轻松」只表达战斗强度，不再当收益承诺，所以收益必须自己可读——
-        -- 数字后面加三张卡相对排名得出的星级 + 「偏少/一般/偏多」，不用玩家去比数字。
-        local tierColor = (card.silverTier == 3) and ACCENT.gold or S.col.dim
-        UI.Text(tx + 64, y0 + 172, 15, p.silver .. " 银币", S.col.text)
-        UI.Text(tx + 64, y0 + 194, 13, (card.silverStars or "") .. " " .. (card.silverLabel or ""),
-            tierColor)
+        UI.Text(tx, y + 194, 11, "战斗", S.col.dim)
+        UI.Text(tx + 30, y + 193, 13, tostring(p.combat), S.col.text)
+        UI.Text(tx, y + 211, 11, "精英", S.col.dim)
+        UI.Text(tx + 30, y + 210, 13, tostring(p.elite), ACCENT.red)
+        UI.Text(tx, y + 228, 11, "商店", S.col.dim)
+        UI.Text(tx + 30, y + 227, 13, tostring(p.shop), ACCENT.gold)
+        UI.Text(tx, y + 245, 11, "机遇", S.col.dim)
+        UI.Text(tx + 30, y + 244, 13, tostring(p.special), ACCENT.purple)
 
-        UI.Region("card_" .. i, x, y0, cardW, cardH, function()
+        -- 底栏：银币（左）+ 相对分档（右，右对齐到卡片内边）
+        -- M2：「轻松」只描述战斗强度，收益必须自己可读，不能靠比较数字。
+        local tierColor = (card.silverTier == 3) and ACCENT.gold or { 158, 150, 176, 255 }
+        UI.Text(x + 16, y + 278, 11, p.silver .. " 银币", S.col.text)
+        UI.Text(x + cardW - 16, y + 278, 11,
+            (card.silverStars or "") .. " " .. (card.silverLabel or ""),
+            tierColor, NVG_ALIGN_RIGHT)
+
+        UI.Region("card_" .. i, x, y, cardW, cardH, function()
             BuildLayer(i)
         end, true)
     end
@@ -212,12 +302,12 @@ local function DrawSideInfo(x0, y0, w)
     UI.Text(x0, y0, 16, "这张卡：" .. card.templateName .. " × " .. card.modName, S.col.text)
     UI.TextBox(x0, y0 + 26, w, 13, card.mod.desc, S.col.dim)
 
-    local y = y0 + 76
+    local y = y0 + 70
     UI.Text(x0, y, 14, "本层机遇房", S.col.dim)
-    y = y + 22
+    y = y + 20
     if #layer.specials == 0 then
         UI.Text(x0, y, 15, "（没有）", S.col.dim)
-        y = y + 24
+        y = y + 22
     end
     for _, s in ipairs(layer.specials) do
         local room = Room(s.kind)
@@ -227,28 +317,28 @@ local function DrawSideInfo(x0, y0, w)
         if s.deadEnd then label = label .. "  · 死胡同" end
         if s.wasEvent then label = label .. "  · 原事件房改造" end
         UI.Text(x0 + 34, y + 5, 14, label, S.col.text)
-        y = y + 30
+        y = y + 28
     end
 
-    y = y + 10
+    y = y + 8
     UI.Text(x0, y, 14, "图例", S.col.dim)
-    y = y + 20
+    y = y + 18
     local order = { "start", "light", "standard", "mixed", "elite", "double", "shop", "boss", "encounter", "wish" }
     for i, kind in ipairs(order) do
         local col = (i - 1) % 2
         local row = math.floor((i - 1) / 2)
         local rx = x0 + col * (w / 2)
-        local ry = y + row * 24
+        local ry = y + row * 20
         local room = Room(kind)
         UI.Panel(rx, ry, 18, 18, 4, room.fill, { 20, 16, 28, 255 }, 1)
         UI.Text(rx + 9, ry + 9, 11, room.ch, room.text, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         UI.Text(rx + 26, ry + 2, 13, room.name, S.col.dim)
     end
-    UI.Text(x0, y + 5 * 24 + 2, 13, "卡片上的「遇」= 机遇占位（进层后才定具体类型）", S.col.dim)
+    UI.Text(x0, y + 5 * 20 + 4, 12, "卡片上的「遇」= 机遇占位（进层后才定具体类型）", S.col.dim)
 
-    local noteY = y + 5 * 24 + 26
-    UI.Text(x0, noteY, 13, "每层固定 1 个机遇房；村落改为战斗房 12% 掉落；", S.col.dim)
-    UI.Text(x0, noteY + 20, 13, "「命运」收进得偿所愿的第五个方向「搏」。", S.col.dim)
+    local noteY = y + 5 * 20 + 26
+    UI.Text(x0, noteY, 12, "每层固定 1 个机遇房；村落改为战斗房 12% 掉落；", S.col.dim)
+    UI.Text(x0, noteY + 18, 12, "「命运」收进得偿所愿的第五个方向「搏」。", S.col.dim)
 end
 
 function HandleRender()
@@ -268,16 +358,17 @@ function HandleRender()
 
     DrawCards()
 
-    -- 节点图
-    local gx, gy, cell, gap = 48, 336, 72, 12
+    -- 节点图：牌变高了，整块往下挪，格子从 72 收到 58，给底部留出呼吸
+    local gx, gy, cell, gap = 48, 382, 58, 9
     DrawLayerGraph(gx, gy, cell, gap)
     local gw = View.layer.cols * cell + (View.layer.cols - 1) * gap
-    UI.Text(gx, gy + View.layer.rows * (cell + gap) + 4, 13,
+    UI.Text(gx, gy + View.layer.rows * (cell + gap) + 2, 12,
         "4×4 节点图 · 金框 = 机遇房 / 死胡同", S.col.dim)
 
-    DrawSideInfo(gx + gw + 40, 336, 560)
+    DrawSideInfo(gx + gw + 32, 376, 620)
 
-    UI.Text(48, 690, 13, "DevActMapView · 数据来自 ActMap.RollCards / GenerateLayer，种子固定", { 120, 112, 140, 255 })
+    UI.Text(Config.DESIGN_W - 48, 34, 11, "DevActMapView · 数据来自 ActMap.RollCards / GenerateLayer",
+        { 110, 103, 130, 255 }, NVG_ALIGN_RIGHT)
 
     UI.EndDesign()
     nvgEndFrame(S.ctx)
@@ -308,7 +399,7 @@ function Start()
     LoadLevel(View.level)
 
     -- 自检：把布局数字打出来，方便在无截图时也能核对
-    local cardW, gap = 384, 18
+    local cardW, gap = 232, 20
     local totalW = cardW * 3 + gap * 2
     print(string.format("[View] level=%d cards=%d 卡片总宽=%d (画布 %d) 居中左边距=%d",
         View.level, #View.cards, totalW, Config.DESIGN_W, (Config.DESIGN_W - totalW) / 2))
