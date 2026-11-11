@@ -12,6 +12,14 @@
 
 > 只记「上一次同步到 GitHub 之后」的变化。上一次同步：**2026-10-27**（master `50652a8`）。
 
+### 2026-11-09~11 · 层间地图 / 局内地图 / 机遇系统（dev1(chen)）
+
+- 新增 `scripts/ActMap.lua`（幕结构、层卡三选一、4×4 局内节点图）、`scripts/Opportunity.lua`（机遇池：2 个地图节点 + 村落掉落 + 命运「搏」）、`dev/DevActMap.lua`（1600+ 断言）、`dev/DevActMapView.lua`（层卡 / 节点图可视化预览）
+- 层卡风险档：绝对阈值分「轻松 / 常规 / 吃紧 / 险恶」，徽标改成带色实心底；`Config.UP` / `ActMap.UP` 补 `mixed→elite`，修掉第 20 关三张卡全「轻松」（归一阶梯最高只到混战，拉不到 `MapTargetCost(20)=1.75`）
+- 字体子集重裁（缺 132 字形 → 0），扫描范围扩到 `scripts/ + dev/`，新增 `dev/check_font.py`（本机无 node）
+- 回归：`DevActMap` failures = 0（600 张卡 / 200 次抽卡），并加了一条「三张卡风险档不全同名」护栏
+- **尚未接进真流程**（没改 `Run.lua` / `Screens.lua`）。说明见 [`docs/ACT_MAP_README.md`](docs/ACT_MAP_README.md)，待办见 [`docs/ACT_MAP_TODO.md`](docs/ACT_MAP_TODO.md)，设计见 [`docs/ACT_MAP.md`](docs/ACT_MAP.md)
+
 ### 2026-10-30 · 合并 dev2(dong) 的公会系统
 
 - 从 `dev2(dong)` 分支移植：`scripts/Guild.lua`（贡献币经济 / 科技树 / 周限购 / 局内特权 / 公会团本）、`scripts/GuildUI.lua`（5 页签界面）、`dev/DevGuild.lua`（65 条断言）
