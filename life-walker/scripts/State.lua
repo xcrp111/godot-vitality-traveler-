@@ -137,6 +137,7 @@
 ---@field petAttr any
 ---@field petLastDraw any
 ---@field petPickLow any
+---@field levelCards any
 ---@field showAssist boolean
 ---@field timeScale number
 ---@field showStatus boolean
@@ -281,6 +282,7 @@ local S = {
     campBagPage = nil,
     hover = nil,
     hoverIsMouse = nil,
+    levelCards = nil,
     showAssist = true,     -- 角色辅助显示：光圈 / 普攻范围 / 瞄准线
     timeScale = 1,         -- 战斗时间倍率（慢放看动作，1 / 0.5 / 0.25）
     showStatus = false,

@@ -307,6 +307,9 @@ function UI.FormatNumber(n)
     return out
 end
 
+local imageCache = {}
+local imageFailed = {}
+
 function UI.ImageHandle(path)
     if imageCache[path] then return imageCache[path] end
     if imageFailed[path] then return nil end

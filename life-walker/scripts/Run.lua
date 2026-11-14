@@ -561,6 +561,9 @@ function Run.EnterRoom(roomType)
     if roomType == "shop" then
         Run.OpenShop()
         S.screen = "shop"
+    elseif roomType == "encounter" or roomType == "wish" then
+        Run.OpenOpportunity(roomType)
+        S.screen = "event"
     elseif roomType == "event" then
         Run.OpenEvent()
         S.screen = "event"
@@ -571,10 +574,134 @@ function Run.EnterRoom(roomType)
     end
 end
 
+-- 用层卡（ActMap）生成的地图开局：先按正常流程建 run，再替换地图与出生点
+---@param level integer
+---@param layer table ActMap.GenerateLayer 的产物
+function Run.StartWithLayer(level, layer)
+    Run.Start(level)
+    local run = S.run
+    if not run or not layer then return end
+    run.map = layer.grid
+    run.rows, run.cols = layer.rows, layer.cols
+    run.layerEdges = layer.edges
+    run.specials = layer.specials
+    run.layerCard = layer.card
+    run.lastLayerShop = Config.GridHasRoom(layer.grid, "shop")
+    run.posR, run.posC = run.rows, 1
+    run.cleared = {}
+    run.visited = {}
+    run.visited[Key(run.posR, run.posC)] = true
+    run.cleared[Key(run.posR, run.posC)] = true
+    run.roomType = "start"
+    S.screen = "map"
+end
+
+-- 机遇房：把 run 的当前状态交给 Opportunity，抽一个机遇出来
+function Run.OpenOpportunity(kind)
+    ReleaseInput()
+    local run = S.run
+    if not run then return end
+    local p = run.player
+    local Opportunity = require "Opportunity"
+
+    local ctx = Run.OppCtx(run, p)
+    local offer = Opportunity.Offer(ctx, kind or "encounter")
+    if not offer then
+        return Run.OpenEvent()
+    end
+    run.event = Run.OppEvent(offer, ctx, kind)
+end
+
+-- 机遇上下文：把 run / player 的当前状态包给 Opportunity
+function Run.OppCtx(run, p)
+    local Opportunity = require "Opportunity"
+    return Opportunity.MakeContext({
+        level = math.max(1, math.floor(run.level or 1) + math.floor((run.step or 1) / 4)),
+        state = {
+            silver = run.silver or 0,
+            hp = p.hp, maxHp = p.maxHp,
+            shield = p.shield or 0, maxShield = p.maxShield or 0,
+            items = #(run.items or {}),
+        },
+        hooks = {
+            grantBuff = function(rarity)
+                local bf = Run.RollBuff(rarity)
+                local cap = run.endless and Config.Endless.buffCap or 99
+                if #p.buffs >= cap then
+                    run.event = run.event or {}
+                    run.event.pendingBuff = bf
+                    return nil
+                end
+                Run.GrantBuff(p, bf)
+                return bf
+            end,
+            addGold = function(n) run.silver = math.max(0, (run.silver or 0) + n) end,
+            addExp = function(n)
+                S.data.essence = (S.data.essence or 0) + n
+                S.data.essenceEarned = (S.data.essenceEarned or 0) + n
+                Save.SyncAccount(S.data)
+            end,
+            addItem = function(n)
+                for _ = 1, (n or 1) do Run.AddItem("potion_small") end
+            end,
+            useItem = function(n)
+                local need = n or 1
+                for _ = 1, need do
+                    if not Run.UseItemAt(1) then return false end
+                end
+                return true
+            end,
+            reveal = function() run.intel = (run.intel or 0) + 1 end,
+            reroll = function(n) run.rerolls = (run.rerolls or 0) + (n or 1) end,
+        },
+    })
+end
+
+-- offer → 事件数据结构（UI 直接吃这个）
+function Run.OppEvent(offer, ctx, kind)
+    local ev = {
+        title = offer.title or "机遇",
+        text = offer.text or "",
+        options = {}, ctx = ctx, offer = offer, oppKind = kind,
+    }
+    if offer.roll then
+        ev.options[1] = { label = "搏一次", enabled = true, index = 1 }
+    else
+        for i, opt in ipairs(offer.options or {}) do
+            local label = opt.label or "（未命名）"
+            if opt.cost and opt.cost.silver then
+                label = label .. string.format("（%d 血尘）", opt.cost.silver)
+            end
+            ev.options[i] = { label = label, enabled = opt.enabled ~= false, index = i }
+        end
+    end
+    return ev
+end
+
+-- 清完战斗房后 12% 概率「路过遗弃村落」（Opportunity 内置概率）
+function Run.MaybeVillageDrop()
+    local run = S.run
+    if not run or run.endless then return false end
+    local kind = run.roomType
+    if not (kind == "light" or kind == "standard" or kind == "mixed"
+        or kind == "elite" or kind == "double") then
+        return false
+    end
+    local Opportunity = require "Opportunity"
+    local ctx = Run.OppCtx(run, run.player)
+    local offer = Opportunity.RollVillageDrop(ctx)
+    if not offer then return false end
+    run.event = Run.OppEvent(offer, ctx, "village")
+    S.screen = "event"
+    return true
+end
+
 function Run.OnRoomCleared()
     local run = S.run
     if not run then return end
     run.cleared[Key(run.posR, run.posC)] = true
+    -- 清完战斗房有概率路过遗弃村落（走机遇结算）
+    if Run.MaybeVillageDrop() then return end
     if run.roomType == "boss" then
         if run.endless then
             -- 无尽模式：打完本层 Boss 继续下一层，不结算通关
@@ -1228,6 +1355,23 @@ function Run.ChooseEvent(index)
     if not ev or ev.result then return end
     local opt = ev.options[index]
     if not opt or opt.enabled == false then return end
+
+    -- 机遇房：交给 Opportunity 结算，再把状态回写到 run / player
+    if ev.ctx then
+        local Opportunity = require "Opportunity"
+        local lines, ok, effects = Opportunity.Resolve(ev.ctx, ev.offer, index)
+        local p = run.player
+        p.hp = math.max(0, math.min(p.maxHp, ev.ctx.state.hp or p.hp))
+        p.shield = math.max(0, math.min(p.maxShield or p.shield or 0, ev.ctx.state.shield or p.shield or 0))
+        run.silver = math.max(0, ev.ctx.state.silver or run.silver)
+        if effects and (effects.stepRisk or 0) > 0 then
+            run.step = run.step + math.floor(effects.stepRisk)
+        end
+        ev.result = table.concat(lines, "\n")
+        if not ok then ev.result = ev.result .. "\n（没有产生效果）" end
+        return
+    end
+
     ev.result = opt.action()
 end
 

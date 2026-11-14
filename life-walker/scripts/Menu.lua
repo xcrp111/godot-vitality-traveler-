@@ -69,8 +69,10 @@ local function FixLoadout()
 end
 Menu.FixLoadout = FixLoadout
 
+local LevelCards = require "LevelCards"
+
 local function StartLevel()
-    Run.Start(S.selectedLevel)
+    LevelCards.Open(S.selectedLevel)
 end
 
 local function ClassStatusLines()
@@ -2144,7 +2146,7 @@ function Menu.DrawLevels()
     UI.Button("panel_start", x + 32, y + 170, 556, 62, "开始第 " .. S.selectedLevel .. " 关",
         function()
             S.panelMode = nil
-            Run.Start(S.selectedLevel)
+            LevelCards.Open(S.selectedLevel)
         end, { fontSize = 22, accent = S.col.green, fill = { 40, 74, 52, 255 } })
 
     local endlessOpen = Save.EndlessUnlocked(data)

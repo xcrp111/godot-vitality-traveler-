@@ -462,12 +462,14 @@ Config.RoomNames = {
     start = "起点", light = "轻战房", standard = "标战房", mixed = "混战房",
     elite = "精英房", double = "双精房", shop = "商店房", event = "事件房", boss = "Boss房",
     raid = "公会团本",
+    encounter = "机遇房", wish = "心愿房", event = "机遇房",
 }
 
 Config.RoomIcons = {
     start = "起", light = "战", standard = "战", mixed = "混",
     elite = "精", double = "精", shop = "商", event = "?", boss = "B",
     raid = "团",
+    encounter = "遇", wish = "愿",
 }
 
 -- 波次：每波是 { minion = n, elite = n, boss = n }

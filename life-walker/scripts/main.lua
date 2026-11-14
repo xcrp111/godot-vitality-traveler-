@@ -16,6 +16,7 @@ local TitleUI = require "TitleUI"
 local SceneUI = require "SceneUI"
 local FarmUI = require "FarmUI"
 local RankUI = require "RankUI"
+local LevelCards = require "LevelCards"
 local FarmWalk = require "FarmWalk"
 local Cloud = require "Cloud"
 local Art = require "Art"
@@ -271,7 +272,9 @@ local function DrawFrame()
         elseif S.screen == "title" then
             TitleUI.Draw()
         elseif S.screen == "menu" then
-            if S.farm then
+            if S.levelCards then
+                LevelCards.Draw()
+            elseif S.farm then
                 FarmUI.Draw()
             elseif S.rank then
                 RankUI.Draw()
@@ -530,6 +533,9 @@ if S.farm and (S.farmTab or 1) == 1 then
         UI.PointerCancel()
         if KbLayout.IsOpen() then
             KbLayout.Close(true)
+        elseif S.levelCards then
+            LevelCards.Close()
+            S.panelMode = "levels"
         elseif S.farm then
             S.farm = false
         elseif S.rank then

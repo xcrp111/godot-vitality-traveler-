@@ -15,7 +15,7 @@
 -- 本模块把它们变成「看得见、选得动」的卡，不需要新造任何地形。
 --
 -- 数值依据（与 Config.lua 对齐，不另立一套）：
---   Config.RoomWaves + Config.SilverDrop → 每类房间的期望银币
+--   Config.RoomWaves + Config.SilverDrop → 每类房间的期望血尘
 --   Config.RoomCost / Config.MapTargetCost → 难度预算
 
 local Config = require "Config"
@@ -96,12 +96,12 @@ ActMap.MODS = {
     },
     {
         id = "market", name = "商路通畅", icon = "商", risk = -0.15, silverMul = 0.90,
-        desc = "多一间商店、少一间战斗房。强化来得更多，银币少一点。",
+        desc = "多一间商店、少一间战斗房。强化来得更多，血尘少一点。",
         grid = { combatTo = "shop", count = 1 },
     },
     {
         id = "nest", name = "病巢密布", icon = "巢", risk = 0.35, silverMul = 1.25,
-        desc = "多一间精英房。银币 +25%，强化品质权重上移一档。",
+        desc = "多一间精英房。血尘 +25%，强化品质权重上移一档。",
         grid = { promoteElite = 1 },
         qualityBonus = 1,
     },
@@ -113,7 +113,7 @@ ActMap.MODS = {
     },
     {
         id = "plague", name = "疫风过境", icon = "疫", risk = 0.20, silverMul = 1.00,
-        desc = "清掉 Boss 房额外 +40 银币。整层更硬，但回报看得见。",
+        desc = "清掉 Boss 房额外 +40 血尘。整层更硬，但回报看得见。",
         clearSilver = 40,
     },
     {
@@ -134,7 +134,7 @@ end
 -- ---------------------------------------------------------------- 房间产出（从 Config 反推）
 -- 用 Config.RoomWaves 的波次 + Config.SilverDrop 的中位值算，避免手写数字和配置漂移
 local SILVER_CACHE = {}
----@return number 期望银币（全清）
+---@return number 期望血尘（全清）
 function ActMap.RoomSilver(kind)
     if SILVER_CACHE[kind] then return SILVER_CACHE[kind] end
     local waves = Config.RoomWaves and Config.RoomWaves[kind]
@@ -401,7 +401,7 @@ end
 -- ---------------------------------------------------------------- 三张卡的整体修复
 -- 支配卡：一张卡既更难（或同难度）、又给得更少。这种卡在三选一里永远没有选它的理由，
 -- 玩家只是多了一个废选项。实测（2026-11-11）200 次抽卡里有 55 次（27.5%）存在这种卡。
--- 「轻松 = 房间战斗弱」已是定稿语义，所以修复方向是**把银币补上去**，不是改标签。
+-- 「轻松 = 房间战斗弱」已是定稿语义，所以修复方向是**把血尘补上去**，不是改标签。
 local DOM_EPS = 1e-9
 
 --- a 是否被 b 支配（b 至少一样好，且有一项严格更好）
@@ -443,7 +443,7 @@ local function ChangeOneRoom(card, level, order)
 end
 
 -- 把被支配的卡修到「不再被支配」。
--- 只补银币是不够的：两张卡**强度完全一样**时，无论怎么调银币，穷的那张都会被富的支配
+-- 只补血尘是不够的：两张卡**强度完全一样**时，无论怎么调血尘，穷的那张都会被富的支配
 -- （同强度、更少钱）——所以得先把「强度撞车」拆开，给其中一张升/降一个战斗房。
 function ActMap.RepairPareto(cards, level, cap)
     cap = cap or 1.00
@@ -464,7 +464,7 @@ function ActMap.RepairPareto(cards, level, cap)
             end
         end
 
-        -- ② 补银币：更难（或同难度）却给得更少的那张，补到严格多于对方
+        -- ② 补血尘：更难（或同难度）却给得更少的那张，补到严格多于对方
         for i = 1, #cards do
             local a = cards[i]
             for j = 1, #cards do
@@ -472,9 +472,9 @@ function ActMap.RepairPareto(cards, level, cap)
                 if ActMap.IsDominated(a, b) then
                     local base = a.baseSilver or a.preview.silver
                     local harsher = a.risk > b.risk + DOM_EPS
-                    -- 同难度要求银币严格更多，否则会被反向支配；更难则至少持平
+                    -- 同难度要求血尘严格更多，否则会被反向支配；更难则至少持平
                     local target = harsher and (b.preview.silver + 1) or b.preview.silver
-                    -- 封顶 +1：卡在封顶线时也要保证「严格多于对方」，否则会留下 1 银币的残留支配
+                    -- 封顶 +1：卡在封顶线时也要保证「严格多于对方」，否则会留下 1 血尘的残留支配
                     local limit = math.floor(base * (1 + cap) + 0.5) + 1
                     if target > limit then target = limit end
                     if target > limit then
