@@ -97,6 +97,8 @@ local function drawHome()
             local g2 = Guild.Roll(S.data)
             g2.coins = g2.coins + 1000
             g2.exp = (g2.exp or 0) + 1000
+            -- 累计贡献也要加：排行榜取的是 g.total，只加余额的话榜上看不到变化
+            g2.total = (g2.total or 0) + 1000
             Save.Write(S.data)
             toast("测试按钮：贡献币 +1000，个人公会经验 +1000")
         end, { fontSize = 13, fill = { 40, 52, 70, 255 }, stroke = { 76, 110, 150, 255 } })
@@ -219,7 +221,7 @@ local function drawShop()
         end
     end
 
-    UI.Button("guild_convert", 714, 546, 200, 38, "币转金币 10:1", function()
+    UI.Button("guild_convert", 714, 546, 200, 38, "币转生息 10:1", function()
         local ok, msg = Guild.ConvertToGold(S.data)
         commit(ok, msg)
     end, { fontSize = 13, enabled = g.coins >= 10 })
@@ -278,7 +280,7 @@ local function drawTech()
         end
     end
     UI.Text(130, 618, 12,
-        "满级后多余的贡献币可走「币转金币」通道兜底（10:1）", S.col.dim)
+        "满级后多余的贡献币可走「币转生息」通道兜底（10:1）", S.col.dim)
 end
 
 -- ---------------------------------------------------------------- 团本

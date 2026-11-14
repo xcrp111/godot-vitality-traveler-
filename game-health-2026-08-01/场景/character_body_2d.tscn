@@ -1,0 +1,75 @@
+[gd_scene load_steps=11 format=3 uid="uid://belijoxaivwcj"]
+
+[ext_resource type="Texture2D" uid="uid://c48levhhq7ad6" path="res://资源/待机.png" id="1_42ju3"]
+[ext_resource type="Script" uid="uid://b2750plei1jps" path="res://脚本/character_body_2d.gd" id="1_ah2pr"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_ah2pr"]
+radius = 66.0
+height = 224.0
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_38p74"]
+atlas = ExtResource("1_42ju3")
+region = Rect2(0, 0, 346, 561)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_nujpe"]
+atlas = ExtResource("1_42ju3")
+region = Rect2(346, 0, 346, 561)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ikfdm"]
+atlas = ExtResource("1_42ju3")
+region = Rect2(692, 0, 346, 561)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_nqui7"]
+atlas = ExtResource("1_42ju3")
+region = Rect2(1038, 0, 346, 561)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_smn0f"]
+atlas = ExtResource("1_42ju3")
+region = Rect2(1384, 0, 346, 561)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_e1c7l"]
+atlas = ExtResource("1_42ju3")
+region = Rect2(1730, 0, 346, 561)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_t34ck"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_38p74")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_nujpe")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_ikfdm")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_nqui7")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_smn0f")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_e1c7l")
+}],
+"loop": true,
+"name": &"idle",
+"speed": 5.0
+}]
+
+[node name="player" type="CharacterBody2D"]
+script = ExtResource("1_ah2pr")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(11, 2)
+shape = SubResource("CapsuleShape2D_ah2pr")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+scale = Vector2(0.5, 0.5)
+sprite_frames = SubResource("SpriteFrames_t34ck")
+animation = &"idle"
+autoplay = "idle"
+frame_progress = 0.0396068
+flip_h = true
+
+[node name="Camera2D" type="Camera2D" parent="."]

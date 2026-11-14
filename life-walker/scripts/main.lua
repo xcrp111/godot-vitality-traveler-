@@ -11,6 +11,15 @@ local Combat = require "Combat"
 local Screens = require "Screens"
 local Audio = require "Audio"
 local KbLayout = require "KbLayout"
+local PetUI = require "PetUI"
+local TitleUI = require "TitleUI"
+local SceneUI = require "SceneUI"
+local FarmUI = require "FarmUI"
+local RankUI = require "RankUI"
+local LevelCards = require "LevelCards"
+local FarmWalk = require "FarmWalk"
+local Cloud = require "Cloud"
+local Art = require "Art"
 
 -- 设备端 urhox-libs/Engine/i18n 会把 string.format 换成一个包装函数，而 Lua 5.4 的 %d
 -- 一旦收到「带小数的浮点」（比如 screensize / dpr 得到的 989.53），会直接抛
@@ -110,7 +119,9 @@ local function Boot()
     Config.SetClass(Save.ActiveClass(S.data))
     if S.data.unlocked < 1 then S.data.unlocked = 1 end
     S.selectedLevel = Save.MaxPlayable(S.data)
-    S.screen = "menu"
+    S.screen = "title"
+    S.panelMode = nil
+    SceneUI.Init()
 
     -- 画面设置：帧率上限（超低端机可以靠它省电/稳帧）
     startStage = "video"
@@ -124,6 +135,18 @@ local function Boot()
     pcall(Audio.Init, S.data)
 
     startStage = "done"
+    -- 输入处理器会直接调这些模块：缺一个会让点击静默失效，启动时就把问题打出来
+    local okModules, moduleErr = pcall(function()
+        assert(PetUI and PetUI.Pointer and PetUI.Wheel, "PetUI 未正确加载")
+    end)
+    if not okModules then
+        print("[main] MODULE ERROR: " .. tostring(moduleErr))
+    end
+
+    -- 主界面/标题界面用到的贴图先加载，避免首帧空白
+    pcall(function()
+        Art.Preload({ "art/title_bg.jpg", "art/home_bg.jpg", "art/hero_idle.png" })
+    end)
 end
 
 function Start()
@@ -139,6 +162,7 @@ function Start()
     SubscribeToEvent("MouseButtonDown", "HandleMouseDown")
     SubscribeToEvent("MouseButtonUp", "HandleMouseUp")
     SubscribeToEvent("MouseMove", "HandleMouseMove")
+    SubscribeToEvent("MouseWheel", "HandleMouseWheel")
     SubscribeToEvent("TouchBegin", "HandleTouchBegin")
     SubscribeToEvent("TouchMove", "HandleTouchMove")
     SubscribeToEvent("TouchEnd", "HandleTouchEnd")
@@ -200,6 +224,8 @@ function HandleUpdate(eventType, eventData)
     local okUp, errUp = xpcall(function()
         UI.UpdateToast(dt)
         Audio.Update(dt)
+        TitleUI.Update(dt)
+        SceneUI.Update(dt)
         -- 窗口尺寸变化：重新计算设计画布；战斗中的虚拟按键也要重建
         local w, h = graphics:GetWidth(), graphics:GetHeight()
         if w ~= lastW or h ~= lastH then
@@ -236,18 +262,50 @@ end
 local function DrawFrame()
     UI.BeginDesign()
     local ok, err = xpcall(function()
-        -- 背景（纯色填充，不再用渐变，避免手机端 NanoVG 渐变路径出问题）
-        nvgBeginPath(S.ctx)
-        nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
-        nvgFillColor(S.ctx, nvgRGBA(22, 17, 30, 255))
-        nvgFill(S.ctx)
+        -- 背景：铺满整个物理屏幕（含 letterbox），屏幕上下不会出现未绘制的灰框
+        UI.FillScreen(S.col.bg)
 
         if startError or not S.data then
             DrawStartError(startError or "启动未完成（S.data 为空）")
         elseif KbLayout.IsOpen() then
             KbLayout.Draw()
+        elseif S.screen == "title" then
+            TitleUI.Draw()
         elseif S.screen == "menu" then
-            Menu.Draw()
+            if S.levelCards then
+                LevelCards.Draw()
+            elseif S.farm then
+                FarmUI.Draw()
+            elseif S.rank then
+                RankUI.Draw()
+            else
+            -- 场景是主界面；任意子面板打开时改画面板（面板内部自己 dispatch）
+            local panelOpen = S.panelMode or S.bag or S.pet or S.camp or S.guild or S.settings
+                or S.compendium or S.healthTasks or S.endlessPanel or S.test or S.skillPicker
+            if panelOpen then
+                if S.panelMode and not (S.bag or S.pet or S.camp or S.guild or S.settings or S.compendium) then
+                    -- 主界面子面板：场景压暗当背景，只画对应模块
+                    SceneUI.DrawPanelBg()
+                    if S.panelMode == "char" then
+                        Menu.DrawCharacter()
+                    elseif S.panelMode == "sports" then
+                        Menu.DrawSports()
+                    else
+                        Menu.DrawLevels()
+                    end
+                    SceneUI.DrawPanelBack()
+                    -- 叠加层（选技能 / 图鉴 / 设置等）画在子面板之上，关掉后回到原子面板
+                    if S.skillPicker or S.compendium or S.settings or S.healthTasks
+                        or S.endlessPanel or S.test then
+                        Menu.Draw()
+                    end
+                else
+                    Menu.Draw()
+                end
+            else
+                SceneUI.Draw()
+            end
+            end
         elseif S.screen == "map" then
             Screens.DrawMap()
         elseif S.screen == "combat" then
@@ -266,6 +324,11 @@ local function DrawFrame()
 
         -- 健康弹层画在最上层
         Menu.DrawOverlays()
+
+        -- 按钮按住时的反馈（画在所有控件之上）
+        UI.DrawPress()
+        -- 鼠标悬停：可交互区域略微抬起 + 变色（只在主界面/面板里做）
+        if S.screen == "menu" then UI.DrawHover() end
 
         UI.DrawToast()
     end, function(e) return tostring(e) end)
@@ -288,21 +351,45 @@ function HandleRender(eventType, eventData)
 end
 
 ---@param eventType string
+---@param eventData MouseWheelEventData
+function HandleMouseWheel(eventType, eventData)
+    local wheel = 0
+    pcall(function() wheel = eventData["Wheel"]:GetInt() end)
+    if wheel == 0 then return end
+    if PetUI.Wheel(wheel) then return end
+end
+
+---@param eventType string
 ---@param eventData MouseButtonDownEventData
 function HandleMouseDown(eventType, eventData)
     local button = eventData["Button"]:GetInt()
-    if button ~= MOUSEB_LEFT then return end
     local px = eventData["X"]:GetInt()
     local py = eventData["Y"]:GetInt()
     local dx, dy = UI.ToDesign(px, py)
-    if Menu.OverlayPointer("down", dx, dy) then return end
+
+    -- 右键 = 场景里走路（左键留给 UI 按钮，避免点面板时角色乱跑）
+    if button == (MOUSEB_RIGHT or 2) then
+        if not Menu.OverlayActive() and not KbLayout.IsOpen()
+            and S.screen == "menu" and not S.panelMode
+            and not UI.Hit(dx, dy) then
+            SceneUI.GroundClick(dx, dy)
+        end
+        return
+    end
+
+    if button ~= MOUSEB_LEFT then return end
+    S.hoverIsMouse = true
+    S.clickDX, S.clickDY = dx, dy
+    if Menu.OverlayPointer("down", dx, dy) then UI.PointerCancel() return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("down", dx, dy)
         return
     end
     if Combat.AimPointer("down", dx, dy, 0) then return end
     if Combat.JoystickPointer("down", dx, dy) then return end
-    UI.Click(dx, dy)
+    if PetUI.Pointer("down", dx, dy) then return end
+    -- 左键只走 UI；没点到控件就什么也不做（走路改用右键）
+    UI.PointerDown(dx, dy, 0)
 end
 
 ---@param eventType string
@@ -311,12 +398,15 @@ function HandleMouseMove(eventType, eventData)
     local px = eventData["X"]:GetInt()
     local py = eventData["Y"]:GetInt()
     local dx, dy = UI.ToDesign(px, py)
+    S.hover.x, S.hover.y = dx, dy
+    S.hoverIsMouse = true
     if Menu.OverlayPointer("move", dx, dy) then return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("move", dx, dy)
         return
     end
     if Combat.AimPointer("move", dx, dy, 0) then return end
+    if PetUI.Pointer("move", dx, dy) then return end
     if S.screen ~= "combat" then return end
     Combat.JoystickPointer("move", dx, dy)
 end
@@ -334,7 +424,9 @@ function HandleMouseUp(eventType, eventData)
         return
     end
     if Combat.AimPointer("up", dx, dy, 0) then return end
-    Combat.JoystickPointer("up", dx, dy)
+    if Combat.JoystickPointer("up", dx, dy) then return end
+    if PetUI.Pointer("up", dx, dy) then return end
+    UI.PointerUp(dx, dy)
 end
 
 ---@param eventType string
@@ -345,14 +437,16 @@ function HandleTouchBegin(eventType, eventData)
     local tid = nil
     pcall(function() tid = eventData["TouchID"]:GetInt() end)
     local dx, dy = UI.ToDesign(px, py)
-    if Menu.OverlayPointer("down", dx, dy) then return end
+    S.clickDX, S.clickDY = dx, dy
+    if Menu.OverlayPointer("down", dx, dy) then UI.PointerCancel() return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("down", dx, dy)
         return
     end
     if Combat.AimPointer("down", dx, dy, tid or 0) then return end
     if Combat.JoystickPointer("down", dx, dy, tid) then return end
-    UI.Click(dx, dy)
+    if PetUI.Pointer("down", dx, dy) then return end
+    if not UI.PointerDown(dx, dy, tid) then SceneUI.GroundClick(dx, dy) end
 end
 
 ---@param eventType string
@@ -363,12 +457,15 @@ function HandleTouchMove(eventType, eventData)
     local tid = nil
     pcall(function() tid = eventData["TouchID"]:GetInt() end)
     local dx, dy = UI.ToDesign(px, py)
+    S.hover.x, S.hover.y = dx, dy
+    S.hoverIsMouse = false
     if Menu.OverlayPointer("move", dx, dy) then return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("move", dx, dy)
         return
     end
     if Combat.AimPointer("move", dx, dy, tid or 0) then return end
+    if PetUI.Pointer("move", dx, dy) then return end
     if S.screen ~= "combat" then return end
     Combat.JoystickPointer("move", dx, dy, tid)
 end
@@ -385,6 +482,8 @@ function HandleTouchEnd(eventType, eventData)
     end
     if Combat.AimPointer("up", 0, 0, tid or 0) then return end
     Combat.JoystickPointer("up", 0, 0, tid)
+    if PetUI.Pointer("up", 0, 0) then return end
+    UI.PointerUp(nil, nil)
 end
 
 ---@param eventType string
@@ -392,10 +491,18 @@ end
 function HandleKeyDown(eventType, eventData)
     if Menu.OverlayActive() then return end
     local key = eventData["Key"]:GetInt()
-    if key == KEY_W then S.keys.up = true end
-    if key == KEY_S then S.keys.down = true end
-    if key == KEY_A then S.keys.left = true end
-    if key == KEY_D then S.keys.right = true end
+    if key == KEY_W or key == KEY_UP then S.keys.up = true end
+    if key == KEY_S or key == KEY_DOWN then S.keys.down = true end
+    if key == KEY_A or key == KEY_LEFT then S.keys.left = true end
+    if key == KEY_D or key == KEY_RIGHT then S.keys.right = true end
+
+    -- 初始界面：Enter / 空格开始游戏
+    if S.screen == "title" then
+        if key == KEY_RETURN or key == KEY_ENTER or key == KEY_SPACE then
+            TitleUI.StartGame()
+        end
+        return
+    end
 
     if S.screen == "combat" and S.combat then
         local isRepeat = eventData["Repeat"]:GetBool()
@@ -409,18 +516,46 @@ function HandleKeyDown(eventType, eventData)
             elseif key == KEY_L then
                 Combat.CastSkill(3)
             elseif key == KEY_E then
-                Combat.UseItem()
+if S.farm and (S.farmTab or 1) == 1 then
+                    FarmWalk.Interact()
+                else
+                    Combat.UseItem()
+                end
             elseif key == KEY_TAB then
                 Combat.ToggleBuffPanel()
             end
         end
+    elseif S.screen == "menu" and not S.panelMode then
+        -- 主界面场景：E 与身旁的物件互动，G 开关坐标网格
+        pcall(function()
+            if not eventData["Repeat"]:GetBool() and key == KEY_E then
+                SceneUI.Interact()
+            elseif not eventData["Repeat"]:GetBool() and key == KEY_G then
+                SceneUI.ToggleGrid()
+            end
+        end)
     end
 
     if key == KEY_ESCAPE then
+        UI.PointerCancel()
         if KbLayout.IsOpen() then
             KbLayout.Close(true)
+        elseif S.levelCards then
+            LevelCards.Close()
+            S.panelMode = "levels"
+        elseif S.farm then
+            S.farm = false
+        elseif S.rank then
+            S.rank = false
         elseif S.healthTasks then
             S.healthTasks = false
+        elseif S.pet then
+            S.pet = false
+            S.petPickLow = false
+        elseif S.bag then
+            S.bag = false
+        elseif S.camp then
+            S.camp = false
         elseif S.endlessPanel then
             S.endlessPanel = false
         elseif S.guild then
@@ -434,6 +569,10 @@ function HandleKeyDown(eventType, eventData)
             S.test = false
         elseif S.compendium then
             S.compendium = false
+        elseif S.skillPicker then
+            S.skillPicker = false
+        elseif S.panelMode then
+            S.panelMode = nil
         elseif S.screen == "combat" and S.combat and S.combat.showBuffs then
             if S.combat.statusPanel and S.combat.statusPanel.detail then
                 S.combat.statusPanel.detail = nil
@@ -462,6 +601,10 @@ end
 ---@param eventData KeyUpEventData
 function HandleKeyUp(eventType, eventData)
     local key = eventData["Key"]:GetInt()
+    if key == KEY_UP then S.keys.up = false end
+    if key == KEY_DOWN then S.keys.down = false end
+    if key == KEY_LEFT then S.keys.left = false end
+    if key == KEY_RIGHT then S.keys.right = false end
     if key == KEY_W then S.keys.up = false end
     if key == KEY_S then S.keys.down = false end
     if key == KEY_A then S.keys.left = false end

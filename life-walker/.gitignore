@@ -100,3 +100,9 @@ templates/
 tools/
 urhox-libs/
 # <<< TapTap Maker AI dev kit (local only) <<<
+# 背景音乐试听源文件（游戏内用 assets/audio/bgm_canon.ogg，原始 MP3 不进仓库）
+music_preview/*.mp3
+
+# 发给协作者的运行时补丁（.cli 被 gitignore，单独打包）
+缺的东西/
+缺的东西.zip

@@ -1,0 +1,259 @@
+[gd_scene format=3 uid="uid://cc76i8dp026ad"]
+
+[ext_resource type="Texture2D" uid="uid://cny86avgufjka" path="res://godot/hbj_dz.png" id="1_7l4hq"]
+[ext_resource type="Script" uid="uid://bss0570glc2vn" path="res://脚本/人物面板.gd" id="1_es6dx"]
+[ext_resource type="Texture2D" uid="uid://cmidtpynrc08d" path="res://godot/fs_ss.png" id="2_es6dx"]
+[ext_resource type="Texture2D" uid="uid://vg6t5jcvpa7u" path="res://godot/fashi.png" id="3_niat2"]
+[ext_resource type="Script" uid="uid://i5xkit4s8olc" path="res://脚本/health_bar.gd" id="5_niat2"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_i0j5y"]
+atlas = ExtResource("1_7l4hq")
+region = Rect2(0, 0, 286, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_n7sjj"]
+atlas = ExtResource("1_7l4hq")
+region = Rect2(286, 0, 286, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_fthft"]
+atlas = ExtResource("1_7l4hq")
+region = Rect2(572, 0, 286, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_xh6vk"]
+atlas = ExtResource("1_7l4hq")
+region = Rect2(858, 0, 286, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_hiyx3"]
+atlas = ExtResource("2_es6dx")
+region = Rect2(798, 0, 266, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_iogf2"]
+atlas = ExtResource("2_es6dx")
+region = Rect2(1064, 0, 266, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1ppos"]
+atlas = ExtResource("2_es6dx")
+region = Rect2(1330, 0, 266, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kfeq1"]
+atlas = ExtResource("2_es6dx")
+region = Rect2(1596, 0, 266, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_7vemd"]
+atlas = ExtResource("2_es6dx")
+region = Rect2(1862, 0, 266, 266)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_dihon"]
+atlas = ExtResource("3_niat2")
+region = Rect2(0, 0, 648, 1440)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_hjgnc"]
+atlas = ExtResource("3_niat2")
+region = Rect2(648, 0, 648, 1440)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_wdp8g"]
+atlas = ExtResource("3_niat2")
+region = Rect2(1296, 0, 648, 1440)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_xftum"]
+atlas = ExtResource("3_niat2")
+region = Rect2(1944, 0, 648, 1440)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_36iiu"]
+atlas = ExtResource("3_niat2")
+region = Rect2(2592, 0, 648, 1440)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_0fjwc"]
+atlas = ExtResource("3_niat2")
+region = Rect2(3240, 0, 648, 1440)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_67325"]
+atlas = ExtResource("3_niat2")
+region = Rect2(3888, 0, 648, 1440)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_c0fjk"]
+atlas = ExtResource("3_niat2")
+region = Rect2(4536, 0, 648, 1440)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_y84uh"]
+atlas = ExtResource("3_niat2")
+region = Rect2(5184, 0, 648, 1440)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_uww4d"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_i0j5y")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_n7sjj")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_fthft")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_xh6vk")
+}],
+"loop": 1,
+"name": &"hbj",
+"speed": 8.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_hiyx3")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_iogf2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_1ppos")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_kfeq1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_7vemd")
+}],
+"loop": 1,
+"name": &"hurt",
+"speed": 8.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_dihon")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_hjgnc")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_wdp8g")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_xftum")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_36iiu")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_0fjwc")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_67325")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_c0fjk")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_y84uh")
+}],
+"loop": 1,
+"name": &"move",
+"speed": 8.0
+}]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_3owqy"]
+radius = 117.0
+height = 470.0
+
+[sub_resource type="Theme" id="Theme_3owqy"]
+
+[sub_resource type="Theme" id="Theme_8upip"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dpga7"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_drsw1"]
+bg_color = Color(0.9332472, 0.41433385, 0.37250176, 1)
+
+[sub_resource type="ImageTexture" id="ImageTexture_hrfpl"]
+
+[sub_resource type="ImageTexture" id="ImageTexture_2w0kd"]
+
+[node name="人物面板" type="Node2D" unique_id=1846001383]
+z_index = 20
+script = ExtResource("1_es6dx")
+
+[node name="CharacterBody2D" type="CharacterBody2D" parent="." unique_id=1301996200]
+position = Vector2(906, 383)
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="CharacterBody2D" unique_id=1556013163]
+position = Vector2(52.989494, 197.71858)
+scale = Vector2(0.5277454, 0.74266464)
+sprite_frames = SubResource("SpriteFrames_uww4d")
+animation = &"move"
+autoplay = "move"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CharacterBody2D" unique_id=1442626422]
+position = Vector2(36.979004, 136.42175)
+shape = SubResource("CapsuleShape2D_3owqy")
+
+[node name="HP_Container" type="HBoxContainer" parent="." unique_id=820234977]
+offset_left = 103.0
+offset_top = 110.0
+offset_right = 488.0
+offset_bottom = 196.0
+
+[node name="HP_Icon" type="Label" parent="HP_Container" unique_id=1362612991]
+layout_mode = 2
+theme = SubResource("Theme_3owqy")
+theme_override_font_sizes/font_size = 60
+text = "❤️"
+
+[node name="ProgressBar" type="ProgressBar" parent="HP_Container" unique_id=672928845]
+custom_minimum_size = Vector2(240, 60)
+propagate_maximum_size = true
+clip_contents = true
+layout_mode = 2
+size_flags_vertical = 1
+theme = SubResource("Theme_8upip")
+theme_override_styles/background = SubResource("StyleBoxFlat_dpga7")
+theme_override_styles/fill = SubResource("StyleBoxFlat_drsw1")
+value = 100.0
+show_percentage = false
+
+[node name="number" type="Label" parent="HP_Container/ProgressBar" unique_id=1421032024]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+
+[node name="健康状态" type="HBoxContainer" parent="." unique_id=1643050588]
+offset_left = 734.0
+offset_top = 114.0
+offset_right = 1119.0
+offset_bottom = 200.0
+
+[node name="天数" type="Label" parent="健康状态" unique_id=2042134912]
+layout_mode = 2
+theme = SubResource("Theme_3owqy")
+theme_override_font_sizes/font_size = 60
+text = "持续天数："
+
+[node name="HealthBar" type="TextureProgressBar" parent="健康状态" unique_id=719970865]
+layout_mode = 2
+max_value = 10.0
+value = 10.0
+texture_under = SubResource("ImageTexture_hrfpl")
+texture_progress = SubResource("ImageTexture_2w0kd")
+script = ExtResource("5_niat2")
+
+[node name="Background" type="TextureRect" parent="健康状态/HealthBar" unique_id=270795160]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Progress" type="TextureRect" parent="健康状态/HealthBar" unique_id=1891830028]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="MenuLayer" type="CanvasLayer" parent="." unique_id=1102600872]
+layer = 20
+
+[node name="MenuButton" type="Button" parent="MenuLayer" unique_id=387752401]
+z_index = 20
+offset_left = 1844.0
+offset_top = 1047.0
+offset_right = 1916.0
+offset_bottom = 1078.0
+text = "回到主城"
+metadata/_edit_group_ = true
+
+[connection signal="pressed" from="MenuLayer/MenuButton" to="." method="_on_menu_button_pressed"]

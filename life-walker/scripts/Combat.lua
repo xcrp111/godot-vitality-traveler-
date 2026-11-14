@@ -2,10 +2,12 @@
 
 local Config = require "Config"
 local Run = require "Run"
+local Farm = require "Farm"
 local UI = require "UI"
 local S = require "State"
 local Save = require "Save"
 local Guild = require "Guild"
+local CharArt = require "CharArt"
 
 ---@class Enemy
 ---@field id string
@@ -154,6 +156,11 @@ end
 -- 冲刺/闪避方向：有摇杆或键盘输入时朝输入方向，否则用面朝方向
 -- 返回 dirx, diry, angle, hasInput
 local function DashDir(cs)
+    -- 手动瞄准（长按/拖动技能键）优先：位移方向按瞄准方向走，
+    -- 不能被左手摇杆的移动输入顶掉
+    if cs.aimLock then
+        return math.cos(cs.facing), math.sin(cs.facing), cs.facing, false
+    end
     local ix, iy = S.input.x, S.input.y
     local len = math.sqrt(ix * ix + iy * iy)
     if len > 0.25 then
@@ -246,10 +253,13 @@ end
 local function DebuffCap(p, kind)
     local cap = 3
     if kind == "crack" or kind == "hunt" then cap = 5 end
-    if IsSpear() and kind == "stagger" then cap = 2 end
     if F(p, "chainSymbiosis") > 0 then cap = math.floor(cap / 2) end
     if F(p, "insight") > 0 and kind ~= "crack" then cap = math.min(cap, 2) end
     if F(p, "debuffCap2") > 0 and kind ~= "crack" then cap = math.min(cap, 2) end
+    if IsSpear() and kind == "stagger" then
+        -- 枪客失衡基础 2 层；不动如山可以 +1
+        cap = math.min(cap, 2) + math.floor(F(p, "staggerCapUp"))
+    end
     return math.max(1, cap)
 end
 
@@ -609,6 +619,7 @@ local function SpawnProj(cs, o)
         lifesteal = o.lifesteal,
         boom = o.boom,
         execute = o.execute,
+        stagger = o.stagger,
     }
 end
 
@@ -669,7 +680,28 @@ local function TryCombo(cs, e, pairKind)
         end
     end
     if not kind then return false end
-    if kind == "粉碎" and crack <= 0 then return false end
+    -- 触发连携时只消耗「这次真正用到的两种负面」。
+    -- 原来无论哪一组都把三种负面全清空，导致两种负面很难稳定共存，
+    -- 错位连携就变成几乎打不出来的摆设。
+    local used
+    if kind == "粉碎" then
+        used = mis and { "crack", "hunt" } or { "crack", "stagger" }
+    elseif kind == "震荡" then
+        if mis then
+            used = { "stagger", "hunt" }
+        elseif F(p, "comboAll") > 0 and crack > 0 and stag > 0 then
+            used = { "crack", "stagger" }
+        else
+            used = { "crack", "hunt" }
+        end
+    else
+        used = mis and { "crack", "stagger" } or { "stagger", "hunt" }
+    end
+    for _, key in ipairs(used) do
+        if key == "crack" and crack <= 0 then return false end
+        if key == "stagger" and stag <= 0 then return false end
+        if key == "hunt" and hunt <= 0 then return false end
+    end
     cs.comboCount = (cs.comboCount or 0) + 1
 
     local mult = 1.0 + F(p, "comboDmg")
@@ -721,11 +753,18 @@ local function TryCombo(cs, e, pairKind)
 
     Combat.HitEnemy(cs, e, dmg, false, true, false, "combo")
 
-    -- 消耗触发的负面
-    if e.crack and e.crack > 0 then e.crack = math.max(0, e.crack - 1) end
-    if kind == "粉碎" or (e.stagger or 0) > 0 then e.stagger = 0 end
-    if (e.hunt or 0) > 0 then e.hunt = 0 end
-    e.staggerTimer, e.huntTimer = 0, 0
+    -- 消耗触发的负面：只减这次用到的两种
+    for _, key in ipairs(used) do
+        if key == "crack" then
+            e.crack = math.max(0, (e.crack or 0) - 1)
+        elseif key == "stagger" then
+            e.stagger = 0
+            e.staggerTimer = 0
+        elseif key == "hunt" then
+            e.hunt = 0
+            e.huntTimer = 0
+        end
+    end
 
     -- Debuff 回响：向周围扩散负面，并让接下来 5 秒技能冷却变长
     if F(p, "comboEcho") > 0 then
@@ -830,6 +869,287 @@ local function CircleHitsWalls(cs, x, y, r)
         end
     end
     return false
+end
+
+-- 敌人寻路：先看直线能不能走通，走不通就用网格 A* 找一个绕过墙的路径
+-- 早期版本是「撞到墙就往垂直方向挪一下」，角色和怪物隔墙正对时会贴墙蹭，
+-- 既不灵活、也过不了长墙。
+local NAV_CELL = 24          -- 寻路网格边长（世界像素）
+local NAV_REPATH = 0.45      -- 每个敌人重算路径的间隔（秒）
+local NAV_GOAL_MOVE = 48     -- 目标移动超过这个距离才重算
+local ENEMY_DETOUR = { 55, 90, 125, 150 }
+
+local function NavHeapPush(h, node, pri)
+    local i = #h + 1
+    h[i] = { node = node, pri = pri }
+    while i > 1 do
+        local parent = i // 2
+        if h[parent].pri <= h[i].pri then break end
+        h[parent], h[i] = h[i], h[parent]
+        i = parent
+    end
+end
+
+local function NavHeapPop(h)
+    local top = h[1]
+    local last = table.remove(h)
+    if #h > 0 then
+        h[1] = last
+        local i = 1
+        while true do
+            local l, r, m = i * 2, i * 2 + 1, i
+            if l <= #h and h[l].pri < h[m].pri then m = l end
+            if r <= #h and h[r].pri < h[m].pri then m = r end
+            if m == i then break end
+            h[i], h[m] = h[m], h[i]
+            i = m
+        end
+    end
+    return top
+end
+
+--- 网格只在墙体变化时重建（房间里的墙是静态的）
+local function NavEnsure(cs)
+    local nav = cs.nav
+    if nav and nav.wallCount == #cs.walls and nav.worldW == WORLD_W and nav.worldH == WORLD_H then
+        return nav
+    end
+    local cols = math.ceil(WORLD_W / NAV_CELL) + 1
+    local rows = math.ceil(WORLD_H / NAV_CELL) + 1
+    local grid = {}
+    for gy = 0, rows - 1 do
+        for gx = 0, cols - 1 do
+            local cx = (gx + 0.5) * NAV_CELL
+            local cy = (gy + 0.5) * NAV_CELL
+            -- 用略小于最小敌人的半径判阻挡，避免把窄通道整个封死
+            grid[gy * cols + gx] = CircleHitsWalls(cs, cx, cy, 12) and 1 or 0
+        end
+    end
+    nav = { cols = cols, rows = rows, grid = grid, wallCount = #cs.walls,
+            worldW = WORLD_W, worldH = WORLD_H }
+    cs.nav = nav
+    return nav
+end
+
+local NAV_DIRS = {
+    { 1, 0, 1.0 }, { -1, 0, 1.0 }, { 0, 1, 1.0 }, { 0, -1, 1.0 },
+    { 1, 1, 1.4142 }, { 1, -1, 1.4142 }, { -1, 1, 1.4142 }, { -1, -1, 1.4142 },
+}
+
+--- 从 (sx,sy) 到 (tx,ty) 的格子路径（A*），返回格子中心点数组；无解返回 nil
+local function NavFindPath(cs, sx, sy, tx, ty)
+    local nav = NavEnsure(cs)
+    local cols, rows, grid = nav.cols, nav.rows, nav.grid
+
+    local function cellOf(x, y)
+        return Config.Clamp(math.floor(x / NAV_CELL) + 1, 1, cols),
+               Config.Clamp(math.floor(y / NAV_CELL) + 1, 1, rows)
+    end
+    local startX, startY = cellOf(sx, sy)
+    local goalX, goalY = cellOf(tx, ty)
+
+    -- 目标格被墙占：就近找一个空格当终点
+    if grid[(goalY - 1) * cols + (goalX - 1)] == 1 then
+        local bestD, bx, by
+        for dy = -2, 2 do
+            for dx = -2, 2 do
+                local nx, ny = goalX + dx, goalY + dy
+                if nx >= 1 and nx <= cols and ny >= 1 and ny <= rows
+                    and grid[(ny - 1) * cols + (nx - 1)] == 0 then
+                    local d = dx * dx + dy * dy
+                    if not bestD or d < bestD then
+                        bestD, bx, by = d, nx, ny
+                    end
+                end
+            end
+        end
+        if bx then goalX, goalY = bx, by end
+    end
+    if grid[(startY - 1) * cols + (startX - 1)] == 1 then return nil end
+    if startX == goalX and startY == goalY then return {} end
+
+    local function idx(x, y) return (y - 1) * cols + (x - 1) end
+    local gScore, cameFrom, closed = {}, {}, {}
+    local open = {}
+    local startI = idx(startX, startY)
+    gScore[startI] = 0
+    NavHeapPush(open, { startX, startY }, 0)
+
+    local goalI = idx(goalX, goalY)
+    local bestI, bestH = startI, math.abs(startX - goalX) + math.abs(startY - goalY)
+    local guard = 0
+
+    while #open > 0 do
+        guard = guard + 1
+        if guard > 4000 then break end
+        local top = NavHeapPop(open)
+        local cx, cy = top.node[1], top.node[2]
+        local ci = idx(cx, cy)
+        if closed[ci] then goto continue end
+        closed[ci] = true
+        if ci == goalI then break end
+
+        local h = math.abs(cx - goalX) + math.abs(cy - goalY)
+        if h < bestH then bestH, bestI = h, ci end
+
+        local g = gScore[ci] or 0
+        for _, d in ipairs(NAV_DIRS) do
+            local nx, ny = cx + d[1], cy + d[2]
+            if nx >= 1 and nx <= cols and ny >= 1 and ny <= rows then
+                local ni = idx(nx, ny)
+                if grid[ni] == 0 and not closed[ni] then
+                    -- 斜着走时不允许“切墙角”
+                    local ok = true
+                    if d[1] ~= 0 and d[2] ~= 0 then
+                        if grid[idx(nx, cy)] == 1 or grid[idx(cx, ny)] == 1 then ok = false end
+                    end
+                    if ok then
+                        local ng = g + d[3]
+                        if not gScore[ni] or ng < gScore[ni] then
+                            gScore[ni] = ng
+                            cameFrom[ni] = ci
+                            NavHeapPush(open, { nx, ny }, ng + math.abs(nx - goalX) + math.abs(ny - goalY))
+                        end
+                    end
+                end
+            end
+        end
+        ::continue::
+    end
+
+    if not cameFrom[goalI] and goalI ~= startI then
+        -- 目标没走到：退而求其次，走到离目标最近的可达格
+        if bestI == startI then return nil end
+        goalI = bestI
+    end
+
+    local cells = {}
+    local cur = goalI
+    local safety = 0
+    while cur and cur ~= startI do
+        safety = safety + 1
+        if safety > 2000 then break end
+        local y = math.floor(cur / cols) + 1
+        local x = cur % cols + 1
+        table.insert(cells, 1, {
+            x = (x - 0.5) * NAV_CELL,
+            y = (y - 0.5) * NAV_CELL,
+        })
+        cur = cameFrom[cur]
+    end
+    return cells
+end
+
+--- 从 (x0,y0) 到 (x1,y1) 的直线是否畅通（按圆半径采样检查）
+local function LineClear(cs, x0, y0, x1, y1, r)
+    local dx, dy = x1 - x0, y1 - y0
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist < 1 then return true end
+    local steps = math.ceil(dist / 16)
+    for i = 1, steps - 1 do
+        local t = i / steps
+        if CircleHitsWalls(cs, x0 + dx * t, y0 + dy * t, r or 12) then
+            return false
+        end
+    end
+    return true
+end
+
+--- 把网格路径拉直：只保留「站得住、看得见」的关键点，走起来更自然
+local function SmoothPath(cs, sx, sy, cells, r)
+    if not cells or #cells == 0 then return nil end
+    local out = {}
+    local cx, cy = sx, sy
+    local i = 1
+    while i <= #cells do
+        local far = i
+        for j = #cells, i, -1 do
+            if LineClear(cs, cx, cy, cells[j].x, cells[j].y, r) then
+                far = j
+                break
+            end
+        end
+        out[#out + 1] = cells[far]
+        cx, cy = cells[far].x, cells[far].y
+        i = far + 1
+    end
+    return out
+end
+
+local function EnemyMoveToward(cs, e, tx, ty, spd, dt)
+    local step = spd * dt
+    if step <= 0 then return end
+    local ox, oy = e.x, e.y
+    local dist = Dist(ox, oy, tx, ty)
+    if dist < 0.001 then return end
+    local r = e.radius or 14
+
+
+    -- 2) 被墙挡住：走 A* 路径（间隔重算，目标明显移动也重算）
+    local now = cs.time or 0
+    local stale = (now - (e.pathT or -999)) > NAV_REPATH
+        or not e.path
+        or (e.pathGX and Dist(e.pathGX, e.pathGY, tx, ty) > NAV_GOAL_MOVE)
+    if stale then
+        local raw = NavFindPath(cs, ox, oy, tx, ty)
+        e.path = SmoothPath(cs, ox, oy, raw, r)
+        e.pathT = now
+        e.pathGX, e.pathGY = tx, ty
+    end
+
+    local gx, gy = tx, ty
+    if e.path and #e.path > 0 then
+        -- 顺序跟点：走到一个就丢一个，不会在墙角两个点之间来回摆
+        while #e.path > 0 and Dist(ox, oy, e.path[1].x, e.path[1].y) < 12 do
+            table.remove(e.path, 1)
+        end
+        if #e.path > 0 then
+            gx, gy = e.path[1].x, e.path[1].y
+        end
+    end
+
+    local ang = math.atan(gy - oy, gx - ox)
+    local rx, ry = ResolveCircleWalls(cs, ox + math.cos(ang) * step,
+        oy + math.sin(ang) * step, r)
+    if Dist(rx, ry, ox, oy) > step * 0.2 then
+        e.x, e.y = rx, ry
+        return
+    end
+
+    -- 3) 兜底：路径也走不动（被挤进死角）时沿墙滑动脱困
+    local side = e.wallSide or 1
+    local bestX, bestY, bestMoved
+    local function trySide(s)
+        local bx, by, bm
+        for _, deg in ipairs(ENEMY_DETOUR) do
+            local a2 = ang + math.rad(deg) * s
+            local x2 = ox + math.cos(a2) * step
+            local y2 = oy + math.sin(a2) * step
+            local rx2, ry2 = ResolveCircleWalls(cs, x2, y2, r)
+            local m2 = Dist(rx2, ry2, ox, oy)
+            if m2 > step * 0.45 and (not bm or m2 > bm) then
+                bx, by, bm = rx2, ry2, m2
+            end
+        end
+        return bx, by, bm
+    end
+    bestX, bestY, bestMoved = trySide(side)
+    if not bestX then
+        side = -side
+        bestX, bestY, bestMoved = trySide(side)
+    end
+    if bestX then
+        e.x, e.y = bestX, bestY
+        e.wallSide = side
+        e.wallT = (e.wallT or 0) + dt
+        if e.wallT > 3.0 then
+            e.wallSide = -side
+            e.wallT = 0
+        end
+    else
+        e.wallSide = nil
+        e.wallT = 0
+    end
 end
 
 -- 冲击波圆环是否碰到墙体（碰到就消散，不能穿墙）
@@ -1163,7 +1483,7 @@ local AIM_MOVE_EPS = 14
 local AIM_DIR_DEADZONE = 10    -- 手指几乎没离开按键时，方向保持不变（避免抖）
 local AIM_FULL_PULL = 120      -- 摇杆式选位：拖满 120px 到达最远落点
 -- 取消施法框：位置和大小在「设置 → 按键布局」里拖（id = aim_cancel），中心 + 半径 = 宽 2r 高 1.2r
-local AIM_CANCEL_DEFAULT = { 1170, 378, 80 }
+local AIM_CANCEL_DEFAULT = { 1170, 300, 80 }
 local function AimCancelRect()
     local cx, cy, r = CtrlPos("aim_cancel",
         AIM_CANCEL_DEFAULT[1], AIM_CANCEL_DEFAULT[2], AIM_CANCEL_DEFAULT[3])
@@ -1295,10 +1615,17 @@ function Combat.AimPointer(phase, dx, dy, id)
             return true
         end
         -- tapInstant 技能（闪影突进）：点按就瞬发自动索敌，只有真的拖动了才锁方向
-        local manual = aim.moved or (not aim.spec.tapInstant and aim.t >= AimHoldValue())
+        -- 方向类技能：只有真的拖动才锁手动方向；按住不动松手仍然走自动索敌
+        -- （选位类技能仍保留「长按即进入摆放」的手感）
+        local manual = aim.moved
+            or (aim.spec.mode == "point" and not aim.spec.tapInstant
+                and aim.t >= AimHoldValue())
         if manual then
             cs.facing = aim.angle
             cs.aimLock = true
+            -- 锁一小段时间：技能有延迟段（三段斩、瞬影连斩、蓄力箭）时，
+            -- 结算那一刻 cs.facing 不能被摇杆覆盖，否则还是朝左摇杆方向打
+            cs.facingLock = 0.45
             if aim.spec.mode == "point" then cs.aimPoint = aim.point end
         end
         Combat.CastSkill(aim.slot)
@@ -1415,6 +1742,15 @@ function Combat.Exit(success)
     S.input.x = 0
     S.input.y = 0
     if success then
+        -- 农场日常任务：每完成 1 场战斗计数，3 场奖励基础种子
+        if Farm.Unlocked(S.data) then
+            local seedId = Farm.OnBattleFinished(S.data)
+            if seedId then
+                local crop = Farm.CropByID(seedId)
+                UI.SetToast("日常任务完成：获得" .. (crop and crop.name or "") .. "种子 ×1", 2.4)
+            end
+            Save.Write(S.data)
+        end
         Run.OnCombatCleared(roomType)
     end
 end
@@ -1591,7 +1927,28 @@ function Combat.HitEnemy(cs, e, amount, isSkill, physical, noCrit, src, forceCri
     end
 
     e.hp = e.hp - dmg
-    -- 公会团本：累计对 Boss 的伤害，用于评级
+    -- 命中停顿 + 朝命中方向的震屏（同一帧内多段命中只触发一次）
+    if (cs.hitstop or 0) <= 0 and src ~= "combo" and src ~= "bleed" then
+        cs.hitstop = math.min(0.09, 0.045 + (isSkill and 0.015 or 0) + (crit and 0.02 or 0))
+        local dx, dy = e.x - p.x, e.y - p.y
+        local d = math.max(1, math.sqrt(dx * dx + dy * dy))
+        cs.shakeDirX = dx / d * 3.2
+        cs.shakeDirY = dy / d * 3.2
+    end
+    -- 猛攻蓄力·重劈：固守结束后存着的那一下，命中第一个目标时一起结算
+    if cs.pendingSlam and cs.pendingSlam.pct and cs.pendingSlam.pct > 0
+        and src ~= "combo" and src ~= "thorn" then
+        local slam = cs.pendingSlam
+        cs.pendingSlam = nil
+        local extra = p.atk * slam.pct * (1 + p.skillPct)
+        e.hp = e.hp - extra
+        DmgText(cs, e.x + 10, e.y - e.radius - 40,
+            string.format("%d", math.floor(extra)), { 255, 190, 110, 255 }, 30, false)
+        AddText(cs, e.x, e.y - e.radius - 62, "重劈", { 255, 210, 130 }, 14)
+        AddRing(cs, e.x, e.y, e.radius + 60, { 255, 220, 150 }, 0.3, 7)
+        if slam.combo and (e.crack or 0) > 0 then TryCombo(cs, e, "震荡") end
+        cs.shake = math.max(cs.shake, 8)
+    end
     if cs.guildRaid and e.kind == "boss" then
         cs.raidDamage = (cs.raidDamage or 0) + dmg
         if (e.maxHp or 0) > (cs.raidBossMax or 0) then cs.raidBossMax = e.maxHp end
@@ -1648,6 +2005,21 @@ function Combat.HitEnemy(cs, e, amount, isSkill, physical, noCrit, src, forceCri
     end
 end
 
+--- 真实伤害：无视减伤/暴击/破甲/吸血，也不会触发连携
+--- 单独用一个偏上偏移的红色数字，避免和主伤害数字叠在同一像素上（看起来像「没生效」）
+function Combat.TrueDamage(cs, e, amount, label)
+    if not e or (e.hp or 0) <= 0 then return end
+    local dmg = math.max(1, amount or 0)
+    e.hp = e.hp - dmg
+    e.hitFlash = 0.12
+    DmgText(cs, e.x + 12, e.y - (e.radius or 14) - 38,
+        string.format("%d", math.floor(dmg)), { 255, 130, 130, 255 }, 26, false)
+    if label then
+        AddText(cs, e.x + 12, e.y - (e.radius or 14) - 58, label, { 255, 150, 150 }, 12)
+    end
+    if e.hp <= 0 then Combat.KillEnemy(cs, e) end
+end
+
 function Combat.KillEnemy(cs, e)
     local idx = nil
     for i, other in ipairs(cs.enemies) do
@@ -1655,6 +2027,25 @@ function Combat.KillEnemy(cs, e)
     end
     if not idx then return end
     table.remove(cs.enemies, idx)
+
+    -- 瘟衰巨像死亡后清掉衰竭疫域 / 腐液留下的地面，避免 Boss 倒下后还在持续伤害
+    if e.id == "colossus" then
+        for i = #cs.hazardFields, 1, -1 do
+            if cs.hazardFields[i].kind == "decay" then
+                table.remove(cs.hazardFields, i)
+            end
+        end
+    end
+
+    -- 农场种子掉落：精英 8% 基础种子，Boss 5% 稀有种子（测试模式不掉落）
+    if (e.kind == "elite" or e.kind == "boss") and not cs.testMode then
+        local cropId = Farm.CombatDrop(S.data, e.kind)
+        if cropId then
+            local crop = Farm.CropByID(cropId)
+            UI.SetToast("获得种子：" .. (crop and crop.name or "?") .. " ×1", 1.8)
+            Save.Write(S.data)
+        end
+    end
 
     local p = cs.player
 
@@ -1668,6 +2059,11 @@ function Combat.KillEnemy(cs, e)
     end
     local killIntent = F(p, "killIntent")
     if killIntent > 0 then AddIntent(p, killIntent) end
+    -- 疾退腾挪：强化普攻（精准速射）期间的击杀，立刻刷新疾退腾挪冷却
+    if IsRanger() and (cs.rapidTimer or 0) > 0 then
+        p.cooldowns[2] = 0
+        AddText(cs, e.x, e.y - e.radius - 72, "疾退 · 刷新", S.col.green, 14)
+    end
     if F(p, "killAtkPct") > 0 then
         cs.killAtkStacks = math.min(30, (cs.killAtkStacks or 0) + 1)
         AddText(cs, e.x, e.y - e.radius - 54, "攻击 +" .. math.floor(F(p, "killAtkPct") * 100) .. "%",
@@ -1828,7 +2224,7 @@ function Combat.DamagePlayer(cs, amount)
             AddText(cs, p.x, p.y - 100, "剑舞流转·刷新", S.col.purple, 15)
         end
         if F(p, "thorns") > 0 then
-            Combat.ReflectThorns(cs)
+            Combat.ReflectThorns(cs, amount)
         end
         return
     end
@@ -1873,6 +2269,7 @@ function Combat.DamagePlayer(cs, amount)
     if dmg < 0.5 then dmg = 0 end
     if dmg > 0 then
         p.hp = p.hp - dmg
+        CharArt.Play(cs, "hurt", { dur = 0.35 })
         cs.playerHitFlash = 0.18
         DmgText(cs, p.x, p.y - 46, string.format("-%d", math.floor(dmg)), S.col.red, 18)
         cs.shake = math.max(cs.shake, 5)
@@ -1887,7 +2284,7 @@ function Combat.DamagePlayer(cs, amount)
                 S.col.cyan, 16)
         end
         if F(p, "thorns") > 0 then
-            Combat.ReflectThorns(cs)
+            Combat.ReflectThorns(cs, before)
         end
     end
     -- 被动反伤也让攻击者吃到挫裂
@@ -1906,9 +2303,10 @@ function Combat.DamagePlayer(cs, amount)
             S.toast.t = 2.0
         elseif p.revive > 0 and not p.reviveUsed then
             p.reviveUsed = true
-            p.hp = p.maxHp * 0.3
+            p.hp = p.maxHp * (p.revivePct or 0.3)
             p.shield = 0
-            S.toast.text = "复活：以 30% 生命站起"
+            S.toast.text = string.format("复活：以 %d%% 生命站起",
+                math.floor((p.revivePct or 0.3) * 100))
             S.toast.t = 2.0
         elseif cs.guildRaid then
             p.hp = 0
@@ -1924,15 +2322,21 @@ function Combat.DamagePlayer(cs, amount)
     if before <= 0 then return end
 end
 
-function Combat.ReflectThorns(cs)
+--- 受击反弹：按「这次实际吃到的伤害 × thorns 倍率」还回去
+--- （原来用 p.atk × thorns，等于把系数当成了攻击力，1.6 倍根本体现不出来）
+function Combat.ReflectThorns(cs, takenDmg)
     local p = cs.player
-    local amount = p.atk * F(p, "thorns")
-    if amount <= 0 then return end
+    local mul = F(p, "thorns")
+    if mul <= 0 then return end
+    local base = tonumber(takenDmg) or 0
+    local amount = math.max(p.atk * 0.2, base * mul)
+    local hunt = math.floor(F(p, "thornsHunt") + 0.5)
     local hit = false
     for i = #cs.enemies, 1, -1 do
         local e = cs.enemies[i]
         if e and Dist(p.x, p.y, e.x, e.y) < 70 then
             Combat.HitEnemy(cs, e, amount, false, true, true, "thorn")
+            if hunt > 0 then AddHunt(cs, e, hunt) end
             hit = true
         end
     end
@@ -1943,8 +2347,8 @@ function Combat.ReflectThorns(cs)
     end
 end
 
--- 铁枪固守：子弹被弹开，可选反击
-function Combat.GuardBlockBullet(cs, bx, by, color)
+-- 铁枪固守：子弹被弹开，沿原弹道打回去
+function Combat.GuardBlockBullet(cs, bx, by, color, vx, vy)
     local p = cs.player
     AddParticles(cs, bx, by, { 255, 220, 150 }, 6)
     AddRing(cs, bx, by, 26, { 255, 210, 140 }, 0.2, 3)
@@ -1954,18 +2358,24 @@ function Combat.GuardBlockBullet(cs, bx, by, color)
     if F(p, "guardNextMomentum") > 0 then
         cs.guardNextMomentum = (cs.guardNextMomentum or 0) + 1
     end
+    -- 固阵壁垒：不是隔空给最近的怪一刀，而是把这发子弹沿原弹道原样打回去。
+    -- 反弹出去的是玩家自己的弹体，只打敌人，永远不会结算到自己身上。
     local reflect = F(p, "guardReflect")
-    if reflect > 0 then
-        local target, nd = nil, 520
-        for _, e in ipairs(cs.enemies) do
-            local d = Dist(bx, by, e.x, e.y)
-            if d < nd then target, nd = e, d end
-        end
-        if target then
-            Combat.HitEnemy(cs, target, p.atk * reflect, true, true, false, "skill")
-            if F(p, "reflectStagger") > 0 then AddStagger(cs, target, 1) end
-            AddText(cs, p.x, p.y - 56, "弹反", S.col.orange, 15)
-        end
+    if reflect > 0 and vx and vy then
+        local len = math.sqrt(vx * vx + vy * vy)
+        if len < 1 then len = 1 end
+        SpawnProj(cs, {
+            x = bx, y = by,
+            vx = -vx / len * 900, vy = -vy / len * 900,
+            r = 10, life = 1.6,
+            dmg = p.atk * reflect * (1 + p.skillPct),
+            isSkill = true, kind = "spear", pierce = 3,
+            skill = 1, color = { 255, 220, 150 },
+            stagger = math.floor(F(p, "reflectStagger") + 0.5),
+        })
+        AddText(cs, p.x, p.y - 58,
+            F(p, "reflectStagger") > 0 and "弹反 · 失衡" or "弹反",
+            S.col.orange, 15)
     end
 end
 
@@ -1996,6 +2406,8 @@ function Combat.ArcHitAt(cs, x, y, facing, range, arc, coef, isSkill, crackCount
         if crackCount and crackCount > 0 then AddCrack(cs, e, crackCount) end
         if opts.crackChance and math.random() < opts.crackChance then AddCrack(cs, e, 1) end
         if opts.staggerChance and math.random() < opts.staggerChance then AddStagger(cs, e, 1) end
+        -- 负面挂上之后再判一次连携：否则「这一击刚好补满两种负面」要等下一击才触发
+        TryCombo(cs, e)
         if opts.crackExtend and opts.crackExtend > 0 then ExtendCrack(e, opts.crackExtend) end
         if opts.knock and opts.knock > 0 then
             local d = Dist(x, y, e.x, e.y)
@@ -2101,7 +2513,17 @@ local function ApplyStoredDebuffs(cs, e)
     if cs.storedHits <= 0 then cs.storedDebuffs = 0 end
 end
 
+local BasicAttackNow
+
+-- 普攻：动作先起手，伤害/子弹等到挥击帧（约第 3 帧）再结算，
+-- 这样「看到挥出去」和「怪掉血」是同一时刻，动作才有分量
+-- 普攻：动作和伤害同时发生（不再等命中帧，避免瞄准/手感被延迟影响）
 function Combat.BasicAttack(cs)
+    CharArt.Play(cs, "attack")
+    BasicAttackNow(cs)
+end
+
+function BasicAttackNow(cs)
     if IsSpear() then return Combat.SpearBasicAttack(cs) end
     if IsRanger() then return Combat.RangerBasicAttack(cs) end
     if IsMage() then return Combat.MageBasicAttack(cs) end
@@ -2203,7 +2625,9 @@ function Combat.SpearBasicAttack(cs)
         Combat.HitEnemy(cs, e, dmg, false, true, false, "basic", forceCrit)
         totalDmg = totalDmg + dmg
         if seg == 2 and F(p, "a2True") > 0 then
-            Combat.HitEnemy(cs, e, p.atk * F(p, "a2True"), false, true, false, "basic")
+            -- 嗜血裁决：2A 附加真伤。走 HitEnemy 会被算进物理伤害加成里，
+            -- 数字也叠在主伤害上，看着像「没有护甲就不生效」。
+            Combat.TrueDamage(cs, e, p.atk * F(p, "a2True"), "真伤")
         end
 
         -- 失衡：持有枪势、强化普攻、或专属加成
@@ -2218,6 +2642,8 @@ function Combat.SpearBasicAttack(cs)
             e.stagger = DebuffCap(p, "stagger")
             e.staggerTimer = 3.0
         end
+        -- 负面挂完再判一次连携（错位连携要求两种负面「同时存在」才触发）
+        TryCombo(cs, e)
 
         -- 第三段击退
         if isThird then
@@ -2273,7 +2699,18 @@ function Combat.SpearBasicAttack(cs)
     end
 
     -- 连击推进与枪势
-    cs.spearCombo = isThird and 0 or seg
+    -- 三段循环必须真的打中人才推进：空挥也攒层数会让第三段（必定暴击 / 叠满失衡）
+    -- 在没打出 1A、2A 的情况下直接被触发。
+    if #targets > 0 then
+        cs.spearCombo = isThird and 0 or seg
+    else
+        cs.spearCombo = 0
+    end
+    -- 猛攻蓄力：重击不再只靠 3A —— 每次普攻命中就叠 1 层（3A 再额外 +1），
+    -- 叠层难度大幅下降，也不需要先攒出三段才能吃到减伤/增伤
+    if F(p, "chargePct") > 0 and #targets > 0 then
+        cs.chargeStacks = math.min(10, (cs.chargeStacks or 0) + 1)
+    end
     if isThird then
         GainMomentum(p, 1 + math.floor(F(p, "comboFullMomentum")))
         if F(p, "comboFullRefund") > 0 then p.cooldowns[1] = 0 end
@@ -2311,6 +2748,11 @@ function Combat.RangerBasicAttack(cs)
     if (cs.rangerCrit or 0) > 0 then
         crit = true
         cs.rangerCrit = cs.rangerCrit - 1
+    end
+    -- 疾退腾挪之后的下一发普攻必定暴击
+    if (cs.rangerDodgeCrit or 0) > 0 then
+        crit = true
+        cs.rangerDodgeCrit = 0
     end
     if (cs.rangerSwap or 0) > 0 then
         -- 换位后第一发：伤害加成（原来给攻速，手感上体现不出来）
@@ -2388,6 +2830,9 @@ function Combat.RangerCastSkill(slot)
             p.freeCharges[id] = p.freeCharges[id] - 1
         elseif id == 6 and F(p, "swapCharge") > 0 and (p.charges[id] or 0) > 0 then
             p.charges[id] = p.charges[id] - 1
+        elseif id == 4 and (p.charges[id] or 0) > 0 then
+            -- 多重罗网：冷却中也能用掉多出来的一层陷阱充能
+            p.charges[id] = p.charges[id] - 1
         else
             return
         end
@@ -2421,34 +2866,40 @@ function Combat.RangerCastSkill(slot)
         p.y = Config.Clamp(ry, p.radius, WORLD_H - p.radius)
         p.invulnTimer = 0.3 + F(p, "dodgeInvuln")
         GainMomentum(p, 1 + math.floor(F(p, "dodgeStacks")))
+        -- 翻滚后下一次普攻必定暴击（原来只有陷阱能拿到「狩猎契机」，疾退什么都没有）
+        cs.rangerDodgeCrit = 1
         AddTrail(cs, p.x, p.y, { 140, 230, 170 }, 13)
         AddTelegraph(cs, { kind = "line", x = fromX, y = fromY, x2 = p.x, y2 = p.y,
             color = { 150, 240, 170 }, life = 0.3 })
-        if F(p, "dodgeStacks") > 0 then GainMomentum(p, 1) end
     elseif id == 3 then
         local charge = math.max(0, 0.6 + F(p, "snipeCharge"))
         local coef = 2.6 * (1 + F(p, "snipePct"))
         AimAt(cs, 900, math.rad(120))
+        -- 手动瞄准的方向要记下来：蓄力结束时 aimLock 已经清掉了，
+        -- 之前这里再读 cs.aimLock 永远是 nil，长按选的朝向会被自动索敌顶掉
+        local manualFacing = nil
+        if cs.aimLock or (cs.facingLock or 0) > 0 then manualFacing = cs.facing end
+        -- 蓄力期间角色可能还在跑位：箭要固定从「按下技能的那一刻」的位置射出去
+        local castX, castY = p.x, p.y
+        -- 方向也在按下的瞬间锁定：蓄力结束前最近敌人换了，箭不能跟着拐弯
+        local lockTarget = manualFacing and nil or NearestEnemy(cs, castX, castY, 900)
+        local lockFacing = manualFacing
+            or (lockTarget and math.atan(lockTarget.y - castY, lockTarget.x - castX))
+            or cs.facing
         local function shoot()
-            local target = NearestEnemy(cs, p.x, p.y, 900)
-            local facing
-            if cs.aimLock then
-                facing = cs.facing     -- 玩家手动瞄准的朝向
-            else
-                facing = target and math.atan(target.y - p.y, target.x - p.x) or cs.facing
-            end
+            local facing = lockFacing
             cs.snipeCharge = nil
             SpawnProj(cs, {
-                x = p.x, y = p.y,
+                x = castX, y = castY,
                 vx = math.cos(facing) * 1150, vy = math.sin(facing) * 1150,
                 r = 9, life = 1.2, dmg = p.atk * coef * (1 + p.skillPct),
                 isSkill = true, pierce = 6, kind = "arrow",
                 hunt = 2, crit = false, color = { 255, 230, 150 },
                 combo = "追猎", boom = F(p, "snipeBoom"),
             })
-            AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = facing,
+            AddTelegraph(cs, { kind = "corridor", x = castX, y = castY, facing = facing,
                 len = 860, width = 34, color = { 255, 230, 150 }, life = 0.3 })
-            AddParticles(cs, p.x, p.y, { 255, 230, 150 }, 10)
+            AddParticles(cs, castX, castY, { 255, 230, 150 }, 10)
             cs.shake = math.max(cs.shake, 5)
         end
         if charge <= 0.01 then
@@ -2473,7 +2924,8 @@ function Combat.RangerCastSkill(slot)
             x = tx, y = ty, r = trapR,
             t = 3 + F(p, "trapDur"), slow = 0.4 + F(p, "trapSlow"),
             hunt = 1 + math.floor(F(p, "trapHuntStacks")),
-            crit = 1 + math.floor(F(p, "trapCritStacks")),
+            -- 狩猎契机 = 下次普攻必定暴击，可叠 3 层；迟滞罗网多给 1 层
+            crit = 1 + math.floor(F(p, "trapCritStacks")) + math.floor(F(p, "trapCrit")),
             root = 1.2 + F(p, "trapRoot"),
             triggered = false,
         }
@@ -2496,8 +2948,11 @@ function Combat.RangerCastSkill(slot)
                 execute = F(p, "volleyComboChance"),
             })
         end
+        -- 指示器要和真实弹道对齐：箭速 900 × 1.0 秒 ≈ 900 码射程，
+        -- 扇面只覆盖最外两支箭的散布（原来 640 太短、扇面比实际宽）
+        local halfArc = 0.10 * (count - 1) / 2 + math.atan(6 / 60)
         AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = cs.facing,
-            range = 640, arc = 0.10 * count + 0.14,
+            range = 900, arc = halfArc * 2,
             color = { 190, 245, 200 }, life = 0.42 })
         cs.attackFlash = 0.12
     elseif id == 6 then
@@ -2798,18 +3253,35 @@ local function ReplayRangedPhantom(cs, ph)
     local f = ph.coef
     local target = NearestEnemy(cs, ph.x, ph.y, 500)
     local facing = target and math.atan(target.y - ph.y, target.x - ph.x) or ph.facing
-    local dmg = p.atk * 1.0 * f
+    -- 按「复刻的是哪个技能」取系数。原来固定 1.0 倍：
+    -- 增益/位移类技能会凭空打出一发满伤害箭，而真正的输出技能又打不出应有的强度。
+    local coef, pierce = 1.0, 1
+    if ph.skill == 3 then coef, pierce = 2.6, 3          -- 穿魂狙击
+    elseif ph.skill == 5 then coef = 0.85                -- 箭影连射（一支的量）
+    elseif ph.skill == 4 then coef = 0.9                 -- 陷阱：影子补一发
+    elseif ph.skill == 6 then coef = 1.2                 -- 掠袭换位
+    elseif ph.skill == 1 or ph.skill == 2 then coef = 0.6   -- 增益/位移：影子也有输出，不然只剩空模型
+    end
     SpawnProj(cs, {
         x = ph.x, y = ph.y,
         vx = math.cos(facing) * 900, vy = math.sin(facing) * 900,
-        r = 8, life = 1.0, dmg = dmg, isSkill = true,
-        pierce = 1, kind = IsRanger() and "arrow" or "orb",
+        r = 8, life = 1.0, dmg = p.atk * coef * f * (1 + p.skillPct), isSkill = true,
+        pierce = pierce, kind = IsRanger() and "arrow" or "orb",
         color = ph.color or { 200, 180, 255 }, combo = "追猎", hunt = 1,
     })
+    -- 虚影回响的「随机物理负面」原来被忽略了，残影看着像纯装饰
+    if ph.debuff then
+        for _, e in ipairs(ArcTargets(cs, ph.x, ph.y, facing, 150, math.rad(180))) do
+            if math.random() < 0.5 then AddStagger(cs, e, 1) else AddHunt(cs, e, 1) end
+        end
+    end
 end
 
 local function ChargeMax(p, id)
     if IsRanger() then
+        -- 多重罗网：陷阱技能多 1 层充能，才能真正「同时存 2 个」
+        -- （单靠 maxTraps 不够：陷阱只存在 3 秒，而技能冷却 11 秒）
+        if id == 4 then return 1 + math.floor(F(p, "trapCount")) end
         if id == 6 then return 1 + math.floor(F(p, "swapCharge")) end
         return 1
     end
@@ -2843,24 +3315,39 @@ local function ReplaySpearPhantom(cs, ph)
     local x, y, facing = ph.x, ph.y, ph.facing
     local col = ph.color or { 255, 205, 150 }
     local hits = 0
-    if ph.skill == 2 then
+    if ph.skill == 1 then
+        -- 三段枪式本身是给普攻附魔的增益，没有直接伤害。影子照着打三段，
+        -- 等于凭空多出 3.4 倍技能伤害（测试反馈的「强化普攻技能伤害异常」）。
+        hits = Combat.ArcHitAt(cs, x, y, facing, 92, math.rad(130), 0.8 * f, true, 0, {
+            src = "skill", slashColor = col })
+    elseif ph.skill == 2 then
         hits = Combat.ArcHitAt(cs, x, y, facing, 150, math.rad(60), 1.6 * f, true, 0,
-            { src = "skill", slashColor = col })
+            { src = "skill", slashColor = col, staggerChance = 1 })
+    elseif ph.skill == 4 then
+        -- 掷枪：影子也真的把枪扔出去，而不是原地戳一下
+        cs.spearShots = cs.spearShots or {}
+        cs.spearShots[#cs.spearShots + 1] = {
+            x = x, y = y,
+            dirx = math.cos(facing), diry = math.sin(facing),
+            speed = 980, traveled = 0, maxDist = 560,
+            pierce = 3, hit = {},
+            dmg = p.atk * 1.7 * f * (1 + p.skillPct),
+            usedMomentum = false,
+            stagger = 1,
+            returning = false,
+        }
+        hits = 1
+    elseif ph.skill == 5 then
+        -- 回马枪：往前一格再刺，带失衡
+        local tx = x + math.cos(facing) * 60
+        local ty = y + math.sin(facing) * 60
+        hits = Combat.ArcHitAt(cs, tx, ty, facing, 130, math.rad(70), 1.6 * f, true, 0,
+            { src = "skill", slashColor = col, staggerChance = 1 })
     elseif ph.skill == 3 or ph.skill == 6 then
         hits = Combat.ArcHitAt(cs, x, y, facing, 145, math.pi * 2, 1.8 * f, true, 1,
-            { src = "skill", slashColor = col })
-    elseif ph.skill == 4 then
-        hits = Combat.ArcHitAt(cs, x, y, facing, 170, math.rad(45), 1.7 * f, true, 0,
-            { src = "skill", slashColor = col })
-    elseif ph.skill == 5 then
-        hits = Combat.ArcHitAt(cs, x, y, facing, 110, math.rad(70), 1.6 * f, true, 0,
-            { src = "skill", slashColor = col })
+            { src = "skill", slashColor = col, staggerChance = 1 })
     else
-        hits = hits + Combat.ArcHitAt(cs, x, y, facing, 82, math.rad(120), 0.9 * f, true, 0,
-            { src = "skill", slashColor = col })
-        hits = hits + Combat.ArcHitAt(cs, x, y, facing, 86, math.rad(120), 0.9 * f, true, 0,
-            { src = "skill", slashColor = col })
-        hits = hits + Combat.ArcHitAt(cs, x, y, facing, 92, math.rad(130), 1.8 * f, true, 0,
+        hits = Combat.ArcHitAt(cs, x, y, facing, 86, math.rad(120), 1.0 * f, true, 0,
             { src = "skill", slashColor = col })
     end
     if hits > 0 then
@@ -2878,6 +3365,14 @@ local function ReplaySpearPhantom(cs, ph)
     end
 end
 
+-- 位移类技能：残影需要跟着本体一起走（否则复刻会打在人已经离开的起手点）
+local function FollowsPlayer(id)
+    if IsMage() then return false end
+    if IsSpear() then return id == 2 end
+    if IsRanger() then return id == 2 or id == 6 end
+    return id == 2 or id == 6      -- 剑客：闪影突进 / 瞬影连斩
+end
+
 SpawnAfterimage = function(cs, phantom, illusion, skillId)
     local p = cs.player
     cs.phantoms = cs.phantoms or {}
@@ -2889,11 +3384,12 @@ SpawnAfterimage = function(cs, phantom, illusion, skillId)
     else
         replay = ReplayPhantomSkill
     end
+    local follow = FollowsPlayer(skillId)
     if phantom > 0 then
         local ph = {
             x = p.x, y = p.y, facing = cs.facing, radius = 95,
             t = 0.7, total = 0.7, color = { 150, 220, 255 }, kind = "phantom",
-            skill = skillId, coef = phantom,
+            skill = skillId, coef = phantom, follow = follow,
         }
         cs.phantoms[#cs.phantoms + 1] = ph
         cs.phantomCount = (cs.phantomCount or 0) + 1
@@ -2905,7 +3401,7 @@ SpawnAfterimage = function(cs, phantom, illusion, skillId)
         local ph = {
             x = p.x, y = p.y, facing = cs.facing, radius = 130,
             t = 0.75, total = 0.75, color = { 195, 150, 255 }, kind = "illusion",
-            skill = skillId, coef = 0.35, debuff = true,
+            skill = skillId, coef = 0.50, debuff = true, follow = follow,
         }
         cs.phantoms[#cs.phantoms + 1] = ph
         cs.phantomCount = (cs.phantomCount or 0) + 1
@@ -2915,9 +3411,17 @@ SpawnAfterimage = function(cs, phantom, illusion, skillId)
     end
 end
 
-local function StartDash(cs, coef, speed, t, src)
-    local dirx, diry, ang, hasInput = DashDir(cs)
-    if hasInput then cs.facing = ang end   -- 朝输入方向冲，冲完面朝也转过去
+-- dir 可选：多段位移（瞬影连斩）在后续段沿用第一段锁定的方向，
+-- 避免第二段又被左摇杆改向
+local function StartDash(cs, coef, speed, t, src, dir)
+    local dirx, diry, ang, hasInput
+    if dir then
+        dirx, diry, ang, hasInput = dir[1], dir[2], dir[3], true
+        cs.facing = ang
+    else
+        dirx, diry, ang, hasInput = DashDir(cs)
+        if hasInput then cs.facing = ang end   -- 朝输入方向冲，冲完面朝也转过去
+    end
     cs.dash = {
         t = t, dirx = dirx, diry = diry,
         speed = speed, coef = coef, hit = {}, src = src, iframe = true,
@@ -2935,8 +3439,25 @@ local function SpearStartDash(cs, coef, speed, t, iframe, dr)
     }
 end
 
+local CastSkillNow
+
+-- 技能：动作先起手，实际效果（伤害 / 弹道 / 位移）等到命中帧再结算
 function Combat.CastSkill(slot)
-    if S.combat and (S.combat.showBuffs or S.combat.paused) then return end
+    local cs = S.combat
+    if not cs or cs.showBuffs or cs.paused then return end
+    local id = cs.run and cs.run.loadout[slot]
+    if not id then return end
+    local p = cs.player
+    local ready = (p.cooldowns[id] or 0) <= 0
+        or ((p.freeCharges and p.freeCharges[id]) or 0) > 0
+        or ((p.charges and p.charges[id]) or 0) > 0
+    if ready then CharArt.Play(cs, "skill", { skill = id }) end
+    -- 立即结算：松手那一刻的瞄准状态（aimLock / aimPoint / facing）仍然有效，
+    -- 自动索敌也按当时的位置算，不会因为延迟而用上过期方向
+    return CastSkillNow(slot)
+end
+
+function CastSkillNow(slot)
     if IsSpear() then return Combat.SpearCastSkill(slot) end
     if IsRanger() then return Combat.RangerCastSkill(slot) end
     if IsMage() then return Combat.MageCastSkill(slot) end
@@ -3033,7 +3554,8 @@ function Combat.CastSkill(slot)
             end
         end }
     elseif id == 2 then
-        -- 闪影突进
+        -- 闪影突进：点按自动索敌，拖动则按瞄准方向突进
+        AimAt(cs, 360, math.rad(80))
         StartDash(cs, 1.7 * (1 + F(p, "dashPct")), 950 * (1 + F(p, "dashDist")), 0.18, "dash")
         p.invulnTimer = 0.22 + F(p, "dashInvuln")
     elseif id == 3 then
@@ -3084,14 +3606,20 @@ function Combat.CastSkill(slot)
         AddRing(cs, p.x, p.y, 66, { 150, 235, 255 }, 0.26, 5)
     elseif id == 6 then
         -- 瞬影连斩：第一段短促、中间停一下、第二段更亮更重，两段区分得开
+        -- 点按自动索敌；拖动/长按选方向时，后续段沿用同一方向
+        AimAt(cs, 360, math.rad(80))
+        local lockDir = nil
+        if cs.aimLock or (cs.facingLock or 0) > 0 then
+            lockDir = { math.cos(cs.facing), math.sin(cs.facing), cs.facing }
+        end
         local stages = 2 + math.floor(F(p, "blinkStages"))
         local coef = 1.2 * (1 + F(p, "blinkPct"))
         local speed = 900 * (1 + F(p, "blinkDist"))
-        StartDash(cs, coef, speed * 1.15, 0.10, "blink")
+        StartDash(cs, coef, speed * 1.15, 0.10, "blink", lockDir)
         p.invulnTimer = 0.45
         for i = 2, stages do
             cs.pendingHits[#cs.pendingHits + 1] = { t = 0.30 + 0.22 * (i - 2), fn = function()
-                StartDash(cs, coef * 1.1, speed, 0.16, "blink")
+                StartDash(cs, coef * 1.1, speed, 0.16, "blink", lockDir)
                 cs.dash.bright = true
                 p.invulnTimer = 0.22
                 AddRing(cs, p.x, p.y, 62, { 205, 180, 255 }, 0.2, 5)
@@ -3116,7 +3644,7 @@ local function SpearSkillCD(cs, id, base)
     return math.max(0.5, cd)
 end
 
-local function SpearShock(cs, usedMomentum)
+local function SpearShock(cs, usedMomentum, crackCount)
     local p = cs.player
     local radius = 140 * (1 + F(p, "shockRange"))
     local base = p.atk * 1.8 * (1 + F(p, "shockPct")) * (1 + p.skillPct)
@@ -3130,6 +3658,8 @@ local function SpearShock(cs, usedMomentum)
         Combat.HitEnemy(cs, e, amount, true, true, false, "skill")
         AddStagger(cs, e, 1 + math.floor(F(p, "shockStagger"))
             + (F(p, "shockStaggerStack") > 0 and 1 or 0))
+        -- 铁枪固守收尾：震地额外挂 1 层挫裂（技能描述里写了，之前漏实现）
+        if crackCount and crackCount > 0 then AddCrack(cs, e, crackCount) end
         if F(p, "heavyStagger") > 0 then AddStagger(cs, e, 1) end
         if F(p, "shockHunt") > 0 and math.random() < F(p, "shockHunt") then AddHunt(cs, e, 1) end
         if usedMomentum and (e.crack or 0) > 0 then TryCombo(cs, e, "震荡") end
@@ -3150,7 +3680,7 @@ local function SpearShock(cs, usedMomentum)
     if F(p, "shockRefund") > 0 and hits >= 2 and math.random() < F(p, "shockRefund") then
         GainMomentum(p, 1)
     end
-    if F(p, "momentumOnSkill") > 0 then GainMomentum(p, 1) end
+    if F(p, "momentumOnSkill") > 0 and hits > 0 then AddMomentum(p, 1) end
     return hits
 end
 
@@ -3227,7 +3757,8 @@ function Combat.SpearCastSkill(slot)
             x = p.x, y = p.y,
             dirx = math.cos(cs.facing), diry = math.sin(cs.facing),
             speed = 980, traveled = 0, maxDist = maxDist,
-            pierce = 3 + math.floor(F(p, "throwPierce")), hit = {},
+            pierce = (F(p, "throwInfinite") > 0) and 999
+                or (3 + math.floor(F(p, "throwPierce"))), hit = {},
             dmg = p.atk * 1.7 * (1 + F(p, "throwPct")) * (1 + p.skillPct),
             usedMomentum = usedMomentum,
             stagger = 1 + math.floor(F(p, "throwStagger")),
@@ -3235,7 +3766,8 @@ function Combat.SpearCastSkill(slot)
         }
         AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = cs.facing,
             len = maxDist, width = 46, color = { 255, 205, 150 }, life = 0.5 })
-        if F(p, "momentumOnSkill") > 0 then GainMomentum(p, 1) end
+        -- 枪势轮回：枪势改成「命中才给、且不被概率门砍掉」（原来在释放时按 40% 概率给，
+        -- 经常整场叠不到，和描述里的「命中也能获得枪势」对不上）
     elseif id == 5 then
         AimAt(cs, 360, math.rad(100))
         -- 回马枪：角色真的先向前冲出去（看得见的位移）→ 刺中后顿一下 → 再向后撤
@@ -3254,7 +3786,6 @@ function Combat.SpearCastSkill(slot)
             range = thrustRange, arc = thrustArc, color = { 255, 205, 150 }, life = 0.55 })
 
         if F(p, "backMs") > 0 then cs.spearMsTimer = 2 end
-        if F(p, "momentumOnSkill") > 0 then GainMomentum(p, 1) end
 
         cs.facing = castFacing
         -- 回马枪是"刺出去再退回来"，不靠穿过敌人造成伤害，所以位移段不给无敌
@@ -3265,6 +3796,7 @@ function Combat.SpearCastSkill(slot)
                 cs.facing = castFacing
                 local tx = p.x + math.cos(castFacing) * 20
                 local ty = p.y + math.sin(castFacing) * 20
+                local backMomentumGiven = false
                 Combat.ArcHitAt(cs, tx, ty, castFacing, thrustRange, thrustArc,
                     1.75 * (1 + F(p, "backPct")), true, 0,
                     { src = "skill", slashColor = { 255, 205, 150 }, slashWidth = 9 })
@@ -3273,6 +3805,10 @@ function Combat.SpearCastSkill(slot)
                     if usedMomentum and (e.crack or 0) > 0 then TryCombo(cs, e, "震荡") end
                     if F(p, "backMomentum") > 0 and math.random() < F(p, "backMomentum") then
                         GainMomentum(p, 1)
+                    end
+                    if F(p, "momentumOnSkill") > 0 and not backMomentumGiven then
+                        backMomentumGiven = true
+                        AddMomentum(p, 1)
                     end
                     if F(p, "backStaggerChance") > 0 and math.random() < F(p, "backStaggerChance") then
                         for _, o in ipairs(cs.enemies) do
@@ -3331,11 +3867,35 @@ end
 function Combat.Update(dt)
     local cs = S.combat
     if not cs then return end
+    -- 命中停顿（hitstop）：命中瞬间整场冻住 40~90ms，打击感主要靠这个
+    if (cs.hitstop or 0) > 0 then
+        cs.hitstop = math.max(0, cs.hitstop - dt)
+        if cs.shake > 0 then cs.shake = math.max(0, cs.shake - dt * 30) end
+        cs.shakeDirX = (cs.shakeDirX or 0) * 0.80
+        cs.shakeDirY = (cs.shakeDirY or 0) * 0.80
+        return
+    end
+
+    -- 慢放：只影响战斗内的时间，界面 / 弹层不受影响
+    local k = S.timeScale or 1
+    if k ~= 1 then dt = dt * k end
     cs.time = cs.time + dt
     -- 长按瞄准：计时；技能不再可用时自动取消
     if cs.aim then
         cs.aim.t = cs.aim.t + dt
         if not Combat.SkillReady(cs, cs.aim.id) then cs.aim = nil end
+    end
+    -- 手动瞄准后的朝向锁定计时（覆盖技能的延迟结算）
+    if (cs.facingLock or 0) > 0 then
+        cs.facingLock = math.max(0, cs.facingLock - dt)
+    end
+    -- 冥想 / 起身活动的加成按现实时间到期：状态变化时重算面板，
+    -- 否则 buff 到期后冷却缩减 / 移速还会一直挂着
+    local cdrOn = Save.BuffLeft(S.data, "cdrBuffUntil") > 0
+    local moveOn = Save.BuffLeft(S.data, "moveBuffUntil") > 0
+    if cdrOn ~= cs.healthCdrOn or moveOn ~= cs.healthMoveOn then
+        cs.healthCdrOn, cs.healthMoveOn = cdrOn, moveOn
+        Run.Recompute(cs.player)
     end
     if cs.joystick then cs.joystick.visible = not cs.showBuffs end
     if cs.shake > 0 then cs.shake = math.max(0, cs.shake - dt * 30) end
@@ -3376,6 +3936,7 @@ end
 
 function Combat.UpdatePlayer(cs, dt)
     local p = cs.player
+    CharArt.Update(cs, dt)
 
     p.noDamageTimer = p.noDamageTimer + dt
     if p.rageTimer > 0 then p.rageTimer = p.rageTimer - dt end
@@ -3404,18 +3965,17 @@ function Combat.UpdatePlayer(cs, dt)
         cs.guardTimer = cs.guardTimer - dt
         if cs.guardTimer <= 0 then
             cs.guardTimer = 0
-            SpearShock(cs, cs.guardUsedMomentum)
+            SpearShock(cs, cs.guardUsedMomentum, 1)   -- 收尾震地：额外 1 层挫裂
             if F(p, "guardSlam") > 0 then
-                local slam = p.atk * F(p, "guardSlam") * (1 + p.skillPct)
-                for _, e in ipairs(ArcTargets(cs, p.x, p.y, 0, 150, math.pi * 2)) do
-                    Combat.HitEnemy(cs, e, slam, true, true, false, "skill")
-                    AddStagger(cs, e, 1)
-                    if cs.guardUsedMomentum and (e.crack or 0) > 0 and F(p, "guardSlamCombo") > 0 then
-                        TryCombo(cs, e, "震荡")
-                    end
-                end
-                AddRing(cs, p.x, p.y, 160, { 255, 220, 150 }, 0.35, 8)
-                cs.shake = math.max(cs.shake, 10)
+                -- 重劈不再在固守结束的瞬间结算（身边没怪就等于白丢），
+                -- 改成存一次「下一次命中加倍」的增益，打中第一个怪时一起结算
+                cs.pendingSlam = {
+                    pct = F(p, "guardSlam"),
+                    combo = cs.guardUsedMomentum and F(p, "guardSlamCombo") > 0,
+                }
+                AddText(cs, p.x, p.y - 76, "重劈·蓄势", S.col.orange, 16)
+                AddRing(cs, p.x, p.y, 120, { 255, 220, 150 }, 0.35, 6)
+                cs.shake = math.max(cs.shake, 8)
             end
         end
     end
@@ -3493,7 +4053,8 @@ function Combat.UpdatePlayer(cs, dt)
         local nx, ny = ix / mag, iy / mag
         p.x = p.x + nx * speed * mag * dt
         p.y = p.y + ny * speed * mag * dt
-        if mag > 0.2 then cs.facing = math.atan(ny, nx) end
+        -- 手动瞄准刚结算时先别被摇杆改朝向（技能延迟段还要用这个方向）
+        if mag > 0.2 and not ((cs.facingLock or 0) > 0) then cs.facing = math.atan(ny, nx) end
     end
 
     -- 冲刺
@@ -3572,12 +4133,15 @@ function Combat.UpdatePlayer(cs, dt)
                     local base = (sk2 and sk2.cd or 6.0) * (1 - p.cdr)
                     p.cooldowns[2] = math.max(0, (p.cooldowns[2] or 0) - base * F(p, "missRefund"))
                 end
-            elseif d.spear and #d.hit > 0 then
-                -- 突刺收尾：给一点停顿感（震屏 + 环 + 叠失衡），别像滑过去
+            elseif d.spear then
+                -- 突刺收尾：无论冲没冲到人，落地都会震一下并给范围内敌人叠失衡
+                -- （以前只在命中过敌人时才结算，空放或从敌人身边滑过时收尾完全没效果）
                 cs.shake = math.max(cs.shake, 6)
-                AddRing(cs, p.x, p.y, 78, { 255, 205, 140 }, 0.24, 4)
+                AddRing(cs, p.x, p.y, 86, { 255, 205, 140 }, 0.24, 4)
+                AddParticles(cs, p.x, p.y, { 255, 215, 160 }, 5)
+                local finishN = 1 + math.floor(F(p, "dashFinishStagger"))
                 for _, e in ipairs(cs.enemies) do
-                    if Dist(p.x, p.y, e.x, e.y) < 92 then AddStagger(cs, e, 1) end
+                    if Dist(p.x, p.y, e.x, e.y) < 110 then AddStagger(cs, e, finishN) end
                 end
             elseif d.src == "blink" and #d.hit == 0 and F(p, "missRefund") > 0 then
                 local sk6 = Config.SkillByID(6)
@@ -3649,16 +4213,41 @@ function Combat.UpdatePlayer(cs, dt)
                         AddHunt(cs, e, 1)
                     end
                     AddRing(cs, e.x, e.y, e.radius + 18, { 255, 210, 150 }, 0.2, 3)
+                    -- 枪势轮回：掷枪命中给 1 层枪势（每次掷枪只给一次，不被概率门打折）
+                    if F(p, "momentumOnSkill") > 0 and not s.momentumGiven then
+                        s.momentumGiven = true
+                        AddMomentum(p, 1)
+                    end
                 end
             end
             local remove = s.traveled >= s.maxDist or PointInWalls(cs, s.x, s.y)
             if s.traveled >= s.maxDist and F(p, "throwReturn") > 0 and not s.returning then
                 s.returning = true
-                s.dirx = -s.dirx
-                s.diry = -s.diry
                 s.traveled = 0
                 s.hit = {}
+                s.homeTime = 0
                 remove = false
+            end
+            if s.returning and not remove then
+                -- 折返段：枪会追着角色飞回来，接住即返还掷枪冷却（飞枪轮回原本偏弱，
+                -- 加上「接枪 -2s」之后往返两段才值得多等那 2 秒冷却）
+                local dx, dy = p.x - s.x, p.y - s.y
+                local d = math.sqrt(dx * dx + dy * dy)
+                if d > 1 then
+                    s.dirx, s.diry = dx / d, dy / d
+                end
+                s.homeTime = (s.homeTime or 0) + dt
+                if d < p.radius + 30 then
+                    local tid = 4
+                    if (p.cooldowns[tid] or 0) > 0 then
+                        p.cooldowns[tid] = math.max(0, p.cooldowns[tid] - 2)
+                    end
+                    AddRing(cs, p.x, p.y, 48, { 255, 215, 150 }, 0.3, 4)
+                    AddText(cs, p.x, p.y - 62, "接枪 · 冷却 -2s", S.col.cyan, 15)
+                    remove = true
+                elseif s.homeTime > 3 then
+                    remove = true   -- 被墙挡住回不来，别留一发永远飞不回的枪
+                end
             end
             if remove then table.remove(cs.spearShots, i) end
         end
@@ -3689,7 +4278,13 @@ function Combat.UpdatePlayer(cs, dt)
         p.infectTick = (p.infectTick or 0) - dt
         if p.infectTick <= 0 then
             p.infectTick = 0.5
-            Combat.DamagePlayer(cs, (p.infectDps or 0) * 0.5)
+            -- 同样累积小数伤害，避免低攻击时的感染 tick 被抹平成 0
+            p.infectAcc = (p.infectAcc or 0) + (p.infectDps or 0) * 0.5
+            local hit = math.floor(p.infectAcc)
+            if hit > 0 then
+                p.infectAcc = p.infectAcc - hit
+                Combat.DamagePlayer(cs, hit)
+            end
         end
     end
     if (p.necrosisTimer or 0) > 0 then p.necrosisTimer = p.necrosisTimer - dt end
@@ -3729,6 +4324,7 @@ function Combat.UpdatePlayer(cs, dt)
                         Combat.HitEnemy(cs, e, amount, pr.isSkill, true, false,
                             pr.isSkill and "skill" or "basic", pr.crit)
                         if pr.hunt > 0 then AddHunt(cs, e, pr.hunt) end
+                        if (pr.stagger or 0) > 0 then AddStagger(cs, e, pr.stagger) end
                         if pr.slow and pr.slow > 0 then SlowEnemy(e, 2, pr.slow) end
                         if pr.element then ApplyElementHit(cs, e, pr.element, pr.skill) end
                         if pr.splash and pr.splashPct then
@@ -3756,6 +4352,12 @@ function Combat.UpdatePlayer(cs, dt)
                         if pr.combo and (e.stagger or 0) > 0 and (e.hunt or 0) > 0 then
                             TryCombo(cs, e, pr.combo)
                         end
+                        -- 残响硬直：对带猎痕目标的失衡判定，普攻和技能弹道都要吃
+                        -- （原来写在 `if not pr.isSkill` 里，技能命中永远不触发）
+                        if F(p, "staggerOnHunt") > 0 and (e.hunt or 0) > 0
+                            and math.random() < F(p, "staggerOnHunt") then AddStagger(cs, e, 1) end
+                        if F(p, "huntTargetStagger") > 0 and (e.hunt or 0) > 0
+                            and math.random() < F(p, "huntTargetStagger") then AddStagger(cs, e, 1) end
                         if not pr.isSkill and (cs.rangerSwapCombo or 0) > 0 then
                             if (e.stagger or 0) > 0 then TryCombo(cs, e, "追猎") end
                             cs.rangerSwapCombo = 0
@@ -3774,10 +4376,6 @@ function Combat.UpdatePlayer(cs, dt)
                                 Combat.HitEnemy(cs, e, amount * F(p, "huntBasicPct") * (e.hunt or 0),
                                     false, true, true, "basic")
                             end
-                            if F(p, "staggerOnHunt") > 0 and (e.hunt or 0) > 0
-                                and math.random() < F(p, "staggerOnHunt") then AddStagger(cs, e, 1) end
-                            if F(p, "huntTargetStagger") > 0 and (e.hunt or 0) > 0
-                                and math.random() < F(p, "huntTargetStagger") then AddStagger(cs, e, 1) end
                             if F(p, "huntTargetCrack") > 0 and (e.hunt or 0) > 0
                                 and math.random() < F(p, "huntTargetCrack") then AddCrack(cs, e, 1) end
                             if F(p, "critHunt") > 0 and pr.crit then AddHunt(cs, e, 1) end
@@ -3876,7 +4474,14 @@ function Combat.UpdatePlayer(cs, dt)
             if hz.tick <= 0 then
                 hz.tick = 0.5
                 if Dist(p.x, p.y, hz.x, hz.y) < hz.r + p.radius then
-                    Combat.DamagePlayer(cs, (hz.dps or 0) * 0.5)
+                    -- 累积小数伤害：低倍率地面（如腐蚀浓水）每 0.5 秒不足 1 点，
+                    -- 直接结算会被 DamagePlayer 的 <0.5 抹平，表现为「间歇性 0 伤害」
+                    hz.acc = (hz.acc or 0) + (hz.dps or 0) * 0.5
+                    local hit = math.floor(hz.acc)
+                    if hit > 0 then
+                        hz.acc = hz.acc - hit
+                        Combat.DamagePlayer(cs, hit)
+                    end
                     if hz.slow then p.hazardSlowTimer = 0.6 end
                 end
             end
@@ -3934,6 +4539,12 @@ function Combat.UpdatePlayer(cs, dt)
         for i = #cs.phantoms, 1, -1 do
             local ph = cs.phantoms[i]
             ph.t = ph.t - dt
+            -- 位移类技能：残影跟着本体一起走。否则影子留在起手点，
+            -- 人已经冲出去五六米，复刻却打在原地（测试反馈的「残影不跟随」）。
+            if ph.follow and ph.t > 0 then
+                ph.x, ph.y = p.x, p.y
+                ph.facing = cs.facing
+            end
             if ph.t <= 0 then table.remove(cs.phantoms, i) end
         end
     end
@@ -3946,6 +4557,7 @@ local function ApplyEnemyDebuff(cs, e)
         p.infectTimer = 4
         p.infectDps = e.atk * 0.45
         p.infectTick = 0.5
+        p.infectAcc = 0
         AddText(cs, p.x, p.y - 86, "感染", S.col.red, 14)
     elseif e.id == "golem" then
         p.necrosisTimer = 4
@@ -3959,7 +4571,7 @@ end
 local function AddHazard(cs, x, y, r, life, dps, slow, kind)
     cs.hazardFields[#cs.hazardFields + 1] = {
         x = x, y = y, r = r, t = 0, life = life, dps = dps, slow = slow, tick = 0,
-        kind = kind or "pus",
+        acc = 0, kind = kind or "pus",
     }
 end
 
@@ -4018,7 +4630,12 @@ function Combat.UpdateEnemies(cs, dt)
             e.huntTimer = e.huntTimer - dt
             if e.huntTimer <= 0 then e.hunt = 0 end
         end
-        if e.slowTimer > 0 then e.slowTimer = e.slowTimer - dt end
+        if e.slowTimer > 0 then
+            e.slowTimer = e.slowTimer - dt
+            -- 到期要把减速强度一起清掉：之前 slowPct 只升不降，
+            -- 计时结束后残留的高减速会让「减速箭矢」看起来持续到目标死亡
+            if e.slowTimer <= 0 then e.slowTimer = 0; e.slowPct = 0 end
+        end
         if (e.rootTimer or 0) > 0 then
             e.rootTimer = e.rootTimer - dt
             if e.rootTimer <= 0 then e.rootTimer = nil end
@@ -4041,11 +4658,10 @@ function Combat.UpdateEnemies(cs, dt)
 
         if e.behavior == "shooter" then
             if d > 320 then
-                e.x = e.x + (p.x - e.x) / d * spd * dt
-                e.y = e.y + (p.y - e.y) / d * spd * dt
+                EnemyMoveToward(cs, e, p.x, p.y, spd, dt)
             elseif d < 190 and d > 1 then
-                e.x = e.x - (p.x - e.x) / d * spd * dt
-                e.y = e.y - (p.y - e.y) / d * spd * dt
+                -- 后退点：把玩家位置关于自己镜像，等于「往远离玩家的方向走」
+                EnemyMoveToward(cs, e, e.x - (p.x - e.x), e.y - (p.y - e.y), spd, dt)
             end
             e.shootCd = e.shootCd - dt
             if e.shootCd <= 0 and d < 560 then
@@ -4059,8 +4675,7 @@ function Combat.UpdateEnemies(cs, dt)
             end
         elseif not bossCharging then
             if d > e.radius + p.radius + 2 then
-                e.x = e.x + (p.x - e.x) / d * spd * dt
-                e.y = e.y + (p.y - e.y) / d * spd * dt
+                EnemyMoveToward(cs, e, p.x, p.y, spd, dt)
             end
             e.attackCd = e.attackCd - dt
             if d <= e.radius + p.radius + 6 and e.attackCd <= 0 then
@@ -4076,15 +4691,6 @@ function Combat.UpdateEnemies(cs, dt)
         end
 
         local ex, ey = ResolveCircleWalls(cs, e.x, e.y, e.radius)
-        -- 被墙正面挡住时尝试沿垂直方向滑动，避免绕不过墙角
-        if d > e.radius + p.radius + 8 and Dist(ex, ey, oldX, oldY) < spd * dt * 0.4 then
-            local nx2 = -(p.y - oldY) / d
-            local ny2 = (p.x - oldX) / d
-            local sx2, sy2 = ResolveCircleWalls(cs, oldX + nx2 * spd * dt, oldY + ny2 * spd * dt, e.radius)
-            if Dist(sx2, sy2, oldX, oldY) > Dist(ex, ey, oldX, oldY) then
-                ex, ey = sx2, sy2
-            end
-        end
         e.x = Config.Clamp(ex, e.radius, WORLD_W - e.radius)
         e.y = Config.Clamp(ey, e.radius, WORLD_H - e.radius)
 
@@ -4100,14 +4706,6 @@ function Combat.UpdateEnemies(cs, dt)
             -- 衰竭疫域改成“技能”：开 3 秒 → 关 5~7 秒（狂暴后间隔更短、范围更大）
             -- 原来常驻，近战根本贴不上去；现在有明确的输出窗口
             local auraR = e.enraged and 220 or 180
-            e.auraCd = (e.auraCd or 4.0) - dt
-            if e.auraCd <= 0 then
-                e.auraOn = 3.0
-                e.auraCd = e.enraged and 5.0 or 7.0
-                e.decayCd = 0
-                AddRing(cs, e.x, e.y, auraR, { 175, 115, 215 }, 0.45, 7)
-                AddText(cs, e.x, e.y - e.radius - 34, "衰竭疫域", { 205, 160, 255 }, 18)
-            end
             if (e.auraOn or 0) > 0 then
                 e.auraOn = e.auraOn - dt
                 e.decayCd = (e.decayCd or 0) - dt
@@ -4118,6 +4716,17 @@ function Combat.UpdateEnemies(cs, dt)
                         p.hazardSlowTimer = 0.6
                     end
                 end
+            else
+                -- 冷却只在疫域关闭期间走：之前开着的时候也在倒计时，
+                -- 3 秒结束后只剩 2 秒间隔，看起来就像无缝覆盖
+                e.auraCd = (e.auraCd or 4.0) - dt
+                if e.auraCd <= 0 then
+                    e.auraOn = 3.0
+                    e.auraCd = e.enraged and 5.0 or 7.0
+                    e.decayCd = 0
+                    AddRing(cs, e.x, e.y, auraR, { 175, 115, 215 }, 0.45, 7)
+                    AddText(cs, e.x, e.y - e.radius - 34, "衰竭疫域", { 205, 160, 255 }, 18)
+                end
             end
             e.bossSkillCd = (e.bossSkillCd or 4.0) - dt
             if e.bossSkillCd <= 0 then
@@ -4127,7 +4736,10 @@ function Combat.UpdateEnemies(cs, dt)
                     dmg = e.atk * 1.2, hit = false, shock = true,
                     segCount = 72, segments = MakeRingSegments(72),
                 }
-                AddHazard(cs, e.x, e.y, 150, 3.0, e.atk * 0.3, true, "decay")
+                -- 疫域开启期间不再额外铺一层地面腐液，避免两块地面叠成「无缝覆盖」
+                if (e.auraOn or 0) <= 0 then
+                    AddHazard(cs, e.x, e.y, 150, 3.0, e.atk * 0.3, true, "decay")
+                end
             end
             if not e.enraged and e.hp < e.maxHp * 0.5 then
                 e.enraged = true
@@ -4277,7 +4889,13 @@ function Combat.UpdateBullets(cs, dt)
                 if idx < 1 then idx = 1 elseif idx > n then idx = n end
                 if not segs or segs[idx] then
                     b.hit = true
-                    Combat.DamagePlayer(cs, b.dmg)
+                    if (cs.guardTimer or 0) > 0 then
+                        -- 固守也能挡冲击波：不掉血，只吃一次特效
+                        AddRing(cs, p.x, p.y, 70, { 255, 220, 150 }, 0.25, 4)
+                        AddText(cs, p.x, p.y - 58, "固守", S.col.orange, 15)
+                    else
+                        Combat.DamagePlayer(cs, b.dmg)
+                    end
                 end
             end
             if b.r >= b.maxR then table.remove(cs.bullets, i) end
@@ -4289,7 +4907,7 @@ function Combat.UpdateBullets(cs, dt)
             local hit = (not blocked) and Dist(b.x, b.y, p.x, p.y) < b.r + p.radius
             if hit then
                 if (cs.guardTimer or 0) > 0 then
-                    Combat.GuardBlockBullet(cs, b.x, b.y, b.color)
+                    Combat.GuardBlockBullet(cs, b.x, b.y, b.color, b.vx, b.vy)
                 elseif F(p, "reflectBullet") > 0 and math.random() < F(p, "reflectBullet") then
                     -- 镜面反射：把这一发打回去，本次免伤
                     local target = NearestEnemy(cs, p.x, p.y, 700)
@@ -4339,6 +4957,7 @@ function Combat.UpdateWaves(cs, dt)
             end
         else
             cs.cleared = true
+            CharArt.Play(cs, "victory", { dur = 1.4 })
             cs.clearTimer = 1.3
             S.toast.text = "房间已清空"
             S.toast.t = 1.3
@@ -4410,9 +5029,14 @@ end
 local function CameraBegin(cs)
     local camX, camY = CameraPos(cs)
     local sx, sy = 0.0, 0.0
-    if cs.shake > 0 and Opt("screenShake", true) then
-        sx = (math.random() - 0.5) * cs.shake
-        sy = (math.random() - 0.5) * cs.shake
+    if Opt("screenShake", true) then
+        if cs.shake > 0 then
+            sx = (math.random() - 0.5) * cs.shake
+            sy = (math.random() - 0.5) * cs.shake
+        end
+        -- 方向性震动：朝被打中的方向推一下
+        sx = sx + (cs.shakeDirX or 0)
+        sy = sy + (cs.shakeDirY or 0)
     end
     nvgSave(S.ctx)
     nvgTranslate(S.ctx, -camX + sx, -camY + sy)
@@ -4640,11 +5264,15 @@ end
 local function DrawPlayer(cs)
     local p = cs.player
     local r = p.radius
+    -- 辅助显示（角色光圈 / 普攻范围 / 瞄准线）可以整体关掉，方便看动作本身
+    local assist = S.showAssist ~= false
 
-    nvgBeginPath(S.ctx)
-    nvgCircle(S.ctx, p.x, p.y, r + 12)
-    nvgFillColor(S.ctx, nvgRGBA(120, 200, 255, 26))
-    nvgFill(S.ctx)
+    if assist then
+        nvgBeginPath(S.ctx)
+        nvgCircle(S.ctx, p.x, p.y, r + 12)
+        nvgFillColor(S.ctx, nvgRGBA(120, 200, 255, 26))
+        nvgFill(S.ctx)
+    end
 
     -- 普攻范围与方向（与实际判定一致）
     local class = Config.Class()
@@ -4652,7 +5280,7 @@ local function DrawPlayer(cs)
     local atkRange = baseRange
     if IsSpear() and p.intent > 0 then atkRange = atkRange + 18 end
     local halfArc = class.basicArc / 2
-    if Opt("showSkillRange", true) then
+    if assist and Opt("showSkillRange", true) then
         if IsRanged() then
             -- 远程职业只画一条瞄准线，避免大扇形挡住画面
             UI.Line(p.x, p.y, p.x + math.cos(cs.facing) * atkRange,
@@ -4663,7 +5291,7 @@ local function DrawPlayer(cs)
         end
     end
 
-    if cs.attackFlash > 0 then
+    if assist and cs.attackFlash > 0 then
         local alpha = math.floor(cs.attackFlash / 0.16 * 190)
         if IsRanged() then
             UI.Line(p.x, p.y, p.x + math.cos(cs.facing) * atkRange,
@@ -4676,22 +5304,39 @@ local function DrawPlayer(cs)
         end
     end
 
-    -- 身体
+    -- 身体：优先用像素角色序列帧；没有图时回退到原来的圆
+    -- 影子：角色是侧视站立，脚下给一层椭圆阴影，和俯视地面衔接
     nvgBeginPath(S.ctx)
-    nvgCircle(S.ctx, p.x, p.y, r)
-    nvgFillColor(S.ctx, nvgRGBA(110, 180, 240, 255))
+    nvgEllipse(S.ctx, p.x, p.y + r * 0.9, r * 1.15, r * 0.5)
+    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 90))
     nvgFill(S.ctx)
-    nvgBeginPath(S.ctx)
-    nvgCircle(S.ctx, p.x, p.y, r)
-    nvgStrokeColor(S.ctx, nvgRGBA(210, 235, 255, 220))
-    nvgStrokeWidth(S.ctx, 2)
-    nvgStroke(S.ctx)
+    local drew = CharArt.DrawPlayer(cs)
+    if not drew then
+        nvgBeginPath(S.ctx)
+        nvgCircle(S.ctx, p.x, p.y, r)
+        nvgFillColor(S.ctx, nvgRGBA(110, 180, 240, 255))
+        nvgFill(S.ctx)
+        nvgBeginPath(S.ctx)
+        nvgCircle(S.ctx, p.x, p.y, r)
+        nvgStrokeColor(S.ctx, nvgRGBA(210, 235, 255, 220))
+        nvgStrokeWidth(S.ctx, 2)
+        nvgStroke(S.ctx)
+    end
 
     -- 剑心护体：持续光晕
     if cs.swordHeartTimer > 0 then
         local pulse = 0.5 + 0.5 * math.sin(cs.time * 12)
         UI.Circle(p.x, p.y, r + 12 + pulse * 3, nil,
             { 110, 225, 255, math.floor(90 + 80 * pulse) }, 3)
+    end
+
+    -- 无敌（闪影突进 / 瞬影连斩 / 瞬身无敌的额外时间）：金色护罩
+    local invLeft = math.max(p.invulnTimer or 0, (cs.dash and cs.dash.iframe and cs.dash.t) or 0)
+    if invLeft > 0 then
+        local pulse = 0.5 + 0.5 * math.sin(cs.time * 16)
+        UI.Circle(p.x, p.y, r + 10 + pulse * 4,
+            { 255, 220, 120, math.floor(24 + 18 * pulse) },
+            { 255, 232, 150, math.floor(200 + 45 * pulse) }, 3)
     end
 
     -- 卸势格挡：横剑架势 + 正面盾弧 + 剩余时间呼吸
@@ -4750,6 +5395,7 @@ local function DrawPlayer(cs)
         UI.Circle(p.x, p.y, r + 10, nil, { 120, 230, 255, a }, 3)
     end
 
+    if assist then
     -- 武器：剑客是剑，枪客是长枪
     local sx = p.x + math.cos(cs.facing) * (r + 4)
     local sy = p.y + math.sin(cs.facing) * (r + 4)
@@ -4819,6 +5465,8 @@ local function DrawPlayer(cs)
         nvgStrokeWidth(S.ctx, 5)
         nvgStroke(S.ctx)
     end
+
+    end   -- assist（武器绘制）
 
     -- 铁枪固守：整圈护盾
     if (cs.guardTimer or 0) > 0 then
@@ -5237,21 +5885,43 @@ local function DrawHUD(cs)
     if (cs.spearBuffTimer or 0) > 0 then
         chips[#chips + 1] = { "枪式 x" .. math.floor(cs.spearBuffHits or 0), cs.spearBuffTimer, { 255, 200, 130 } }
     end
+    -- 破军追猎：突刺后的普攻加成（有时限）+ 击杀累计攻击（永久，标「常驻」）
+    if (cs.next3aTimer or 0) > 0 then
+        chips[#chips + 1] = { "追猎 · 普攻+55%", cs.next3aTimer, { 255, 170, 120 } }
+    end
+    if (cs.killAtkStacks or 0) > 0 and F(p, "killAtkPct") > 0 then
+        chips[#chips + 1] = { string.format("击杀 x%d · 攻+%d%%", cs.killAtkStacks,
+            math.floor(cs.killAtkStacks * F(p, "killAtkPct") * 100)), 0, { 255, 140, 140 } }
+    end
     if (cs.rapidTimer or 0) > 0 then
         chips[#chips + 1] = { "速射 x" .. math.floor(cs.rapidStacks or 0), cs.rapidTimer, { 150, 240, 175 } }
     end
     if (p.rageTimer or 0) > 0 then
         chips[#chips + 1] = { "狂暴", p.rageTimer, { 255, 160, 120 } }
     end
+    -- 无敌时段（闪影突进 / 瞬影连斩 / 瞬身无敌额外时间）
+    local invLeft = math.max(p.invulnTimer or 0, (cs.dash and cs.dash.iframe and cs.dash.t) or 0)
+    if invLeft > 0 then
+        chips[#chips + 1] = { "无敌", invLeft, { 255, 236, 140 } }
+    end
+    -- 铁壁卸锋：格挡后 4 秒的挫裂上限 +1
+    if (cs.crackCapTimer or 0) > 0 then
+        chips[#chips + 1] = { "挫裂+1", cs.crackCapTimer, { 255, 175, 100 } }
+    end
     local chipX = 24
     for _, c in ipairs(chips) do
         local col = c[3]
-        UI.Panel(chipX, 136, 96, 26, 8, { 18, 16, 26, 220 },
+        -- 宽度按字数估算：中文按 13px、数字/字母更窄，够用且不会互相压字
+        local n = 0
+        for _ in utf8.codes(c[1]) do n = n + 1 end
+        local w = math.max(96, math.floor(n * 12.5) + 26)
+        UI.Panel(chipX, 136, w, 26, 8, { 18, 16, 26, 220 },
             { col[1], col[2], col[3], 200 }, 1)
         UI.Text(chipX + 8, 149, 13, c[1], col, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        UI.Text(chipX + 88, 149, 12, string.format("%.1f", c[2]), S.col.text,
+        local right = ((c[2] or 0) > 0) and string.format("%.1f", c[2]) or "常驻"
+        UI.Text(chipX + w - 8, 149, 12, right, S.col.text,
             NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-        chipX = chipX + 102
+        chipX = chipX + w + 6
     end
 
     UI.Text(640, 24, 22, Config.RoomNames[cs.roomType] or cs.roomType, S.col.text,
@@ -5260,7 +5930,7 @@ local function DrawHUD(cs)
         NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
 
     UI.Panel(990, 20, 266, 64, 10, { 18, 16, 26, 220 }, S.col.line, 1)
-    UI.Text(1006, 36, 16, "银币", S.col.dim)
+    UI.Text(1006, 36, 16, "血尘", S.col.dim)
     UI.Text(1064, 32, 22, tostring(run.silver), S.col.gold)
     UI.Text(1006, 62, 16, "关卡", S.col.dim)
     local where
@@ -5277,6 +5947,24 @@ local function DrawHUD(cs)
     end
 
     if not cs.showBuffs and not cs.paused then
+        -- 辅助显示开关 + 慢放（看动作协调性用；H / T 也能切）
+        local assistOn = S.showAssist ~= false
+        UI.Button("assist_toggle", 840, 96, 86, 36,
+            assistOn and "范围 开" or "范围 关", function()
+                S.showAssist = not assistOn
+                UI.SetToast(assistOn and "已隐藏角色光圈 / 普攻范围" or "已显示角色辅助范围", 1.6)
+            end, { fontSize = 13,
+                  fill = assistOn and { 40, 62, 48, 235 } or { 44, 40, 46, 235 },
+                  stroke = assistOn and { 110, 190, 130, 220 } or S.col.line })
+        local ts = S.timeScale or 1
+        local tsLabel = ts == 1 and "1.0×" or (ts == 0.5 and "0.5×" or "0.25×")
+        UI.Button("timescale_toggle", 932, 96, 92, 36, tsLabel, function()
+            local cur = S.timeScale or 1
+            S.timeScale = (cur == 1) and 0.5 or ((cur == 0.5) and 0.25 or 1)
+            UI.SetToast(string.format("战斗速度 %s", (S.timeScale == 1) and "1.0×"
+                or ((S.timeScale == 0.5) and "0.5×" or "0.25×")), 1.4)
+        end, { fontSize = 13, fill = { 40, 46, 62, 235 },
+              stroke = (ts ~= 1) and { 200, 170, 90, 235 } or S.col.line })
         UI.Button("pause_btn", 1030, 96, 60, 36, "暂停", function()
             Combat.SetPaused(cs, true)
         end, { fontSize = 14, fill = { 40, 46, 62, 235 } })
@@ -5411,9 +6099,14 @@ local function DrawActionButton(b, label, color, remaining, total, enabled, char
         { color[1], color[2], color[3], enabled and 235 or 80 }, 2)
 
     if charges and charges > 0 then
-        UI.Circle(x + r * 0.78, y - r * 0.78, 10, { 255, 170, 70, 255 }, { 40, 32, 20, 255 }, 1)
-        UI.Text(x + r * 0.78, y - r * 0.78, 12, tostring(charges + 1), { 30, 22, 12, 255 },
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        -- 角标 = 还能放几次。基础那 1 次只有冷却结束才算可用，
+        -- 否则回马枪冷却中会一直显示「2 层」，看着像还能连放两下。
+        local shown = charges + ((cd > 0) and 0 or 1)
+        if shown > 0 then
+            UI.Circle(x + r * 0.78, y - r * 0.78, 10, { 255, 170, 70, 255 }, { 40, 32, 20, 255 }, 1)
+            UI.Text(x + r * 0.78, y - r * 0.78, 12, tostring(shown), { 30, 22, 12, 255 },
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        end
     end
 
     if cd > 0 and total and total > 0 then
@@ -5481,7 +6174,12 @@ local function DrawActionButtons(cs)
         local charges = nil
         if b.kind == "skill" then
             local id = cs.run.loadout[b.slot]
-            charges = id and p.charges[id] or nil
+            if id then
+                -- 额外充能 + 免费施放次数都显示在技能键右上角（瞬影卸锋等）
+                local extra = (p.charges[id] or 0)
+                    + ((p.freeCharges and p.freeCharges[id]) or 0)
+                if extra > 0 then charges = extra end
+            end
         end
         local bx, by, br = CtrlPos(b.id, b.x, b.y, b.r)
         -- 由冷却中变成就绪时记一个时间点，用来放就绪提示
@@ -5528,7 +6226,7 @@ local function DrawBuffPanel(p, run, st, subtitle, onClose)
     UI.Text(340, 130, 14, subtitle or "点击强化名字查看效果", S.col.dim)
 
     local summary = {
-        { "银币", tostring(run.silver) },
+        { "血尘", tostring(run.silver) },
         { "生命", string.format("%d / %d", math.floor(p.hp), p.maxHp) },
         { "护盾", string.format("%d / %d", math.floor(p.shield), p.maxShield) },
         { "攻击", string.format("%.1f", p.atk) },

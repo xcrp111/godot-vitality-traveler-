@@ -1,8 +1,9 @@
--- Run.lua — 单关流程：4x4 地图 / 房间 / 银币 / 商店 / 事件
+-- Run.lua — 单关流程：4x4 地图 / 房间 / 血尘 / 商店 / 事件
 
 local Config = require "Config"
 local Save = require "Save"
 local Guild = require "Guild"
+local Farm = require "Farm"
 local UI = require "UI"
 local S = require "State"
 
@@ -265,6 +266,15 @@ local function ResetMapPos(run)
     run.roomType = "start"
 end
 
+-- 农场果实：开局消耗携带的果实；随机强化要等面板重算后再发
+local function ApplyFarmBuffs(run, p)
+    local randoms = Farm.ApplyRunBuffs(run, S.data)
+    Run.Recompute(p)
+    for _, rarity in ipairs(randoms) do
+        Run.GrantBuff(p, Run.RollBuff(rarity))
+    end
+end
+
 function Run.Start(level, bypassGate)
     -- 关卡门槛：步数解锁 + 上一关已通关（测试模式传 bypassGate=true 跳过）
     level = math.max(1, math.min(20, math.floor(level or 1)))
@@ -299,6 +309,8 @@ function Run.Start(level, bypassGate)
     ResetMapPos(run)
     -- 公会局内特权：初始资金 / 保险 / 预警 / 重随券 / 钥匙
     Guild.StartRun(run, S.data)
+    -- 农场果实（本关生效）
+    ApplyFarmBuffs(run, p)
     Save.Write(S.data)
     S.run = run
     S.screen = "map"
@@ -335,6 +347,7 @@ function Run.StartEndless()
     }
     ResetMapPos(run)
     Guild.StartRun(run, S.data)
+    ApplyFarmBuffs(run, p)
     Save.Write(S.data)
     run.lastLayerShop = Config.GridHasRoom(run.map, "shop")
     S.run = run
@@ -349,14 +362,14 @@ end
 -- 破纪录 / 勋章升级的提示
 function Run.AnnounceEndlessRecord(res)
     if not res or not res.best then return end
-    local msg = string.format("新纪录：第 %d 层！（金币 +%d，经验 +%d）", res.layer, res.gold, res.exp)
+    local msg = string.format("新纪录：第 %d 层！（生息 +%d，精粹 +%d）", res.layer, res.gold, res.exp)
     if (res.medalUp or 0) > 0 then
         msg = msg .. string.format(" 记录勋章升到 Lv.%d", res.medal)
     end
     UI.SetToast(msg, 3.0)
 end
 
--- 打完本层 Boss：进入下一层（保留生命、银币、强化，地图重新随机）
+-- 打完本层 Boss：进入下一层（保留生命、血尘、强化，地图重新随机）
 function Run.NextEndlessLayer()
     local run = S.run
     if not run or not run.endless then return end
@@ -380,6 +393,13 @@ function Run.NextEndlessLayer()
     S.screen = "map"
     local res = Save.RecordEndless(S.data, run.layer)
     Run.AnnounceEndlessRecord(res)
+    -- 农场周常任务：无尽模式通关 10 层奖励稀有种子
+    local seedId = Farm.OnEndlessLayer(S.data)
+    if seedId then
+        local crop = Farm.CropByID(seedId)
+        UI.SetToast("周常任务完成：获得" .. (crop and crop.name or "") .. "种子 ×1", 2.4)
+    end
+    Save.Write(S.data)
     print(string.format("[Run] endless layer %d (等效第 %d 关)", run.layer, run.level))
 end
 
@@ -413,6 +433,7 @@ function Run.StartRaid()
     }
     ResetMapPos(run)
     Guild.StartRun(run, S.data)
+    ApplyFarmBuffs(run, p)
     Save.Write(S.data)
     S.run = run
     S.combat = nil
@@ -421,6 +442,33 @@ function Run.StartRaid()
     Combat.Start(run, "raid", 9)
     S.screen = "combat"
     print("[Raid] start guild raid, level " .. run.level)
+end
+
+-- ---------------------------------------------------------------- Buff 品质权重
+-- 注意：必须定义在 Run.RerollReward 之前（公会重随券要用）
+local function WeightedRarity()
+    local order = { "white", "blue", "purple", "gold" }
+    local total = 0
+    for _, k in ipairs(order) do total = total + Config.Rarity[k].weight end
+    local x = math.random() * total
+    for _, k in ipairs(order) do
+        x = x - Config.Rarity[k].weight
+        if x <= 0 then return k end
+    end
+    return "white"
+end
+
+local function WeightedFrom(weights)
+    local order = { "white", "blue", "purple", "gold" }
+    local total = 0
+    for _, k in ipairs(order) do total = total + (weights[k] or 0) end
+    if total <= 0 then return "white" end
+    local x = math.random() * total
+    for _, k in ipairs(order) do
+        x = x - (weights[k] or 0)
+        if x <= 0 then return k end
+    end
+    return "white"
 end
 
 -- 公会重随券：免费刷新奖励房的三选一
@@ -444,7 +492,8 @@ function Run.RerollReward()
         used[buff.id] = true
         options[i] = buff
     end
-    S.reward = { options = options, roomType = reward.roomType, replace = reward.replace }
+    S.reward = { options = options, roomType = reward.roomType, replace = reward.replace,
+        replaceSel = nil }
     return true
 end
 
@@ -480,6 +529,15 @@ function Run.CanMove(r, c)
     local dc = c - run.posC
     if math.abs(dr) + math.abs(dc) ~= 1 then return false end
     if r < 1 or r > rows or c < 1 or c > cols then return false end
+    -- 层卡地图有显式边表时严格按边表走（死胡同、单向连通都以它为准）
+    if run.layerEdges then
+        local list = run.layerEdges[Key(run.posR, run.posC)] or {}
+        local linked = false
+        for _, nb in ipairs(list) do
+            if nb[1] == r and nb[2] == c then linked = true; break end
+        end
+        if not linked then return false end
+    end
     -- 回到走过的房间：允许（空房间可以穿行）
     if run.visited[Key(r, c)] then return true end
     -- 进入新房间：仍然只能向右 / 上 / 下
@@ -512,6 +570,9 @@ function Run.EnterRoom(roomType)
     if roomType == "shop" then
         Run.OpenShop()
         S.screen = "shop"
+    elseif roomType == "encounter" or roomType == "wish" then
+        Run.OpenOpportunity(roomType)
+        S.screen = "event"
     elseif roomType == "event" then
         Run.OpenEvent()
         S.screen = "event"
@@ -522,10 +583,134 @@ function Run.EnterRoom(roomType)
     end
 end
 
+-- 用层卡（ActMap）生成的地图开局：先按正常流程建 run，再替换地图与出生点
+---@param level integer
+---@param layer table ActMap.GenerateLayer 的产物
+function Run.StartWithLayer(level, layer)
+    Run.Start(level)
+    local run = S.run
+    if not run or not layer then return end
+    run.map = layer.grid
+    run.rows, run.cols = layer.rows, layer.cols
+    run.layerEdges = layer.edges
+    run.specials = layer.specials
+    run.layerCard = layer.card
+    run.lastLayerShop = Config.GridHasRoom(layer.grid, "shop")
+    run.posR, run.posC = run.rows, 1
+    run.cleared = {}
+    run.visited = {}
+    run.visited[Key(run.posR, run.posC)] = true
+    run.cleared[Key(run.posR, run.posC)] = true
+    run.roomType = "start"
+    S.screen = "map"
+end
+
+-- 机遇房：把 run 的当前状态交给 Opportunity，抽一个机遇出来
+function Run.OpenOpportunity(kind)
+    ReleaseInput()
+    local run = S.run
+    if not run then return end
+    local p = run.player
+    local Opportunity = require "Opportunity"
+
+    local ctx = Run.OppCtx(run, p)
+    local offer = Opportunity.Offer(ctx, kind or "encounter")
+    if not offer then
+        return Run.OpenEvent()
+    end
+    run.event = Run.OppEvent(offer, ctx, kind)
+end
+
+-- 机遇上下文：把 run / player 的当前状态包给 Opportunity
+function Run.OppCtx(run, p)
+    local Opportunity = require "Opportunity"
+    return Opportunity.MakeContext({
+        level = math.max(1, math.floor(run.level or 1) + math.floor((run.step or 1) / 4)),
+        state = {
+            silver = run.silver or 0,
+            hp = p.hp, maxHp = p.maxHp,
+            shield = p.shield or 0, maxShield = p.maxShield or 0,
+            items = #(run.items or {}),
+        },
+        hooks = {
+            grantBuff = function(rarity)
+                local bf = Run.RollBuff(rarity)
+                local cap = run.endless and Config.Endless.buffCap or 99
+                if #p.buffs >= cap then
+                    run.event = run.event or {}
+                    run.event.pendingBuff = bf
+                    return nil
+                end
+                Run.GrantBuff(p, bf)
+                return bf
+            end,
+            addGold = function(n) run.silver = math.max(0, (run.silver or 0) + n) end,
+            addExp = function(n)
+                S.data.essence = (S.data.essence or 0) + n
+                S.data.essenceEarned = (S.data.essenceEarned or 0) + n
+                Save.SyncAccount(S.data)
+            end,
+            addItem = function(n)
+                for _ = 1, (n or 1) do Run.AddItem("potion_small") end
+            end,
+            useItem = function(n)
+                local need = n or 1
+                for _ = 1, need do
+                    if not Run.UseItemAt(1) then return false end
+                end
+                return true
+            end,
+            reveal = function() run.intel = (run.intel or 0) + 1 end,
+            reroll = function(n) run.rerolls = (run.rerolls or 0) + (n or 1) end,
+        },
+    })
+end
+
+-- offer → 事件数据结构（UI 直接吃这个）
+function Run.OppEvent(offer, ctx, kind)
+    local ev = {
+        title = offer.title or "机遇",
+        text = offer.text or "",
+        options = {}, ctx = ctx, offer = offer, oppKind = kind,
+    }
+    if offer.roll then
+        ev.options[1] = { label = "搏一次", enabled = true, index = 1 }
+    else
+        for i, opt in ipairs(offer.options or {}) do
+            local label = opt.label or "（未命名）"
+            if opt.cost and opt.cost.silver then
+                label = label .. string.format("（%d 血尘）", opt.cost.silver)
+            end
+            ev.options[i] = { label = label, enabled = opt.enabled ~= false, index = i }
+        end
+    end
+    return ev
+end
+
+-- 清完战斗房后 12% 概率「路过遗弃村落」（Opportunity 内置概率）
+function Run.MaybeVillageDrop()
+    local run = S.run
+    if not run or run.endless then return false end
+    local kind = run.roomType
+    if not (kind == "light" or kind == "standard" or kind == "mixed"
+        or kind == "elite" or kind == "double") then
+        return false
+    end
+    local Opportunity = require "Opportunity"
+    local ctx = Run.OppCtx(run, run.player)
+    local offer = Opportunity.RollVillageDrop(ctx)
+    if not offer then return false end
+    run.event = Run.OppEvent(offer, ctx, "village")
+    S.screen = "event"
+    return true
+end
+
 function Run.OnRoomCleared()
     local run = S.run
     if not run then return end
     run.cleared[Key(run.posR, run.posC)] = true
+    -- 清完战斗房有概率路过遗弃村落（走机遇结算）
+    if Run.MaybeVillageDrop() then return end
     if run.roomType == "boss" then
         if run.endless then
             -- 无尽模式：打完本层 Boss 继续下一层，不结算通关
@@ -536,6 +721,8 @@ function Run.OnRoomCleared()
         local data = S.data
         -- 通关记录：下一关要「步数解锁 + 上一关已通关」两个条件都满足才开放
         Save.MarkCleared(data, run.level)
+        -- 通关后立刻把选关推进到新的可挑战关卡，主菜单标识才不会停在旧关卡
+        S.selectedLevel = Save.MaxPlayable(data)
         S.screen = "levelclear"
         S.combat = nil
     else
@@ -545,31 +732,6 @@ function Run.OnRoomCleared()
 end
 
 -- ---------------------------------------------------------------- Buff
-local function WeightedRarity()
-    local order = { "white", "blue", "purple", "gold" }
-    local total = 0
-    for _, k in ipairs(order) do total = total + Config.Rarity[k].weight end
-    local x = math.random() * total
-    for _, k in ipairs(order) do
-        x = x - Config.Rarity[k].weight
-        if x <= 0 then return k end
-    end
-    return "white"
-end
-
-local function WeightedFrom(weights)
-    local order = { "white", "blue", "purple", "gold" }
-    local total = 0
-    for _, k in ipairs(order) do total = total + (weights[k] or 0) end
-    if total <= 0 then return "white" end
-    local x = math.random() * total
-    for _, k in ipairs(order) do
-        x = x - (weights[k] or 0)
-        if x <= 0 then return k end
-    end
-    return "white"
-end
-
 function Run.RollBuff(rarity)
     rarity = rarity or WeightedRarity()
     local pool = Config.Buffs[rarity]
@@ -753,11 +915,13 @@ function Run.OpenCombatReward(roomType)
         options[math.random(1, 3)] = Run.RollAnyBuff(p, nextRarity)
     end
 
-    -- 无尽模式：Buff 满了以后改成「拿新的 + 丢掉一个」
+    -- 无尽模式：强化上限 10 个，满了以后改成「拿新的 + 丢掉一个」
+    -- 主线没有这个限制
     local run = S.run
     local replace = run and run.endless and #p.buffs >= Config.Endless.buffCap
 
-    S.reward = { options = options, roomType = roomType, replace = replace and true or false }
+    S.reward = { options = options, roomType = roomType, replace = replace and true or false,
+        replaceSel = nil }
     S.combat = nil
     S.screen = "reward"
 end
@@ -795,6 +959,7 @@ function Run.ChooseReward(index)
     if reward.replace then
         -- 满 10 个：先记下选中的新强化，再让玩家选一个要替换掉的
         reward.pending = buff
+        reward.replaceSel = nil
         return
     end
     Run.GrantBuff(S.run.player, buff)
@@ -810,8 +975,14 @@ function Run.ApplyReplace(index)
     if not run.player.buffs[index] then return end
     local old = Run.RemoveBuffAt(run.player, index)
     Run.GrantBuff(run.player, reward.pending)
+    local source = reward.source
     S.reward = false
-    Run.FinishRoom()
+    if source == "shop" then
+        -- 商店买下的强化：替换完回商店，不结束当前房间
+        S.screen = "shop"
+    else
+        Run.FinishRoom()
+    end
     if old then
         UI.SetToast("已用「" .. reward.pending.name .. "」替换「" .. old.name .. "」", 2.4)
     end
@@ -820,7 +991,28 @@ end
 -- 放弃这次的新强化（保留原有 10 个）
 function Run.CancelReplace()
     local reward = S.reward
-    if not reward or not reward.pending then return end
+    local run = S.run
+    if not reward then return end
+    if reward.source == "shop" and run and run.shop then
+        -- 商店：退款并放回货架
+        local slot = run.shop.slots[reward.shopIndex]
+        if slot then
+            slot.sold = false
+            run.silver = run.silver + slot.price
+        end
+        S.reward = false
+        S.screen = "shop"
+        UI.SetToast("已取消，血尘已退回")
+        return
+    end
+    if reward.source == "event" then
+        -- 事件：房间已经清空，放弃新强化直接回地图
+        S.reward = false
+        S.screen = "map"
+        UI.SetToast("已放弃这次强化")
+        return
+    end
+    if not reward.pending then return end
     reward.pending = nil
 end
 
@@ -982,7 +1174,7 @@ function Run.BuySlot(index)
     local slot = shop.slots[index]
     if not slot or slot.sold or slot.kind == "empty" then return end
     if run.silver < slot.price then
-        UI.SetToast("银币不足")
+        UI.SetToast("血尘不足")
         return
     end
     run.silver = run.silver - slot.price
@@ -997,6 +1189,15 @@ function Run.BuySlot(index)
         Run.AddItem(slot.item)
         UI.SetToast("已放入道具栏，战斗中按 E 或点道具按钮")
     elseif slot.kind == "buff" then
+        if run.endless and #p.buffs >= Config.Endless.buffCap then
+            -- 无尽模式强化已满：买下后进入替换流程；取消会退款并放回货架
+            S.reward = {
+                options = { slot.buff }, replace = true, pending = slot.buff,
+                source = "shop", shopIndex = index,
+            }
+            S.screen = "reward"
+            return
+        end
         Run.GrantBuff(p, slot.buff)
         UI.SetToast("获得 " .. slot.name)
     end
@@ -1021,7 +1222,7 @@ function Run.PaidRefresh()
         return
     end
     if S.run.silver < Config.Shop.RefreshPrice then
-        UI.SetToast("银币不足")
+        UI.SetToast("血尘不足")
         return
     end
     S.run.silver = S.run.silver - Config.Shop.RefreshPrice
@@ -1041,6 +1242,21 @@ local function PickEventDef()
     return roll
 end
 
+-- 事件里获得强化：无尽模式满 10 个时先记下来，离开事件房后再进入替换流程
+local function StageEventBuff(run, p, bf)
+    if run.endless and #p.buffs >= Config.Endless.buffCap then
+        run.event.pendingBuff = bf
+        return false
+    end
+    Run.GrantBuff(p, bf)
+    return true
+end
+
+local function EventBuffFullText(p, bf)
+    return string.format("强化已满（%d/%d）：新强化「%s」先替你留着，离开事件房后选择要替换掉的。",
+        #p.buffs, Config.Endless.buffCap, bf.name)
+end
+
 function Run.OpenEvent()
     ReleaseInput()
     local run = S.run
@@ -1052,36 +1268,39 @@ function Run.OpenEvent()
         local bet = math.floor(run.silver * 0.3)
         ev = {
             title = "流浪商人的骰子赌局",
-            text = "商人晃了晃骰盅：「押上你三成银币，掷出 4 点以上，我双倍还你。」",
+            text = "商人晃了晃骰盅：「押上你三成血尘，掷出 4 点以上，我双倍还你。」",
             options = {},
         }
         ev.options[1] = {
-            label = "押注 " .. bet .. " 银币",
+            label = "押注 " .. bet .. " 血尘",
             enabled = bet >= 5,
             action = function()
                 local roll = math.random(1, 6)
                 if roll >= 4 then
                     run.silver = run.silver + bet
-                    return string.format("掷出 %d 点，赢得 %d 银币。", roll, bet)
+                    return string.format("掷出 %d 点，赢得 %d 血尘。", roll, bet)
                 else
                     run.silver = run.silver - bet
-                    return string.format("掷出 %d 点，输掉 %d 银币。", roll, bet)
+                    return string.format("掷出 %d 点，输掉 %d 血尘。", roll, bet)
                 end
             end,
         }
         ev.options[2] = {
-            label = "花 10 银币买一张随机 Buff",
+            label = "花 10 血尘买一张随机 Buff",
             enabled = run.silver >= 10,
             action = function()
                 run.silver = run.silver - 10
-                local bf = Run.GrantRandomBuff(p)
+                local bf = Run.RollAnyBuff(p)
+                if not StageEventBuff(run, p, bf) then
+                    return EventBuffFullText(p, bf)
+                end
                 return "商人塞给你一张「" .. bf.name .. "」：" .. bf.desc
             end,
         }
     elseif id == 2 then
         ev = {
             title = "遗忘的藏宝洞",
-            text = "洞里摆着三张背面朝上的卡牌，最里面还压着一小袋银币。",
+            text = "洞里摆着三张背面朝上的卡牌，最里面还压着一小袋血尘。",
             options = {},
         }
         for i = 1, 3 do
@@ -1090,17 +1309,20 @@ function Run.OpenEvent()
                 enabled = true,
                 action = function()
                     local rarity = ({ "white", "blue", "purple" })[math.random(1, 3)]
-                    local bf = Run.GrantRandomBuff(p, rarity)
+                    local bf = Run.RollAnyBuff(p, rarity)
+                    if not StageEventBuff(run, p, bf) then
+                        return EventBuffFullText(p, bf)
+                    end
                     return "卡牌化作「" .. bf.name .. "」：" .. bf.desc
                 end,
             }
         end
         ev.options[4] = {
-            label = "不翻牌，拿走 30 银币",
+            label = "不翻牌，拿走 30 血尘",
             enabled = true,
             action = function()
                 run.silver = run.silver + 30
-                return "你拿走钱袋，获得 30 银币。"
+                return "你拿走钱袋，获得 30 血尘。"
             end,
         }
     else
@@ -1115,7 +1337,10 @@ function Run.OpenEvent()
             enabled = p.hp > cost,
             action = function()
                 p.hp = math.max(1, p.hp - cost)
-                local bf = Run.GrantRandomBuff(p, "gold")
+                local bf = Run.RollAnyBuff(p, "gold")
+                if not StageEventBuff(run, p, bf) then
+                    return EventBuffFullText(p, bf)
+                end
                 return "火光一闪，你获得「" .. bf.name .. "」：" .. bf.desc
             end,
         }
@@ -1139,13 +1364,41 @@ function Run.ChooseEvent(index)
     if not ev or ev.result then return end
     local opt = ev.options[index]
     if not opt or opt.enabled == false then return end
+
+    -- 机遇房：交给 Opportunity 结算，再把状态回写到 run / player
+    if ev.ctx then
+        local Opportunity = require "Opportunity"
+        local lines, ok, effects = Opportunity.Resolve(ev.ctx, ev.offer, index)
+        local p = run.player
+        p.hp = math.max(0, math.min(p.maxHp, ev.ctx.state.hp or p.hp))
+        p.shield = math.max(0, math.min(p.maxShield or p.shield or 0, ev.ctx.state.shield or p.shield or 0))
+        run.silver = math.max(0, ev.ctx.state.silver or run.silver)
+        if effects and (effects.stepRisk or 0) > 0 then
+            run.step = run.step + math.floor(effects.stepRisk)
+        end
+        ev.result = table.concat(lines, "\n")
+        if not ok then ev.result = ev.result .. "\n（没有产生效果）" end
+        return
+    end
+
     ev.result = opt.action()
 end
 
 function Run.CloseEvent()
     local run = S.run
+    local ev = run and run.event
+    if not ev then return end
     run.event = nil
     run.cleared[Key(run.posR, run.posC)] = true
+    if ev.pendingBuff then
+        -- 事件里拿到的强化因为满了没进背包：离开时进入替换流程
+        S.reward = {
+            options = { ev.pendingBuff }, replace = true, pending = ev.pendingBuff,
+            source = "event",
+        }
+        S.screen = "reward"
+        return
+    end
     S.screen = "map"
 end
 

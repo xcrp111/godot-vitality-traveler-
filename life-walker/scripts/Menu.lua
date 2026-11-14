@@ -10,8 +10,24 @@ local Audio = require "Audio"
 local KbLayout = require "KbLayout"
 local Guild = require "Guild"
 local GuildUI = require "GuildUI"
+local Economy = require "Economy"
+local Camp = require "Camp"
+local CampUI = require "CampUI"
+local BagUI = require "BagUI"
+local PetUI = require "PetUI"
+local FarmUI = require "FarmUI"
+local RankUI = require "RankUI"
+local FarmWalk = require "FarmWalk"
+local Farm = require "Farm"
+local Cloud = require "Cloud"
+local PetData = require "PetData"
+local Pet = require "Pet"
 
 local Menu = {}
+
+local healthDayTimer = 0
+local farmMatureTimer = 0
+local farmMatureSeen = nil
 
 local function DrawStat(x, y, label, value)
     UI.Text(x, y, 18, label, S.col.dim)
@@ -53,8 +69,10 @@ local function FixLoadout()
 end
 Menu.FixLoadout = FixLoadout
 
+local LevelCards = require "LevelCards"
+
 local function StartLevel()
-    Run.Start(S.selectedLevel)
+    LevelCards.Open(S.selectedLevel)
 end
 
 local function ClassStatusLines()
@@ -206,7 +224,7 @@ local function CompendiumBuffs()
         local y = 228
         for _, rarity in ipairs(columns[ci] or {}) do
             local rc = Config.Rarity[rarity]
-            UI.Text(x, y, 14, rc.name .. " · " .. rc.price .. " 银币", rc.color)
+            UI.Text(x, y, 14, rc.name .. " · " .. rc.price .. " 金币", rc.color)
             y = y + 26
             for _, b in ipairs(Config.Buffs[rarity]) do
                 UI.Text(x + 8, y, 12, b.name, rc.color)
@@ -450,6 +468,106 @@ local function CompendiumClassBuffs()
     end
 end
 
+-- ---------------------------------------------------------------- 图鉴：农作物
+local function CompendiumFarm()
+    -- 左：种子与规则
+    UI.Text(130, 196, 14, "种子", S.col.gold)
+    local y = 226
+    for _, kind in ipairs({ "basic", "rare" }) do
+        local def = Camp.Seeds[kind]
+        local item = Camp.Item(kind == "basic" and "seed_basic" or "seed_rare")
+        local limit = item and item.limit or {}
+        local limitText = limit.kind == "daily" and string.format("每日 %d 颗", limit.n) or "不限购"
+        UI.Text(130, y, 16, def.name, S.col.green)
+        UI.Text(360, y, 12, string.format("%d 精粹 / 颗 · %s", item and item.price or 0, limitText), S.col.dim,
+            NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        local out = {}
+        for _, o in ipairs(def.outcomes) do
+            out[#out + 1] = string.format("%s果实 %d%%", Config.Rarity[o.rarity].name, o.w)
+        end
+        UI.TextBox(130, y + 22, 480, 12, string.format("%d 分钟成熟　→　%s", def.minutes,
+            table.concat(out, " · ")), S.col.dim)
+        y = y + 64
+    end
+
+    UI.Text(130, y + 4, 14, "农场规则", S.col.gold)
+    local rules = {
+        "地块数 = 窝等级 + 1（窝 Lv.1~Lv.5 → 2~6 块地），第 1 块从开局就有。",
+        "一次种一颗；成熟后手动收获，领到的是「果实」，不会自动变成 Buff。",
+        "计时用真实时间，关掉游戏也会继续长。",
+        "种子只能从「营地 · 局外商店」买，只能用精粹。",
+    }
+    local ry = y + 32
+    for _, r in ipairs(rules) do
+        UI.TextBox(130, ry, 480, 11, "· " .. r, S.col.dim)
+        ry = ry + 30
+    end
+
+    -- 右：果实 → 局内 Buff
+    UI.Text(680, 196, 14, "果实 → 局内强化", S.col.gold)
+    local fy = 226
+    for _, rarity in ipairs({ "white", "blue", "purple", "gold" }) do
+        local rc = Config.Rarity[rarity]
+        local pool = Config.Buffs[rarity] or {}
+        local samples = {}
+        for i = 1, math.min(3, #pool) do samples[#samples + 1] = pool[i].name end
+        UI.Text(680, fy, 16, rc.name .. "果实", rc.color)
+        UI.Text(1160, fy, 12, string.format("强化池 %d 种 · 局内单价 %d 金币", #pool, rc.price),
+            S.col.dim, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        UI.TextBox(680, fy + 22, 480, 12, "例：" .. table.concat(samples, " / ") .. " …", S.col.dim)
+        fy = fy + 58
+    end
+
+    UI.Text(680, fy + 4, 14, "怎么用", S.col.gold)
+    local use = {
+        "在「营地 · 农场」把果实装进背包（一次只能装一颗）。",
+        "下一局开局自动消耗，直接获得一个该品质的随机强化。",
+        "不想要就取下；装着的果实不会过期。",
+    }
+    local uy = fy + 32
+    for _, t in ipairs(use) do
+        UI.TextBox(680, uy, 480, 11, "· " .. t, S.col.dim)
+        uy = uy + 26
+    end
+end
+
+-- ---------------------------------------------------------------- ---------------------------------------------------------------- 图鉴：宠物（按《宠物系统（最新）》的 42 只）
+local function CompendiumPets()
+    local data = S.data
+    UI.Text(130, 196, 13, string.format("共 42 只（低阶 10 / 高阶 15 / 究极 17），已点亮 %d 只；详细收集、孵蛋、家园在「宠物」界面",
+        Pet.Unlocked(data)), S.col.dim)
+
+    local columns = {
+        { attrs = { "fire", "ice" }, x = 130 },
+        { attrs = { "poison", "thunder" }, x = 520 },
+        { attrs = { "light", "dark", "wind" }, x = 910 },
+    }
+    for _, col in ipairs(columns) do
+        local y = 228
+        for _, attrId in ipairs(col.attrs) do
+            local a = PetData.AttrInfo(attrId)
+            UI.Text(col.x, y, 15, a.name .. "属性", a.color)
+            UI.Text(col.x + 330, y + 2, 11,
+                string.format("已点亮 %d", Pet.AttrUnlocked(data, attrId)), S.col.dim,
+                NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+            y = y + 24
+            for _, pet in ipairs(PetData.List) do
+                if pet.attr == attrId then
+                    local seen = Pet.IsSeen(data, pet.id)
+                    local tier = PetData.TierInfo(pet.tier)
+                    UI.Text(col.x, y, 11, "●", seen and tier.color or S.col.line)
+                    UI.Text(col.x + 16, y, 11, seen and PetData.Name(pet) or "？？？",
+                        seen and tier.color or S.col.dim)
+                    UI.Text(col.x + 120, y, 10, PetData.ChainText(pet),
+                        seen and S.col.dim or { 120, 112, 140, 255 })
+                    y = y + 17
+                end
+            end
+            y = y + 10
+        end
+    end
+end
+
 function Menu.DrawCompendium()
     nvgBeginPath(S.ctx)
     nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
@@ -458,13 +576,13 @@ function Menu.DrawCompendium()
 
     UI.Panel(90, 48, 1100, 624, 18, { 28, 24, 38, 252 }, S.col.line, 1)
     UI.Text(130, 68, 30, "生命行者 · 图鉴", S.col.gold)
-    UI.Text(130, 108, 14, "怪物 / 强化 / " .. Config.Class().name .. "专属 / 技能 / 状态与道具", S.col.dim)
+    UI.Text(130, 108, 14, "怪物 / 强化 / " .. Config.Class().name .. "专属 / 技能 / 状态与道具 / 农作物 / 宠物", S.col.dim)
 
     UI.Button("codex_close", 1010, 76, 150, 40, "关闭", function()
         S.compendium = false
     end, { fontSize = 16 })
 
-    local tabs = { "怪物", "通用强化", Config.Class().name .. "专属", "技能", "状态 / 道具" }
+    local tabs = { "怪物", "通用强化", Config.Class().name .. "专属", "技能", "状态 / 道具", "农作物", "宠物" }
     for i, label in ipairs(tabs) do
         local active = S.compendiumTab == i
         UI.Button("codex_tab_" .. i, 130 + (i - 1) * 148, 140, 136, 40, label, function()
@@ -485,8 +603,12 @@ function Menu.DrawCompendium()
         CompendiumClassBuffs()
     elseif S.compendiumTab == 4 then
         CompendiumSkills()
-    else
+    elseif S.compendiumTab == 5 then
         CompendiumStatus()
+    elseif S.compendiumTab == 6 then
+        CompendiumFarm()
+    else
+        CompendiumPets()
     end
 end
 
@@ -822,7 +944,7 @@ function Menu.DrawResetConfirm()
     nvgFill(S.ctx)
     UI.Panel(420, 250, 440, 210, 16, { 32, 26, 36, 255 }, S.col.red, 2)
     UI.Text(640, 274, 24, "重置存档？", S.col.red, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-    UI.Text(640, 314, 13, "职业等级、经验、金币、解锁关卡、", S.col.dim,
+    UI.Text(640, 314, 13, "职业等级、精粹、金币、解锁关卡、", S.col.dim,
         NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
     UI.Text(640, 334, 13, "连续健康天数和技能配置都会恢复到初始状态。", S.col.dim,
         NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
@@ -1051,7 +1173,7 @@ function Menu.DrawSettings()
             KbLayout.Open()
         end, { fontSize = 15 })
         r = r + 1
-        SetRow(y0 + (r - 1) * rowH, "图鉴", "怪物 / 强化 / 技能 / 状态与道具")
+        SetRow(y0 + (r - 1) * rowH, "图鉴", "怪物 / 强化 / 技能 / 状态与道具 / 农作物 / 宠物")
         UI.Button("set_codex", 790, y0 + (r - 1) * rowH, 190, 36, "打开图鉴", function()
             S.settings = false
             S.compendium = true
@@ -1070,7 +1192,7 @@ function Menu.DrawSettings()
             UI.SetToast("设置已恢复默认", 1.6)
         end, { fontSize = 15 })
         r = r + 1
-        SetRow(y0 + (r - 1) * rowH, "清空存档", "等级、金币、关卡进度全部重置，不可恢复")
+        SetRow(y0 + (r - 1) * rowH, "清空存档", "等级、精粹、金币、关卡进度全部重置，不可恢复")
         if S.settingsWipeConfirm then
             UI.Button("set_wipe_yes", 790, y0 + (r - 1) * rowH, 92, 36, "确认清空", function()
                 S.settingsWipeConfirm = false
@@ -1090,9 +1212,9 @@ function Menu.DrawSettings()
         end
         r = r + 1
         UI.Text(404, y0 + (r - 1) * rowH + 4, 12,
-            string.format("版本 v%s · 职业 %s Lv.%d · 金币 %s · 关卡 1~%d",
+            string.format("版本 v%s · 职业 %s Lv.%d · 精粹 %s · 账号 Lv.%d · 关卡 1~%d",
                 Config.VERSION, Config.Class().name, Save.ClassLevel(data),
-                UI.FormatNumber(data.gold), data.unlocked), S.col.dim)
+                UI.FormatNumber(Economy.Essence(data)), Economy.AccountLevel(data), data.unlocked), S.col.dim)
     end
 
     -- 底部：说明 + 关闭
@@ -1123,6 +1245,18 @@ function Menu.Draw()
         Menu.DrawEndless()
         return
     end
+    if S.pet then
+        PetUI.Draw()
+        return
+    end
+    if S.bag then
+        BagUI.Draw()
+        return
+    end
+    if S.camp then
+        CampUI.Draw()
+        return
+    end
     if S.guild then
         GuildUI.Draw()
         return
@@ -1135,23 +1269,44 @@ function Menu.Draw()
         Menu.DrawSkillPicker()
         return
     end
+    if S.farm then
+        FarmUI.Draw()
+        return
+    end
+    if S.rank then
+        RankUI.Draw()
+        return
+    end
 
     -- 标题
     UI.Text(64, 42, 46, Config.GAME_TITLE, S.col.text)
     UI.Text(66, 100, 18, "把每一步，走成力量。", S.col.dim)
-    UI.Text(1216, 46, 14, "v" .. Config.VERSION, S.col.dim, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
-    UI.Button("codex", 1030, 34, 130, 40, "图鉴", function()
+    UI.Text(1216, 88, 14, "v" .. Config.VERSION, S.col.dim, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+    UI.Button("codex", 1076, 34, 108, 40, "图鉴", function()
         S.compendium = true
         S.compendiumTab = 1
         S.codexPage = 1
-    end, { fontSize = 16 })
-    UI.Button("guild", 744, 34, 130, 40, "公会", function()
+    end, { fontSize = 15 })
+    UI.Button("bag", 496, 34, 108, 40, "背包", function()
+        S.bag = true
+        S.bagPage = 1
+    end, { fontSize = 15, accent = S.col.orange })
+    UI.Button("pet", 612, 34, 108, 40, "宠物", function()
+        S.pet = true
+        S.petTab = S.petTab or 1
+        S.petPickLow = false
+    end, { fontSize = 15, accent = S.col.purple })
+    UI.Button("camp", 728, 34, 108, 40, "营地", function()
+        S.camp = true
+        S.campTab = S.campTab or 1
+    end, { fontSize = 15, accent = S.col.gold })
+    UI.Button("guild", 844, 34, 108, 40, "公会", function()
         S.guild = true
         S.guildTab = S.guildTab or 1
     end, { fontSize = 16, accent = S.col.cyan })
-    UI.Button("settings", 890, 34, 120, 40, "设置", function()
+    UI.Button("settings", 960, 34, 108, 40, "设置", function()
         S.settings = true
-    end, { fontSize = 16 })
+    end, { fontSize = 15 })
 
     -- 左：角色
     UI.Panel(64, 138, 560, 402, 16, S.col.panel, S.col.line, 1)
@@ -1180,12 +1335,30 @@ function Menu.Draw()
     end
     local classLevel = Save.ClassLevel(data)
     local cost = Save.NextCost(data)
-    DrawStat(88, 204, "金币", UI.FormatNumber(data.gold))
-    DrawStat(88, 236, "可分配经验", UI.FormatNumber(data.exp))
-    DrawStat(88, 268, Config.Class().name .. "等级", "Lv." .. classLevel)
-    DrawStat(88, 300, "升级需要", cost and UI.FormatNumber(cost) or "已满级")
-    DrawStat(88, 332, "连续健康", data.streak .. " 天")
-    DrawStat(88, 364, "技能点", tostring(data.skillPoints))
+    local accountLv = Economy.AccountLevel(data)
+    local accNeed, accRemain = Economy.AccountNext(data)
+    -- 金币只在关卡内看（右上角），主菜单不再显示
+    DrawStat(88, 196, "精粹（局外）", UI.FormatNumber(Economy.Essence(data)))
+    DrawStat(88, 224, Config.Class().name .. "等级", "Lv." .. classLevel)
+    DrawStat(88, 252, "升级需要", cost and UI.FormatNumber(cost) or "已满级")
+    DrawStat(88, 280, "账号等级", "Lv." .. accountLv)
+    -- 进度条只衬在「累计 a / b」这段文字下面，不把标题和 Lv.a 包进去
+    do
+        local barX, barY, barW, barH = 358, 274, 246, 26
+        local base = Economy.AccountBase(accountLv)
+        local earned = math.floor(data.essenceEarned or 0)
+        local ratio = (earned - base) / math.max(1, accNeed - base)
+        ratio = math.max(0, math.min(1, ratio))
+        UI.Panel(barX, barY, barW, barH, 7, { 26, 22, 42, 255 }, S.col.line, 1)
+        if ratio > 0 then
+            UI.Panel(barX + 1, barY + 1, math.max(8, math.floor((barW - 2) * ratio)), barH - 2, 6,
+                { 108, 68, 180, 255 })
+        end
+        UI.Text(barX + 10, barY + 4, 16,
+            string.format("累计 %s / %s", UI.FormatNumber(earned), UI.FormatNumber(accNeed)), S.col.text)
+    end
+    DrawStat(88, 308, "连续健康", data.streak .. " 天 · " .. Economy.StreakName(data.streak, Config.ActivityPercent(data.todaySteps)))
+    DrawStat(88, 336, "技能点", tostring(data.skillPoints))
 
     local costText
     local canLevel = false
@@ -1193,11 +1366,11 @@ function Menu.Draw()
         local needGate, gateName = Config.LevelGate(classLevel + 1)
         if needGate > 0 and data.streak < needGate then
             costText = "需连续 " .. needGate .. " 天（" .. gateName .. "）"
-        elseif data.exp < cost then
-            costText = string.format("升级到 Lv.%d · 需 %d 经验（还差 %d）",
-                classLevel + 1, cost, math.ceil(cost - data.exp))
+        elseif Economy.Essence(data) < cost then
+            costText = string.format("升级到 Lv.%d · 需 %d 精粹（还差 %d）",
+                classLevel + 1, cost, math.ceil(cost - Economy.Essence(data)))
         else
-            costText = string.format("升级到 Lv.%d · 消耗 %d 经验", classLevel + 1, cost)
+            costText = string.format("升级到 Lv.%d · 消耗 %d 精粹", classLevel + 1, cost)
             canLevel = true
         end
     else
@@ -1209,7 +1382,7 @@ function Menu.Draw()
         if ok then FixLoadout() end
     end, { enabled = canLevel, accent = S.col.green, fontSize = 15 })
 
-    UI.Text(88, 440, 12, "点上面的职业按钮决定给谁升级；升级直接从「可分配经验」里扣掉这一级需要的量", S.col.dim)
+    UI.Text(88, 440, 12, "点上面的职业按钮决定给谁升级；升级直接从「精粹」里扣，精粹只来自每日运动结算", S.col.dim)
 
     UI.Text(88, 462, 18, "出战技能（点一下切换）", S.col.dim)
     local loadout = Save.Loadout(data)
@@ -1237,53 +1410,112 @@ function Menu.Draw()
     UI.Text(680, 200, 54, UI.FormatNumber(steps), S.col.text)
     UI.Text(680 + 220, 228, 18, "步", S.col.dim)
 
-    local gain, pct = Config.StepGold(steps)
-    UI.Text(680, 272, 19, string.format("超静息消耗 %.1f%%  ·  预计 +%d 金币 / +%d 经验", pct, gain, gain),
+    -- 精粹预估（2 表口径：档位累加 × 连击倍率 + 固定项）
+    local pct = Config.ActivityPercent(steps)
+    local nextStreak = data.streak
+    if pct >= Config.Economy.streakGatePercent then
+        local dayNum = math.floor(os.time() / 86400) + (data.dayOffset or 0)
+        if data.lastActiveDay == dayNum - 1 then
+            nextStreak = data.streak + 1
+        elseif data.lastActiveDay ~= dayNum then
+            nextStreak = 1
+        end
+    else
+        nextStreak = 0
+    end
+    local gain, detail = Economy.PreviewDaily(data, steps, nextStreak)
+    local stateName = Economy.BodyStateName(data)
+    UI.Text(680, 264, 18, string.format("超静息消耗 %.1f%%  ·  %s", pct, stateName),
         S.col.cyan)
+    UI.Text(680, 290, 17, string.format("预计 +%d 精粹 = 阶梯 %d×%d + 固定 %d",
+        gain, detail.tiered, detail.mult, detail.fixed), S.col.gold)
 
-    UI.Button("step_minus", 680, 312, 120, 48, "-1000", function()
+    local bf = Economy.BodyFat(data)
+    UI.Text(680, 320, 15, string.format("体脂率 %d%%（≥%d%% 算超重肥胖，走另一条单价阶梯）",
+        bf, Config.Economy.overweightFat), S.col.dim)
+    UI.Button("bf_minus", 1006, 314, 44, 26, "-", function()
+        Economy.AddBodyFat(S.data, -1)
+        Save.Write(S.data)
+    end, { fontSize = 18 })
+    UI.Button("bf_plus", 1056, 314, 44, 26, "+", function()
+        Economy.AddBodyFat(S.data, 1)
+        Save.Write(S.data)
+    end, { fontSize = 18 })
+    UI.Button("bf_25", 1106, 314, 56, 26, "25%", function()
+        S.data.bodyFat = Config.Economy.overweightFat
+        Save.Write(S.data)
+        UI.SetToast("体脂率设为 " .. Config.Economy.overweightFat .. "%（超重肥胖档）", 2.0)
+    end, { fontSize = 13 })
+
+    UI.Button("step_minus", 680, 352, 120, 44, "-1000", function()
         if S.data.claimed then return end
         S.data.todaySteps = math.max(0, S.data.todaySteps - 1000)
         Save.Write(S.data)
-    end, { fontSize = 20, enabled = not data.claimed })
-    UI.Button("step_plus", 812, 312, 120, 48, "+1000", function()
+    end, { fontSize = 18, enabled = not data.claimed })
+    UI.Button("step_plus", 812, 352, 120, 44, "+1000", function()
         if S.data.claimed then return end
         S.data.todaySteps = math.min(50000, S.data.todaySteps + 1000)
         Save.Write(S.data)
-    end, { fontSize = 20, enabled = not data.claimed })
+    end, { fontSize = 18, enabled = not data.claimed })
 
     local claimLabel = data.claimed and "今日已领取" or "记录步数并领取"
-    UI.Button("health_tasks", 1110, 378, 100, 54, "健康任务", function()
+    UI.Button("health_tasks", 1110, 404, 100, 50, "健康任务", function()
         S.healthTasks = true
     end, { fontSize = 15, fill = { 40, 52, 74, 255 }, stroke = S.col.cyan })
-    UI.Button("claim", 680, 378, 420, 54, claimLabel, function()
-        local g, unlocks, streak, rg, rsp, extraExp = Save.Claim(S.data, S.data.todaySteps)
+    UI.Button("claim", 680, 404, 420, 50, claimLabel, function()
+        local total, unlocks, streak, rEss, rSp, extraEss, lvUp = Save.Claim(S.data, S.data.todaySteps)
         S.selectedLevel = S.data.unlocked
-        if g > 0 or unlocks > 0 or rg > 0 then
-            local msg = string.format("获得 %d 金币，可分配经验 +%d，解锁 %d 关，连续 %d 天",
-                math.floor(g * Guild.GoldMul(S.data) + 0.5), g + (extraExp or 0), unlocks, streak)
-            if (extraExp or 0) > 0 then
-                msg = msg .. string.format("（早睡奖励经验 +%d）", extraExp)
+        if total > 0 or unlocks > 0 or rEss > 0 then
+            local msg = string.format("获得 %d 精粹，解锁 %d 关，连续 %d 天",
+                total + (extraEss or 0), unlocks, streak)
+            if (extraEss or 0) > 0 then
+                msg = msg .. string.format("（早睡奖励精粹 +%d）", extraEss)
             end
-            if rg > 0 then msg = msg .. string.format("；连续奖励 +%d 金币 +%d 技能点", rg, rsp) end
-            UI.SetToast(msg, 3.2)
+            if rEss > 0 then msg = msg .. string.format("；连续奖励 +%d 精粹 +%d 技能点", rEss, rSp) end
+            if (lvUp or 0) > 0 then msg = msg .. string.format("；账号升到 Lv.%d（+%d 技能点）",
+                Economy.AccountLevel(S.data), lvUp) end
+            UI.SetToast(msg, 3.4)
         else
             UI.SetToast("今天已经领取过了", 2.0)
         end
-    end, { fontSize = 20, enabled = not data.claimed, accent = S.col.gold })
+    end, { fontSize = 19, enabled = not data.claimed, accent = S.col.gold })
 
     local unlockCount = 0
     for _, need in ipairs(Config.StepUnlockThresholds) do
         if steps >= need then unlockCount = unlockCount + 1 end
     end
-    UI.Text(680, 448, 17,
-        string.format("步数解锁：2000 / 8000 / 12000（今日可解锁 %d 关）", unlockCount), S.col.dim)
+    -- 步数解锁进度条：距离下一档还差多少步
+    local tiers = Config.StepUnlockThresholds
+    local nextNeed, prevNeed = nil, 0
+    for _, need in ipairs(tiers) do
+        if steps < need then
+            nextNeed = need
+            break
+        end
+        prevNeed = need
+    end
+    local tierRatio = nextNeed and ((steps - prevNeed) / math.max(1, nextNeed - prevNeed)) or 1
+    UI.Text(680, 462, 15, nextNeed
+        and string.format("步数解锁 %s / %s（下一档第 %d/%d 档）", UI.FormatNumber(steps),
+            UI.FormatNumber(nextNeed), unlockCount + 1, #tiers)
+        or string.format("步数解锁全部完成（%d 档）", #tiers), S.col.cyan)
+    UI.Bar(680, 484, 420, 12, tierRatio, nextNeed and S.col.cyan or S.col.green,
+        { 26, 22, 36, 255 }, S.col.line)
+    -- 档位刻度（2000 / 8000 / 12000 在进度条上的位置）
+    if nextNeed then
+        for _, need in ipairs(tiers) do
+            if need > prevNeed and need <= nextNeed then
+                local px = 680 + math.floor(420 * (need - prevNeed) / math.max(1, nextNeed - prevNeed)) - 1
+                UI.Line(px, 480, px, 500, S.col.text, 2)
+            end
+        end
+    end
     local maxPlayable = Save.MaxPlayable(data)
     local clearedCount = math.min(20, data.stageCleared or 0)
-    UI.Text(680, 476, 17,
+    UI.Text(680, 504, 15,
         string.format("关卡进度：已通关 %d 关 · 可挑战 1 ~ %d", clearedCount, maxPlayable), S.col.dim)
     if maxPlayable < data.unlocked then
-        UI.Text(680, 504, 15,
+        UI.Text(680, 524, 13,
             string.format("通关第 %d 关后才会开放新关卡（步数已够 %d 关）", maxPlayable, data.unlocked), S.col.orange)
     end
 
@@ -1337,21 +1569,21 @@ function Menu.Draw()
             S.selectedLevel = Save.MaxPlayable(S.data)
             UI.SetToast("已解锁到第 20 关", 2.0)
         end, { fontSize = 14, fill = { 44, 56, 44, 255 }, stroke = { 96, 140, 96, 255 } })
-        UI.Button("devexp", DevX(4), dvy, dvw, dvh, "经验 +1000", function()
-            S.data.exp = (S.data.exp or 0) + 1000
+        UI.Button("devexp", DevX(4), dvy, dvw, dvh, "精粹 +1000", function()
+            Economy.AddEssence(S.data, 1000)
             Save.Write(S.data)
-            UI.SetToast("可分配经验 +1000", 1.8)
+            UI.SetToast("精粹 +1000", 1.8)
         end, { fontSize = 14, fill = { 44, 52, 70, 255 }, stroke = { 90, 110, 150, 255 } })
         UI.Button("devgold", DevX(5), dvy, dvw, dvh, "金币 +1000", function()
-            S.data.gold = (S.data.gold or 0) + 1000
+            local got = Economy.AddGold(S.data, 1000)
             Save.Write(S.data)
-            UI.SetToast("金币 +1000", 1.8)
+            UI.SetToast("金币 +" .. got .. "（上限 " .. Economy.GoldCap(S.data) .. "）", 1.8)
         end, { fontSize = 14, fill = { 58, 52, 36, 255 }, stroke = { 140, 120, 70, 255 } })
         UI.Button("devreset", DevX(6), dvy, dvw, dvh, "重置存档", function()
             S.confirmReset = true
         end, { fontSize = 14, fill = { 66, 40, 44, 255 }, stroke = { 130, 76, 82, 255 } })
         UI.Text(64, 686, 12,
-            "开发模式：推进日期 / 自选强化与怪物测试 / 解锁关卡 / 加经验金币 / 清空存档（发布前把 State.lua 的 dev 改成 false）",
+            "开发模式：推进日期 / 自选强化与怪物测试 / 解锁关卡 / 加精粹金币 / 清空存档（发布前把 State.lua 的 dev 改成 false）",
             S.col.dim)
     end
 
@@ -1379,6 +1611,38 @@ end
 function Menu.UpdateOverlays(dt)
     local d = S.data
     if not d then return end
+    -- 跨天检查：游戏一直开着挂到第二天时，之前只有「点一下喝水/领步数」才会触发
+    -- RollDay，健康任务和每日数据会一直显示昨天的状态。这里每秒检查一次。
+    healthDayTimer = healthDayTimer - dt
+    if healthDayTimer <= 0 then
+        healthDayTimer = 1.0
+        if d.dayKey ~= Save.TodayKey(d) then
+            local lostSteps = (not d.claimed) and (d.todaySteps or 0) or 0
+            Save.RollDay(d)
+            if lostSteps > 0 then
+                -- 跨天会清空当日步数：不提示的话玩家会以为「任务点了没效果」
+                UI.SetToast("已进入新的一天：昨天的步数未领取已清零", 3.0)
+            else
+                UI.SetToast("已进入新的一天，健康任务已刷新", 2.2)
+            end
+        end
+    end
+    -- 农场作物按现实时间自然成长；成熟时给一次提示，而不是只在打开农场时才算
+    farmMatureTimer = farmMatureTimer - dt
+    if farmMatureTimer <= 0 then
+        farmMatureTimer = 5.0
+        -- 云端排行榜：有变化才上传，Cloud 内部有 30 秒节流
+        Cloud.MaybeSubmit(d)
+        if Farm.Unlocked(d) then
+            local mature = Farm.MatureCount(d)
+            if farmMatureSeen and mature > farmMatureSeen then
+                UI.SetToast(string.format("农场：%d 块作物成熟了", mature - farmMatureSeen), 2.4)
+            end
+            farmMatureSeen = mature
+        else
+            farmMatureSeen = nil
+        end
+    end
     if not Menu.OverlayActive() then
         -- 只有真的在玩（战斗 / 选关）才累计，挂菜单不催
         if S.screen == "combat" or S.screen == "map" then
@@ -1391,7 +1655,12 @@ function Menu.UpdateOverlays(dt)
         end
     end
     if S.restPrompt then S.restPrompt.t = (S.restPrompt.t or 0) + dt end
+    if S.farm and (S.farmTab or 1) == 1 then
+        FarmWalk.Update(dt)
+    end
     if S.meditate then S.meditate.t = (S.meditate.t or 0) + dt end
+    -- 冥想时切到冥想音乐（主 BGM 自动压低），结束再淡出
+    Audio.SetMeditate(S.meditate ~= nil)
 end
 
 -- 返回 true = 这次输入被弹层吃掉了（外面不要再处理）
@@ -1528,14 +1797,14 @@ function Menu.DrawHealth()
     y = y + 96
     UI.Text(p.x + 32, y, 18, "② 早睡", d.sleptEarly and S.col.green or S.col.text)
     UI.Text(p.x + 32, y + 26, 13,
-        d.sleptEarly and string.format("今天已打卡：明天领取步数时经验 +%d%%",
+        d.sleptEarly and string.format("今天已打卡：明天领取步数时精粹 +%d%%",
             math.floor(Config.Health.earlySleepExpPct * 100))
-        or string.format("今晚早点睡，点一下记录；明天领取步数时经验 +%d%%",
+        or string.format("今晚早点睡，点一下记录；明天领取步数时精粹 +%d%%",
             math.floor(Config.Health.earlySleepExpPct * 100)), S.col.dim)
     UI.Button("sleep_btn", p.x + 584, y + 6, 180, 44,
         d.sleptEarly and "已记录" or "记录今天早睡", function()
             if Save.CheckSleep(d) then
-                UI.SetToast("已记录早睡，明天领步数时经验加成生效", 2.4)
+                UI.SetToast("已记录早睡，明天领步数时精粹加成生效", 2.4)
             end
         end, { fontSize = 15, enabled = not d.sleptEarly })
 
@@ -1597,7 +1866,7 @@ function Menu.DrawEndless()
         "① 解锁：主线通关第 10 关（已通关 " .. math.min(20, d.stageCleared or 0) .. " 关）",
         "② 强度：第 1 层相当于主线第 10 关，之后每层 +1 关，数值按主线曲线外推",
         "③ 强化：身上最多 " .. e.buffCap .. " 个，满了以后每次战斗结算改成「选 1 个新的，换掉 1 个旧的」",
-        "④ 推进：生命、银币、强化都带进下一层；每层开场回 20% 生命并补满护盾",
+        "④ 推进：生命、金币、强化都带进下一层；每层开场回 20% 生命并补满护盾",
     }
     local ly = p.y + 100
     for _, line in ipairs(lines) do
@@ -1623,7 +1892,7 @@ function Menu.DrawEndless()
     end
 
     UI.Text(p.x + 32, ry + 110, 13,
-        "记录勋章：每突破一次自己的历史纪录升 1 级（最高 Lv." .. e.medalMax .. "）；破纪录另给金币与经验。", S.col.dim)
+        "记录勋章：每突破一次自己的历史纪录升 1 级（最高 Lv." .. e.medalMax .. "）；破纪录另给精粹。", S.col.dim)
     UI.Text(p.x + 32, ry + 132, 13,
         "排行榜目前只记本机成绩（日 / 周 / 月 / 历史），联网榜单等服务器就绪后再接。", S.col.dim)
 
@@ -1639,6 +1908,262 @@ function Menu.DrawEndless()
     UI.Button("endless_close", p.x + p.w - 232, p.y + p.h - 92, 200, 64, "返回 (Esc)", function()
         S.endlessPanel = false
     end, { fontSize = 20 })
+end
+
+-- ================================================================ 主界面子面板
+-- 场景里的三个入口分别只打开对应模块：
+--   生命之书 → DrawCharacter（只看角色）
+--   运动之泉 → DrawSports（只看今日运动）
+--   右下选关 → DrawLevels（只选关）
+-- 背景统一用一层遮罩 + 居中面板，右上角「← 返回场景」由 SceneUI.DrawPanelBack 画。
+
+local function PanelBackdrop(w, h)
+    -- 遮罩铺满整个物理屏幕（含 letterbox），背景是压暗的场景
+    UI.FillScreen({ 8, 6, 14, 202 })
+    local x, y = (Config.DESIGN_W - w) / 2, (Config.DESIGN_H - h) / 2
+    UI.Panel(x, y, w, h, 18, { 26, 22, 38, 252 }, S.col.line, 1)
+    return x, y
+end
+
+-- ---------------------------------------------------------------- 角色
+function Menu.DrawCharacter()
+    local data = S.data
+    local x, y = PanelBackdrop(680, 500)
+    UI.Text(x + 32, y + 26, 26, "角色", S.col.gold)
+    UI.Text(x + 120, y + 34, 13, "职业切换 · 升级 · 出战技能", S.col.dim)
+
+    -- 职业
+    local bx = x + 32
+    for _, cid in ipairs({ "swordsman", "spearman", "ranger", "mage" }) do
+        local c = Config.Classes[cid]
+        if c then
+            local active = Save.ActiveClass(data) == cid
+            UI.Button("panel_class_" .. cid, bx, y + 62, 92, 34, c.name, function()
+                if Save.ActiveClass(data) == cid then return end
+                Save.SetClass(data, cid)
+                FixLoadout()
+                S.testBuffs = {}
+                S.testSkills = {}
+                S.testDetail = nil
+                UI.SetToast("已切换到 " .. c.name, 1.8)
+            end, { fontSize = 14,
+                fill = active and { 48, 70, 92, 255 } or { 74, 60, 106, 255 },
+                stroke = active and S.col.cyan or S.col.line })
+            bx = bx + 100
+        end
+    end
+
+    local classLevel = Save.ClassLevel(data)
+    local cost = Save.NextCost(data)
+    local accountLv = Economy.AccountLevel(data)
+    local accNeed = Economy.AccountNext(data)
+
+    DrawStat(x + 32, y + 118, "精粹（局外）", UI.FormatNumber(Economy.Essence(data)))
+    DrawStat(x + 32, y + 148, Config.Class().name .. "等级", "Lv." .. classLevel)
+    DrawStat(x + 32, y + 178, "升级需要", cost and UI.FormatNumber(cost) or "已满级")
+    DrawStat(x + 32, y + 208, "连续健康", data.streak .. " 天 · "
+        .. Economy.StreakName(data.streak, Config.ActivityPercent(data.todaySteps)))
+    DrawStat(x + 32, y + 238, "技能点", tostring(data.skillPoints))
+
+    -- 账号等级（累计获得精粹的里程碑）
+    UI.Text(x + 32, y + 268, 16, "账号等级", S.col.dim)
+    UI.Text(x + 182, y + 268, 18, "Lv." .. accountLv, S.col.text)
+    do
+        local barX, barY, barW, barH = x + 300, y + 262, 340, 26
+        local base = Economy.AccountBase(accountLv)
+        local earned = math.floor(data.essenceEarned or 0)
+        local ratio = math.max(0, math.min(1, (earned - base) / math.max(1, accNeed - base)))
+        UI.Panel(barX, barY, barW, barH, 7, { 26, 22, 42, 255 }, S.col.line, 1)
+        if ratio > 0 then
+            UI.Panel(barX + 1, barY + 1, math.max(8, math.floor((barW - 2) * ratio)), barH - 2, 6,
+                { 108, 68, 180, 255 })
+        end
+        UI.Text(barX + 10, barY + 4, 15, string.format("累计 %s / %s",
+            UI.FormatNumber(earned), UI.FormatNumber(accNeed)), S.col.text)
+    end
+
+    -- 升级
+    local canLevel, costText = false, ""
+    if cost then
+        local needGate, gateName = Config.LevelGate(classLevel + 1)
+        if needGate > 0 and data.streak < needGate then
+            costText = "需连续 " .. needGate .. " 天（" .. gateName .. "）"
+        elseif Economy.Essence(data) < cost then
+            costText = string.format("升级到 Lv.%d · 需 %d 精粹（还差 %d）",
+                classLevel + 1, cost, math.ceil(cost - Economy.Essence(data)))
+        else
+            costText = string.format("升级到 Lv.%d · 消耗 %d 精粹", classLevel + 1, cost)
+            canLevel = true
+        end
+    else
+        costText = Config.Class().name .. "已满级"
+    end
+    UI.Button("panel_levelup", x + 32, y + 302, 616, 42, costText, function()
+        local ok, msg = Save.LevelUp(S.data)
+        UI.SetToast(msg, 2.4)
+        if ok then FixLoadout() end
+    end, { enabled = canLevel, accent = S.col.green, fontSize = 15 })
+
+    -- 出战技能
+    UI.Text(x + 32, y + 362, 14, "出战技能（点一下切换）", S.col.dim)
+    local loadout = Save.Loadout(data)
+    for i = 1, 3 do
+        local sx = x + 32 + (i - 1) * 212
+        local id = loadout[i]
+        local sk = Config.SkillByID(id)
+        local label = "空位"
+        if sk and Save.IsSkillUnlocked(classLevel, id) then
+            label = sk.short .. " · " .. sk.name
+        end
+        UI.Button("panel_slot" .. i, sx, y + 386, 196, 44, label, function()
+            S.skillPicker = i
+        end, { fontSize = 15, accent = S.col.cyan })
+    end
+
+    UI.Text(x + 32, y + 446, 12, "升级消耗的是「精粹」（来自每日运动结算），金币只用于局内商店。", S.col.dim)
+end
+
+-- ---------------------------------------------------------------- 今日运动
+function Menu.DrawSports()
+    local data = S.data
+    local x, y = PanelBackdrop(680, 500)
+    local steps = data.todaySteps
+    UI.Text(x + 32, y + 26, 26, "今日运动", S.col.gold)
+    UI.Text(x + 180, y + 34, 13, "记录步数 → 结算精粹 → 解锁关卡", S.col.dim)
+
+    UI.Text(x + 32, y + 74, 46, UI.FormatNumber(steps), S.col.text)
+    UI.Text(x + 240, y + 96, 16, "步", S.col.dim)
+
+    local pct = Config.ActivityPercent(steps)
+    local nextStreak = data.streak
+    if pct >= Config.Economy.streakGatePercent then
+        local dayNum = math.floor(os.time() / 86400) + (data.dayOffset or 0)
+        if data.lastActiveDay == dayNum - 1 then
+            nextStreak = data.streak + 1
+        elseif data.lastActiveDay ~= dayNum then
+            nextStreak = 1
+        end
+    else
+        nextStreak = 0
+    end
+    local gain, detail = Economy.PreviewDaily(data, steps, nextStreak)
+    UI.Text(x + 32, y + 130, 17, string.format("超静息消耗 %.1f%%　·　%s", pct,
+        Economy.BodyStateName(data)), S.col.cyan)
+    UI.Text(x + 32, y + 154, 16, string.format("预计 +%d 精粹 = 阶梯 %d×%d + 固定 %d",
+        gain, detail.tiered, detail.mult, detail.fixed), S.col.gold)
+
+    -- 体脂率
+    UI.Text(x + 32, y + 184, 13, string.format("体脂率 %d%%（≥%d%% 算超重肥胖，走另一条单价阶梯）",
+        Economy.BodyFat(data), Config.Economy.overweightFat), S.col.dim)
+    UI.Button("panel_bf_minus", x + 500, y + 178, 40, 24, "-", function()
+        Economy.AddBodyFat(S.data, -1)
+        Save.Write(S.data)
+    end, { fontSize = 16 })
+    UI.Button("panel_bf_plus", x + 544, y + 178, 40, 24, "+", function()
+        Economy.AddBodyFat(S.data, 1)
+        Save.Write(S.data)
+    end, { fontSize = 16 })
+    UI.Button("panel_bf_25", x + 588, y + 178, 60, 24, "25%", function()
+        S.data.bodyFat = Config.Economy.overweightFat
+        Save.Write(S.data)
+        UI.SetToast("体脂率设为 " .. Config.Economy.overweightFat .. "%") 
+    end, { fontSize = 12 })
+
+    UI.Button("panel_step_minus", x + 32, y + 214, 110, 40, "-1000", function()
+        if S.data.claimed then return end
+        S.data.todaySteps = math.max(0, S.data.todaySteps - 1000)
+        Save.Write(S.data)
+    end, { fontSize = 17, enabled = not data.claimed })
+    UI.Button("panel_step_plus", x + 152, y + 214, 110, 40, "+1000", function()
+        if S.data.claimed then return end
+        S.data.todaySteps = math.min(50000, S.data.todaySteps + 1000)
+        Save.Write(S.data)
+    end, { fontSize = 17, enabled = not data.claimed })
+    UI.Button("panel_health", x + 548, y + 214, 132, 40, "健康任务", function()
+        S.healthTasks = true
+    end, { fontSize = 14, fill = { 40, 52, 74, 255 }, stroke = S.col.cyan })
+
+    local claimLabel = data.claimed and "今日已领取" or "记录步数并领取"
+    UI.Button("panel_claim", x + 32, y + 264, 648, 50, claimLabel, function()
+        local total, unlocks, streak, rEss, rSp, extraEss, lvUp = Save.Claim(S.data, S.data.todaySteps)
+        S.selectedLevel = S.data.unlocked
+        if total > 0 or unlocks > 0 or rEss > 0 then
+            local msg = string.format("获得 %d 精粹，解锁 %d 关，连续 %d 天",
+                total + (extraEss or 0), unlocks, streak)
+            if rEss > 0 then msg = msg .. string.format("；周期奖励 +%d 精粹 +%d 技能点", rEss, rSp) end
+            if (lvUp or 0) > 0 then msg = msg .. string.format("；账号升到 Lv.%d",
+                Economy.AccountLevel(S.data)) end
+            UI.SetToast(msg, 3.4)
+        else
+            UI.SetToast("今天已经领取过了", 2.0)
+        end
+    end, { enabled = not data.claimed, accent = S.col.gold, fontSize = 18 })
+
+    -- 步数解锁进度
+    local tiers = Config.StepUnlockThresholds
+    local nextNeed, prevNeed = nil, 0
+    for _, need in ipairs(tiers) do
+        if steps < need then
+            nextNeed = need
+            break
+        end
+        prevNeed = need
+    end
+    local tierRatio = nextNeed and ((steps - prevNeed) / math.max(1, nextNeed - prevNeed)) or 1
+    UI.Text(x + 32, y + 330, 14, nextNeed
+        and string.format("步数解锁 %s / %s", UI.FormatNumber(steps), UI.FormatNumber(nextNeed))
+        or "步数解锁全部完成", S.col.cyan)
+    UI.Bar(x + 32, y + 352, 648, 12, tierRatio, nextNeed and S.col.cyan or S.col.green,
+        { 26, 22, 36, 255 }, S.col.line)
+
+    local maxPlayable = Save.MaxPlayable(data)
+    UI.Text(x + 32, y + 378, 14, string.format("关卡进度：已通关 %d 关 · 可挑战 1 ~ %d",
+        math.min(20, data.stageCleared or 0), maxPlayable), S.col.dim)
+    UI.Text(x + 32, y + 402, 12, "达标门槛 10%：低于此值不计连击，只拿每日固定项；连续 3 天 ×2、连续 8 天 ×3。",
+        S.col.dim)
+end
+
+-- ---------------------------------------------------------------- 选关
+function Menu.DrawLevels()
+    local data = S.data
+    local x, y = PanelBackdrop(620, 420)
+    UI.Text(x + 32, y + 26, 26, "选关", S.col.gold)
+
+    local maxLv = Save.MaxPlayable(data)
+    S.selectedLevel = math.max(1, math.min(maxLv, S.selectedLevel or 1))
+    UI.Button("panel_lv_minus", x + 32, y + 86, 64, 64, "-", function()
+        S.selectedLevel = math.max(1, S.selectedLevel - 1)
+    end, { fontSize = 26 })
+    UI.Panel(x + 108, y + 86, 300, 64, 10, S.col.panel2, S.col.line, 1)
+    UI.Text(x + 258, y + 118, 26, "第 " .. S.selectedLevel .. " 关", S.col.text,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    UI.Button("panel_lv_plus", x + 420, y + 86, 64, 64, "+", function()
+        S.selectedLevel = math.min(maxLv, S.selectedLevel + 1)
+    end, { fontSize = 26 })
+
+    UI.Button("panel_start", x + 32, y + 170, 556, 62, "开始第 " .. S.selectedLevel .. " 关",
+        function()
+            S.panelMode = nil
+            LevelCards.Open(S.selectedLevel)
+        end, { fontSize = 22, accent = S.col.green, fill = { 40, 74, 52, 255 } })
+
+    local endlessOpen = Save.EndlessUnlocked(data)
+    local erec = Save.EndlessRecords(data)
+    UI.Button("panel_endless", x + 32, y + 246, 340, 52,
+        endlessOpen and ("无尽模式（最高 " .. erec.best .. " 层）")
+            or ("通关第 " .. Config.Endless.unlockStage .. " 关解锁无尽"),
+        function()
+            S.panelMode = nil
+            Run.StartEndless()
+        end, { fontSize = 15, enabled = endlessOpen,
+            fill = endlessOpen and { 46, 42, 72, 255 } or { 40, 38, 48, 255 },
+            stroke = endlessOpen and S.col.purple or S.col.line })
+
+    UI.Text(x + 32, y + 316, 13, string.format("已通关 %d 关　·　可挑战 1 ~ %d 关（步数解锁 %d 关）",
+        math.min(20, data.stageCleared or 0), maxLv, data.unlocked or 1), S.col.dim)
+    local keyHint = Save.ClassLevel(data)
+    UI.Text(x + 32, y + 340, 12, string.format("当前 %s Lv.%d　·　需要调整步数/体脂率请去「运动之泉」",
+        Config.Class().name, keyHint), S.col.dim)
 end
 
 return Menu

@@ -9,7 +9,7 @@
     "id": "1b4a3096-b2cb-4981-a5b8-8b5b1eee8913"
   },
   "entry": "main.lua",
-  "version": "1.0.55",
+  "version": "1.0.69",
   "taptap_publish": {
     "title": "生命行者",
     "category": "action",
@@ -19,10 +19,34 @@
     "developer_id": 507371
   },
   "test_qrcode": {
-    "url": "https://tapcode-sce.spark.xd.com/qrcode/m_52rf_1793348948071.png",
-    "generated_at": "2026-10-30T08:29:08.226Z"
+    "url": "https://tapcode-sce.spark.xd.com/qrcode/m_52rf_1793890587369.png",
+    "generated_at": "2026-11-05T14:56:27.490Z"
   },
   "metadata": {
-    "updated_at": "2026-10-30T08:29:08.226Z"
+    "updated_at": "2026-11-05T14:56:27.490Z"
+  },
+  "assets": {
+    "icon_url": "https://img.tapimg.com/market/images/ef4719159691d7db73760cadfc67eac4.png"
+  },
+  "dc_publish_sync": {
+    "synced": false,
+    "dcVersion": "V-20261025",
+    "dcStatus": "INIT",
+    "baseFields": {
+      "title": "生命行者",
+      "description": "",
+      "category": "action",
+      "trial_note": "",
+      "icon_url": "https://img.tapimg.com/market/images/ef4719159691d7db73760cadfc67eac4.png",
+      "banner_url": "",
+      "square_promo_url": "",
+      "cover_horizontal_url": "",
+      "cover_vertical_url": "",
+      "screenshot_urls": []
+    },
+    "pending": {
+      "icon_url": "https://img.tapimg.com/market/images/ef4719159691d7db73760cadfc67eac4.png"
+    },
+    "baseGameplayDemoVideoId": 0
   }
 }
