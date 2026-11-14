@@ -1661,8 +1661,6 @@ function Menu.UpdateOverlays(dt)
     if S.meditate then S.meditate.t = (S.meditate.t or 0) + dt end
     -- 冥想时切到冥想音乐（主 BGM 自动压低），结束再淡出
     Audio.SetMeditate(S.meditate ~= nil)
-    if S.restPrompt then S.restPrompt.t = (S.restPrompt.t or 0) + dt end
-    if S.meditate then S.meditate.t = (S.meditate.t or 0) + dt end
 end
 
 -- 返回 true = 这次输入被弹层吃掉了（外面不要再处理）
