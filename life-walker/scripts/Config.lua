@@ -262,7 +262,7 @@ end
 
 local COMBAT_SET = { light = true, standard = true, mixed = true, elite = true, double = true }
 local DOWN = { double = "elite", elite = "mixed", mixed = "standard", standard = "light" }
-local UP = { light = "standard", standard = "mixed" }
+local UP = { light = "standard", standard = "mixed", mixed = "elite" }
 
 local function CloneGrid(grid)
     local out = {}
