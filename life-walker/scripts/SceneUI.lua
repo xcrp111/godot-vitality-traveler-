@@ -15,6 +15,8 @@ local S = require "State"
 local Art = require "Art"
 local Economy = require "Economy"
 local Pet = require "Pet"
+local FarmWalk = require "FarmWalk"
+local Cloud = require "Cloud"
 
 local SceneUI = {}
 
@@ -775,6 +777,11 @@ end
 
 -- ---------------------------------------------------------------- 绘制：HUD
 local ENTRIES = {
+    { id = "farm",     name = "农场", open = function()
+        S.farm = true; S.farmTab = 1; S.farmPlot = nil; FarmWalk.Reset() end },
+    { id = "rank",     name = "排行", open = function()
+        S.rank = true; S.rankTab = S.rankTab or 1
+        Cloud.Refresh((Cloud.Boards[S.rankTab] or Cloud.Boards[1]).id, true) end },
     { id = "sports",   name = "运动", open = function() S.panelMode = "sports" end },
     { id = "bag",      name = "背包", open = function() S.bag = true; S.bagPage = 1 end },
     { id = "pet",      name = "宠物", open = function()

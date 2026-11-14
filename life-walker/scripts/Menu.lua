@@ -1302,17 +1302,6 @@ function Menu.Draw()
         S.guild = true
         S.guildTab = S.guildTab or 1
     end, { fontSize = 16, accent = S.col.cyan })
-    UI.Button("farm_btn", 844, 82, 108, 34, "农场", function()
-        S.farm = true
-        S.farmTab = 1
-        S.farmPlot = nil
-        FarmWalk.Reset()
-    end, { fontSize = 14, accent = S.col.green })
-    UI.Button("rank_btn", 960, 82, 108, 34, "排行榜", function()
-        S.rank = true
-        S.rankTab = S.rankTab or 1
-        Cloud.Refresh((Cloud.Boards[S.rankTab] or Cloud.Boards[1]).id, true)
-    end, { fontSize = 14, accent = S.col.cyan })
     UI.Button("settings", 960, 34, 108, 40, "设置", function()
         S.settings = true
     end, { fontSize = 15 })
