@@ -211,6 +211,11 @@ local function DrawCards()
         UI.Text(badgeX + badgeW / 2, badgeY + badgeH / 2, 13,
             string.format("%s %+.2f", card.riskLabel, card.risk), { 24, 20, 32, 255 },
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        -- B1：档名是按本组相对位置微调的卡打一个小点，数字仍是绝对强度
+        if card.labelRelative then
+            UI.Text(badgeX - 9, badgeY + badgeH / 2, 16, "·", RGBA(rc, 235),
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        end
 
         -- 牌名条
         UI.Text(x + 16, y + 150, 17, card.templateName, S.col.text)
@@ -301,6 +306,11 @@ local function DrawSideInfo(x0, y0, w)
 
     UI.Text(x0, y0, 16, "这张卡：" .. card.templateName .. " × " .. card.modName, S.col.text)
     UI.TextBox(x0, y0 + 26, w, 13, card.mod.desc, S.col.dim)
+    if card.labelRelative then
+        -- B1 的档名是按本组相对位置微调的，数字才是绝对强度；不写清楚会被当成显示 bug
+        UI.Text(x0, y0 + 52, 12, "· 档名按本组相对位置微调，真实强度看数字（" .. string.format("%+.2f", card.risk) .. "）",
+            { 158, 150, 178, 255 })
+    end
 
     local y = y0 + 70
     UI.Text(x0, y, 14, "本层机遇房", S.col.dim)
@@ -404,8 +414,9 @@ function Start()
     print(string.format("[View] level=%d cards=%d 卡片总宽=%d (画布 %d) 居中左边距=%d",
         View.level, #View.cards, totalW, Config.DESIGN_W, (Config.DESIGN_W - totalW) / 2))
     for i, c in ipairs(View.cards) do
-        print(string.format("[View] card%d %s × %s  risk=%+.2f %s  silver=%d 战斗%d 精英%d 商店%d 机遇%d",
-            i, c.templateName, c.modName, c.risk, c.riskLabel, c.preview.silver,
+        print(string.format("[View] card%d %s × %s  risk=%+.2f %s%s  silver=%d 战斗%d 精英%d 商店%d 机遇%d",
+            i, c.templateName, c.modName, c.risk, c.riskLabel,
+            c.labelRelative and "(相对)" or "", c.preview.silver,
             c.preview.combat, c.preview.elite, c.preview.shop, c.preview.special))
     end
     local l = View.layer
