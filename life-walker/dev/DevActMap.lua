@@ -60,7 +60,7 @@ end
 -- ---------------------------------------------------------------- ② 层卡
 local function TestCards()
     local totalCards, safeCount, maxAbsRisk, totalRolls = 0, 0, 0, 0
-    local sameLabelRolls, normalCollapse = 0, 0
+    local sameLabelRolls, relativeLabelRolls = 0, 0
     local paretoPairs, paretoWorst, paretoRolls = 0, nil, 0
     local baseSilverSum, nowSilverSum, silverFixCards = 0, 0, 0
     local maxFixRatio = 1
@@ -140,22 +140,20 @@ local function TestCards()
             -- 曾经第 20 关三张全「轻松」——归一阶梯最高只到混战，永远够不到
             -- MapTargetCost(20)=1.75，risk 恒为负。玩家在界面上看到的是三张一模一样的卡，
             -- 而当时 DevActMap 只断言结构合法，这种「看起来没问题」的退化它抓不到。
+            -- B1（2026-11-11）：三张卡落在同档时，ActMap.BreakLabelCollapse 已按组内相对位置拆开；
+            -- 所以这里可以断言「永远不全部同名」。带 labelRelative 的卡显示的档名是相对组内的，
+            -- 不是绝对阈值档——所以卡面上的 risk 数字不能省。
             local label0 = cards[1].riskLabel
             local labelSame = true
+            local relShift = 0
             for _, card in ipairs(cards) do
                 if card.riskLabel ~= label0 then labelSame = false end
+                if card.labelRelative then relShift = relShift + 1 end
             end
-            if labelSame then
-                sameLabelRolls = sameLabelRolls + 1
-                if label0 == "常规" then
-                    -- 宽档（-0.20~0.10，0.30 宽）：低级关卡三张卡都落在里面很正常，
-                    -- 不是归一坏了，是「绝对阈值分不开轻重」——那是方案 B 的事。
-                    normalCollapse = normalCollapse + 1
-                else
-                    check("三张卡的风险档不全同名（第 " .. level .. " 关）", false,
-                        label0 .. " ×3")
-                end
-            end
+            if relShift > 0 then relativeLabelRolls = relativeLabelRolls + 1 end
+            if labelSame then sameLabelRolls = sameLabelRolls + 1 end
+            check("三张卡的风险档不全同名（第 " .. level .. " 关）", not labelSame,
+                label0 .. " ×3")
 
             -- 帕累托（M1 后变成硬断言）：不该存在「既更难、又给得更少」的卡——
             -- 那种卡在三选一里永远没有选它的理由。2026-11-11 第 10 关就是：
@@ -207,8 +205,8 @@ local function TestCards()
     end
     print(string.format("[Act] 层卡：%d 张，其中低风险 %d 张（%.0f%%），最大 |risk|=%.3f，银币区间 %d~%d",
         totalCards, safeCount, safeCount / math.max(1, totalCards) * 100, maxAbsRisk, minSilver, maxSilver))
-    print("[Act] 风险档：" .. sameLabelRolls .. "/" .. totalRolls .. " 次抽卡三张同名，其中三张全「常规」"
-        .. normalCollapse .. " 次")
+    print("[Act] 风险档：" .. sameLabelRolls .. "/" .. totalRolls .. " 次抽卡三张同名（B1 后应为 0）；"
+        .. relativeLabelRolls .. " 次用到了组内相对档名")
     print("[Act] 帕累托：" .. paretoRolls .. "/" .. totalRolls .. " 次抽卡存在被支配的卡（共 "
         .. paretoPairs .. " 个卡-卡支配对）"
         .. (paretoWorst and ("；例：第 " .. paretoWorst.level .. " 关 " .. paretoWorst.desc) or ""))

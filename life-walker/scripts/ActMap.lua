@@ -495,6 +495,48 @@ function ActMap.RepairPareto(cards, level, cap)
     return fixes, added, bumped
 end
 
+-- B1：三张卡落在同一个强度档时，按组内相对位置微调档名。
+-- 语义仍是「标签只表达战斗强度」，但绝对阈值下会有「三张全叫常规」的画面——
+-- 那一屏强度轴什么都没说。所以同档时把最低那张降一档、最高那张升一档。
+-- 代价（已记录）：档名会漂移，同一张卡在不同三张里可能叫不同名字；
+-- 所以卡面会把真实 risk 数字一并显示，玩家想看绝对值随时看得到。
+local LABEL_STEPS = { "轻松", "常规", "吃紧", "险恶" }
+local LABEL_INDEX = { ["轻松"] = 1, ["常规"] = 2, ["吃紧"] = 3, ["险恶"] = 4 }
+
+function ActMap.BreakLabelCollapse(cards)
+    if #cards < 2 then return 0 end
+    local base = cards[1].riskLabel
+    for _, c in ipairs(cards) do
+        if c.riskLabel ~= base then return 0 end   -- 已经分得开，不动
+    end
+    -- 组内最低 / 最高（risk 撞车时用银币分先后）
+    local lo, hi = cards[1], cards[1]
+    for _, c in ipairs(cards) do
+        if c.risk < lo.risk - DOM_EPS
+            or (math.abs(c.risk - lo.risk) <= DOM_EPS and c.preview.silver < lo.preview.silver) then
+            lo = c
+        end
+        if c.risk > hi.risk + DOM_EPS
+            or (math.abs(c.risk - hi.risk) <= DOM_EPS and c.preview.silver > hi.preview.silver) then
+            hi = c
+        end
+    end
+    if lo == hi then return 0 end
+    local idx = LABEL_INDEX[base]
+    local shifted = 0
+    if idx > 1 then
+        lo.riskLabel = LABEL_STEPS[idx - 1]
+        lo.labelRelative = true
+        shifted = shifted + 1
+    end
+    if idx < #LABEL_STEPS then
+        hi.riskLabel = LABEL_STEPS[idx + 1]
+        hi.labelRelative = true
+        shifted = shifted + 1
+    end
+    return shifted
+end
+
 -- M2：收益分档（三张卡相对排名，不引入新的绝对阈值）
 -- 标签只表达战斗强度，所以「选哪张」这个决策只能靠收益分档承担。
 function ActMap.AssignSilverTiers(cards)
@@ -598,10 +640,11 @@ function ActMap.RollCards(level, opts)
         }
     end
 
-    -- 三张卡都齐了才做整体修复：先记基准收益（用于封顶和统计），再修帕累托，最后分档
+    -- 三张卡都齐了才做整体修复：记基准收益（封顶统计）→ 修帕累托 → 收益分档 → 拆同档标签
     for _, c in ipairs(cards) do c.baseSilver = c.preview.silver end
     ActMap.RepairPareto(cards, level)
     ActMap.AssignSilverTiers(cards)
+    ActMap.BreakLabelCollapse(cards)
     return cards
 end
 
