@@ -1615,7 +1615,11 @@ function Combat.AimPointer(phase, dx, dy, id)
             return true
         end
         -- tapInstant 技能（闪影突进）：点按就瞬发自动索敌，只有真的拖动了才锁方向
-        local manual = aim.moved or (not aim.spec.tapInstant and aim.t >= AimHoldValue())
+        -- 方向类技能：只有真的拖动才锁手动方向；按住不动松手仍然走自动索敌
+        -- （选位类技能仍保留「长按即进入摆放」的手感）
+        local manual = aim.moved
+            or (aim.spec.mode == "point" and not aim.spec.tapInstant
+                and aim.t >= AimHoldValue())
         if manual then
             cs.facing = aim.angle
             cs.aimLock = true
