@@ -294,6 +294,11 @@ local function DrawFrame()
                         Menu.DrawLevels()
                     end
                     SceneUI.DrawPanelBack()
+                    -- 叠加层（选技能 / 图鉴 / 设置等）画在子面板之上，关掉后回到原子面板
+                    if S.skillPicker or S.compendium or S.settings or S.healthTasks
+                        or S.endlessPanel or S.test then
+                        Menu.Draw()
+                    end
                 else
                     Menu.Draw()
                 end
@@ -374,6 +379,7 @@ function HandleMouseDown(eventType, eventData)
 
     if button ~= MOUSEB_LEFT then return end
     S.hoverIsMouse = true
+    S.clickDX, S.clickDY = dx, dy
     if Menu.OverlayPointer("down", dx, dy) then UI.PointerCancel() return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("down", dx, dy)
@@ -431,6 +437,7 @@ function HandleTouchBegin(eventType, eventData)
     local tid = nil
     pcall(function() tid = eventData["TouchID"]:GetInt() end)
     local dx, dy = UI.ToDesign(px, py)
+    S.clickDX, S.clickDY = dx, dy
     if Menu.OverlayPointer("down", dx, dy) then UI.PointerCancel() return end
     if KbLayout.IsOpen() then
         KbLayout.Pointer("down", dx, dy)
@@ -562,6 +569,8 @@ if S.farm and (S.farmTab or 1) == 1 then
             S.test = false
         elseif S.compendium then
             S.compendium = false
+        elseif S.skillPicker then
+            S.skillPicker = false
         elseif S.panelMode then
             S.panelMode = nil
         elseif S.screen == "combat" and S.combat and S.combat.showBuffs then

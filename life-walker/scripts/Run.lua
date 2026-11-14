@@ -529,6 +529,15 @@ function Run.CanMove(r, c)
     local dc = c - run.posC
     if math.abs(dr) + math.abs(dc) ~= 1 then return false end
     if r < 1 or r > rows or c < 1 or c > cols then return false end
+    -- 层卡地图有显式边表时严格按边表走（死胡同、单向连通都以它为准）
+    if run.layerEdges then
+        local list = run.layerEdges[Key(run.posR, run.posC)] or {}
+        local linked = false
+        for _, nb in ipairs(list) do
+            if nb[1] == r and nb[2] == c then linked = true; break end
+        end
+        if not linked then return false end
+    end
     -- 回到走过的房间：允许（空房间可以穿行）
     if run.visited[Key(r, c)] then return true end
     -- 进入新房间：仍然只能向右 / 上 / 下
