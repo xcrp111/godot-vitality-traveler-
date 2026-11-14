@@ -93,6 +93,22 @@ Opportunity.CHANCE_MIN_LEVEL = 6
 Opportunity.DEFS = {
     -- ============================================================ 遗弃村落（无代价）
     {
+        id = "v_purse", kind = "village", weight = 16, minLevel = 1,
+        title = "被摸过的钱袋",
+        text = "袋口翻着，大的都被人拿走了，剩下的一把碎银还在。",
+        options = {
+            { label = "倒进自己袋里", gain = { silver = 8, exp = 5 } },
+        },
+    },
+    {
+        id = "v_echo", kind = "village", weight = 12, minLevel = 1,
+        title = "会回声的走廊",
+        text = "你每走一步，前面都先响一声——像有人在替你探路。",
+        options = {
+            { label = "跟着回声走", gain = { intel = 1, silver = 3 } },
+        },
+    },
+    {
         id = "v_coin", kind = "village", weight = 28, minLevel = 1,
         title = "遗弃的补给箱",
         text = "路边的箱子上还挂着褪色的标签，一直没人来取。",
@@ -240,6 +256,93 @@ Opportunity.DEFS = {
         },
     },
 
+    -- 2026-11-11 补的几条：把「扣银币」当成真正的代价来用。
+    -- 原来不期而遇的代价只有扣血 / 交道具 / 本层变难，银币只是收益，从不心疼。
+    -- 现在玩家可以主动亏钱换强化或保命，「钱该花在哪」才成了一个决策。
+    {
+        id = "e_toll", kind = "encounter", weight = 12, minLevel = 5,
+        title = "收路钱的",
+        text = "两个人和一根横杆，价钱写在木板上，风吹得它一晃一晃。",
+        options = {
+            {
+                label = "交 40 银币", desc = "买个平安，换一个金色强化",
+                cost = { silver = 40 }, gain = { buff = "gold" },
+                enabled = function(ctx) return ctx.state.silver >= 40 end,
+            },
+            {
+                label = "硬闯过去", desc = "+15 银币，但失去 20% 生命",
+                gain = { silver = 15 }, cost = { hpPct = 0.20 },
+                enabled = function(ctx) return ctx.state.hp > ctx.state.maxHp * 0.35 end,
+            },
+        },
+    },
+    {
+        id = "e_broker", kind = "encounter", weight = 12, minLevel = 4,
+        title = "只收实物",
+        text = "柜台后面的人不看银币，只指了指你腰上的东西。",
+        options = {
+            {
+                label = "当掉 1 个道具", desc = "换 45 银币",
+                cost = { item = 1 }, gain = { silver = 45 },
+                enabled = function(ctx) return ctx.state.items > 0 end,
+            },
+            {
+                label = "问他能不能赊账", desc = "+10 银币",
+                gain = { silver = 10 },
+            },
+        },
+    },
+    {
+        id = "e_purse", kind = "encounter", weight = 12, minLevel = 6,
+        title = "押上你的钱袋",
+        text = "「猜硬币，猜中就翻倍。」他自己先笑了。",
+        options = {
+            {
+                label = "押上", desc = "一半翻倍（+58），一半落空（-22）",
+                rollId = "c_purse",
+                enabled = function(ctx) return ctx.state.silver >= 25 end,
+            },
+            {
+                label = "不押", desc = "+10 银币（他给的封口费）",
+                gain = { silver = 10 },
+            },
+        },
+    },
+    {
+        id = "e_hounds", kind = "encounter", weight = 12, minLevel = 3,
+        title = "循着味道来的",
+        text = "它们不叫，只是低着身子一点点围过来。",
+        options = {
+            {
+                label = "丢下 25 银币引开", desc = "换出本层所有房间",
+                cost = { silver = 25 }, gain = { intel = 1, silver = 5 },
+                enabled = function(ctx) return ctx.state.silver >= 25 end,
+            },
+            {
+                label = "从它们中间冲过去", desc = "+40 银币，但失去 15% 生命",
+                gain = { silver = 40 }, cost = { hpPct = 0.15 },
+                enabled = function(ctx) return ctx.state.hp > ctx.state.maxHp * 0.30 end,
+            },
+        },
+    },
+    {
+        id = "e_altar", kind = "encounter", weight = 10, minLevel = 4,
+        title = "血偿的祭坛",
+        text = "石槽里的东西早干了，磨盘却还在等。",
+        options = {
+            {
+                label = "献 15% 生命", desc = "+35 银币 和一个蓝色强化",
+                cost = { hpPct = 0.15 }, gain = { silver = 35, buff = "blue" },
+                enabled = function(ctx) return ctx.state.hp > ctx.state.maxHp * 0.40 end,
+            },
+            {
+                label = "塞 50 银币进去", desc = "回复 45% 生命",
+                cost = { silver = 50 }, gain = { healPct = 0.45 },
+                enabled = function(ctx) return ctx.state.silver >= 50 end,
+            },
+        },
+    },
+
     -- ============================================================ 得偿所愿（选方向）
     -- 只给「方向」不给「具体物品」：所以不会出现「抽到没用的金色」这种挫败
     {
@@ -274,6 +377,18 @@ Opportunity.DEFS = {
     -- ============================================================ 命运牌桌（不再是地图节点）
     -- 期望银币 = -2.5 -2 +2.5 +6.25 +12 = +16.25，再加约 3.8 的紫保底期望 ≈ 20
     -- 比「财」的稳定 35 低是故意的：赌买的是方差和爽点，不是收益。
+    -- 「赌钱包」用的另一张牌桌（挂在不期而遇的 e_purse 上）。
+    -- 期望 = 0.5×58 - 0.5×22 = +18：比稳定的「不押 +10」强一点，但方差大得多。
+    {
+        id = "c_purse", kind = "chance", weight = 100, minLevel = Opportunity.CHANCE_MIN_LEVEL,
+        title = "押上你的钱袋",
+        text = "硬币落进杯子，他用一只手盖住了。",
+        roll = {
+            { id = "clang", p = 0.50, label = "猜中", gain = { silver = 58 } },
+            { id = "empty", p = 0.50, label = "猜错", cost = { silver = 22 } },
+        },
+    },
+
     {
         id = "c_fate", kind = "chance", weight = 100, minLevel = Opportunity.CHANCE_MIN_LEVEL,
         title = "命运岔口",

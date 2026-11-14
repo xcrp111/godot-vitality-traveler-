@@ -344,9 +344,16 @@ local function TestBudget()
                 check("不期而遇至少两个选项（" .. def.id .. "）", #def.options >= 2, #def.options)
                 local hasCost = false
                 for _, opt in ipairs(def.options) do
-                    -- 代价可以是「花资源」，也可以是「把本层变难」（stepRisk）
+                    -- 代价可以是「花资源」，也可以是「把本层变难」（stepRisk），
+                    -- 还可以藏在掷骰里（rollId 指向的牌桌有输面）
                     if opt.cost then hasCost = true end
                     if opt.gain and opt.gain.stepRisk then hasCost = true end
+                    if opt.rollId then
+                        local rd = Opportunity.DefByID(opt.rollId)
+                        for _, tier in ipairs(rd and rd.roll or {}) do
+                            if tier.cost then hasCost = true end
+                        end
+                    end
                 end
                 check("不期而遇至少一个选项带代价（" .. def.id .. "）", hasCost)
             end
@@ -374,6 +381,13 @@ local function TestBudget()
         end
     end
     print(string.format("[Act] 机遇池：%d 条，%d 个选项", defs, options))
+    -- 房间期望银币实测：拿去和 docs/ACT_MAP.md 第 3 节手算的汇率对账，避免文档和代码漂移
+    local kinds = { "light", "standard", "mixed", "elite", "double", "boss" }
+    local parts = {}
+    for _, k in ipairs(kinds) do
+        parts[#parts + 1] = k .. "=" .. ActMap.RoomSilver(k)
+    end
+    print("[Act] 房间期望银币：" .. table.concat(parts, " "))
     check("四种节点都有条目",
         #Opportunity.ByKind.village > 0 and #Opportunity.ByKind.encounter > 0
         and #Opportunity.ByKind.wish > 0 and #Opportunity.ByKind.chance > 0)
