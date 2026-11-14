@@ -117,6 +117,8 @@
 ---@field testLevel integer
 ---@field testDetail table|nil
 ---@field confirmReset boolean
+---@field showAssist boolean
+---@field timeScale number
 ---@field showStatus boolean
 ---@field statusPanel any
 ---@field kbEdit any
@@ -129,6 +131,8 @@
 ---@field farm boolean
 ---@field farmTab integer
 ---@field farmPlot integer|nil
+---@field clickDX number
+---@field clickDY number
 ---@field rank boolean
 ---@field rankTab integer
 ---@field restPrompt any
@@ -210,6 +214,7 @@ local S = {
     regions = {},
     toast = { text = "", t = 0 },
     input = { x = 0, y = 0 },
+    clickDX = 0, clickDY = 0,
     keys = { up = false, down = false, left = false, right = false, active = false },
     dev = true,
     selectedLevel = 1,
@@ -240,6 +245,8 @@ local S = {
     settingsTab = "control",
     settingsWipeConfirm = false,
     confirmReset = false,
+    showAssist = true,     -- 角色辅助显示：光圈 / 普攻范围 / 瞄准线
+    timeScale = 1,         -- 战斗时间倍率（慢放看动作，1 / 0.5 / 0.25）
     showStatus = false,
     statusPanel = nil,
     col = {

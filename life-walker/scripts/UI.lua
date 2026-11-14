@@ -225,4 +225,24 @@ function UI.ImageSize(path)
     return iw or 0, ih or 0
 end
 
+--- 画图片的某一块（序列帧切图用）：从原图 (sx,sy,sw,sh) 取一块，画到设计坐标 (dx,dy,dw,dh)
+---@return boolean
+function UI.ImageRect(path, sx, sy, sw, sh, dx, dy, dw, dh, alpha)
+    local img = UI.ImageHandle(path)
+    if not img then return false end
+    local iw, ih = nvgImageSize(S.ctx, img)
+    if not iw or iw <= 0 or not ih or ih <= 0 then return false end
+    if sw <= 0 or sh <= 0 then return false end
+    nvgSave(S.ctx)
+    nvgTranslate(S.ctx, dx, dy)
+    nvgScale(S.ctx, dw / sw, dh / sh)
+    local paint = nvgImagePattern(S.ctx, -sx, -sy, iw, ih, 0, img, alpha or 1)
+    nvgBeginPath(S.ctx)
+    nvgRect(S.ctx, 0, 0, sw, sh)
+    nvgFillPaint(S.ctx, paint)
+    nvgFill(S.ctx)
+    nvgRestore(S.ctx)
+    return true
+end
+
 return UI

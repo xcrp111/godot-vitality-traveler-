@@ -350,15 +350,20 @@ end
 ---@return SaveData
 function Save.RollDay(data)
     local today = Save.TodayKey(data)
-    if data.dayKey ~= today then
+    local key = data.dayKey
+    -- dayKey 不可信（老存档空串 / 时钟回拨 / 时区跳变）时也按跨天处理：
+    -- 否则当天任务会一直显示「已领取 / 已打卡」，点按钮也没反应，只能等到第二天
+    local valid = type(key) == "string" and key:match("^%d%d%d%d%-%d%d%-%d%d$") ~= nil
+    if not valid or key > today or key ~= today then
         data.dayKey = today
         data.todaySteps = 0
         data.claimed = false
         data.waterMl = 0          -- 饮水量按天重置
         data.sleptEarly = false   -- 早睡打卡按天重置（待领奖励留到下次领取）
     end
-    Save.RollEndless(data)
-    Farm.Roll(data)
+    -- 每日 / 每周结算各自兜底：农场或无尽数据异常时不能把健康任务的每日重置一起拖垮
+    if Save.RollEndless then pcall(Save.RollEndless, data) end
+    pcall(Farm.Roll, data)
     return data
 end
 

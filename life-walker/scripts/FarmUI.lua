@@ -5,6 +5,7 @@ local UI = require "UI"
 local S = require "State"
 local Farm = require "Farm"
 local FarmArt = require "FarmArt"
+local FarmWalk = require "FarmWalk"
 
 local FarmUI = {}
 
@@ -246,10 +247,12 @@ local function drawFruitTab()
         local on = Farm.IsEquipped(S.data, crop.id)
         UI.Panel(x, y, w, h, 10, on and { 46, 56, 40, 255 } or { 34, 32, 40, 255 },
             on and { 140, 210, 150, 255 } or S.col.line, on and 2 or 1)
-        UI.Text(x + 12, y + 10, 16, crop.fruitName, S.col.text)
+        -- 果实图标（序列帧第 4 列）
+        FarmArt.DrawCrop(crop.id, 4, x + 4, y + 6, 64, 64)
+        UI.Text(x + 74, y + 10, 16, crop.fruitName, S.col.text)
         UI.Text(x + w - 12, y + 10, 16, "×" .. count, S.col.gold,
             NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
-        UI.TextBox(x + 12, y + 36, w - 24, 12, crop.effect, S.col.dim)
+        UI.TextBox(x + 74, y + 36, w - 88, 12, crop.effect, S.col.dim)
         UI.Button("farm_equip_" .. crop.id, x + 12, y + h - 44, w - 24, 34,
             on and "取消携带" or "携带", function()
                 local ok, msg = Farm.ToggleEquip(S.data, crop.id)
@@ -275,12 +278,20 @@ local function drawShopTab()
         UI.Text(252, y + 8, 15, item.name, S.col.text)
         UI.Text(252, y + 30, 12, "价格 " .. item.price .. " 生息 · 今日 " .. bought .. "/" .. item.daily,
             S.col.dim)
+        -- 买不了的时候把原因写在按钮下面，别让玩家对着灰按钮猜
+        local why
+        if bought >= item.daily then why = "今日已买完"
+        elseif (S.data.gold or 0) < item.price then why = "生息不足"
+        elseif not Farm.HasTier(S.data, item.id) then
+            why = Farm.TierUnlockText(S.data, item.id) or "该品级还没有解锁作物"
+        end
+        if why then
+            UI.Text(252, y + 50, 10, why, { 220, 150, 140 }, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        end
         UI.Button("farm_buy_gold_" .. item.id, 500, y + 18, 76, 38, "购买", function()
             local ok, msg = Farm.BuyGoldSeed(S.data, item.id)
             commit(ok, msg)
-        end, { fontSize = 14, enabled = bought < item.daily
-            and (S.data.gold or 0) >= item.price
-            and Farm.HasTier(S.data, item.id) })
+        end, { fontSize = 14, enabled = why == nil })
         y = y + 84
     end
     UI.Text(240, 390, 12, "生息从每日步数 / 战斗获得；种子种类按已解锁作物随机", S.col.dim)
@@ -300,17 +311,29 @@ local function drawShopTab()
         else bought = f.landTicketsBought or 0 end
         local cost = Farm.RepShopCost(S.data, item.id)
         local period = item.period == "day" and "每日" or (item.period == "week" and "每周" or "共")
+        -- 禁用原因要写出来：史诗 / 传说种子锁在作物解锁条件后面，
+        -- 只给个灰按钮的话玩家会以为是 bug
+        local why
+        if item.id == "land" and (f.landCount or 4) >= 9 then
+            why = "土地已全部解锁"
+        elseif bought >= item.limit then
+            why = period .. "限购已用完"
+        elseif item.seedType then
+            why = Farm.TierUnlockText(S.data, item.seedType)
+        end
+        if not why and (f.rep or 0) < cost then why = "声望不足" end
         UI.Panel(648, ry, 394, 56, 10, S.col.panel2, S.col.line, 1)
         UI.Text(662, ry + 7, 14, item.name, S.col.text)
-        UI.Text(662, ry + 27, 11,
-            string.format("%d 声望 · %s限 %d/%d", cost, period, bought, item.limit), S.col.dim)
+        if why then
+            UI.Text(662, ry + 27, 10, why, S.col.orange)
+        else
+            UI.Text(662, ry + 27, 11,
+                string.format("%d 声望 · %s限 %d/%d", cost, period, bought, item.limit), S.col.dim)
+        end
         UI.Button("farm_buy_rep_" .. item.id, 950, ry + 9, 78, 38, "兑换", function()
             local ok, msg = Farm.BuyRep(S.data, item.id)
             commit(ok, msg)
-        end, { fontSize = 13, enabled = (f.rep or 0) >= cost
-            and bought < item.limit
-            and (not item.seedType or Farm.HasTier(S.data, item.seedType))
-            and not (item.id == "land" and (f.landCount or 4) >= 9) })
+        end, { fontSize = 13, enabled = not why })
         ry = ry + 64
     end
     UI.Text(648, 600, 11, "声望通过浇水 / 收获获得，每日最多 +50", S.col.dim)
@@ -360,27 +383,41 @@ local function drawArtPlot(index)
         UI.Text(cx, cy + 12, 10, "商店解锁", { 120, 120, 110, 200 },
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     elseif info.status == "empty" then
+        FarmArt.DrawPlotTile(x, y, w, h)
         if selected then
             UI.Panel(x, y, w, h, 6, { 120, 210, 150, 45 }, { 140, 225, 165, 235 }, 2)
         else
             UI.Panel(x, y, w, h, 6, { 255, 255, 240, 12 }, { 200, 220, 180, 70 }, 1)
         end
     else
+        FarmArt.DrawPlotTile(x, y, w, h)
         local c = info.crop.color
         if info.status == "mature" then
             UI.Panel(x, y, w, h, 6, { 240, 200, 90, 40 }, { 240, 200, 90, 235 }, 2)
         elseif selected then
             UI.Panel(x, y, w, h, 6, { 120, 210, 150, 35 }, { 140, 225, 165, 220 }, 2)
         end
-        -- 作物占位表现（作物序列帧接进来后换成贴图）
-        local cr = math.min(w, h) * 0.26
-        UI.Circle(cx, cy - h * 0.10, cr, { c[1], c[2], c[3], 90 },
-            { c[1], c[2], c[3], 235 }, 2)
-        UI.Text(cx, cy - h * 0.10, cr * 0.95, string.sub(info.crop.name, 1, 1),
-            { 28, 26, 22, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        -- 作物贴图：成熟用第 3 列，其余用对应阶段列；没有图时回退成色块占位
+        local col = info.status == "mature" and 3 or (info.stage or 1)
+        -- 序列帧里作物贴着画布底部（下方留 10% 空），
+        -- 所以让「内容底边」落在格子高度的 88% 处，植物才会站在地块中间偏下
+        local spriteH = h * 1.55
+        local spriteW = spriteH
+        local sx = cx - spriteW / 2
+        local sy = y + h * 0.88 - spriteH * 0.898
+        local drawn = FarmArt.DrawCrop(info.crop.id, col, sx, sy, spriteW, spriteH)
+        if not drawn then
+            local cr = math.min(w, h) * 0.26
+            UI.Circle(cx, cy - h * 0.10, cr, { c[1], c[2], c[3], 90 },
+                { c[1], c[2], c[3], 235 }, 2)
+            UI.Text(cx, cy - h * 0.10, cr * 0.95, string.sub(info.crop.name, 1, 1),
+                { 28, 26, 22, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        end
         local label = info.status == "mature" and "可收获"
             or (info.stageName .. " · " .. FormatRemain(info.stageRemain))
-        UI.Text(cx, cy + h * 0.26, 10, label,
+        -- 成熟作物现在会占满格子，文字压上去看不清，先垫一条半透明底
+        UI.Panel(cx - w * 0.40, y + h * 0.03, w * 0.80, 15, 5, { 8, 10, 8, 120 })
+        UI.Text(cx, y + h * 0.12, 10, label,
             info.status == "mature" and { 245, 215, 120, 255 } or S.col.dim,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     end
@@ -480,15 +517,34 @@ local function drawPlotCard()
 end
 
 local function drawFarmTabArt()
+    -- 先注册整张地图的点击区（点一下走过去），地块区后注册，优先级更高
+    UI.Region("farm_walk_area", 0, 58, Config.DESIGN_W, 560, function()
+        FarmWalk.WalkToDesign(S.clickDX or 0, S.clickDY or 0)
+    end, true)
     for i = 1, 9 do drawArtPlot(i) end
     drawPlotCard()
+    FarmWalk.Draw()
+    if FarmWalk.nearest then
+        UI.Button("farm_interact", 1130, 600, 130, 46, "交互 E", function()
+            FarmWalk.Interact()
+        end, { fontSize = 15, fill = { 46, 78, 54, 255 }, stroke = { 130, 210, 150, 255 } })
+    end
     if S.dev then
-        UI.Button("farm_dev_ripe", 24, 664, 110, 30, "全部成熟", function()
+        UI.Button("farm_dev_next", 24, 664, 132, 30, "下一阶段（选中）", function()
+            local n = Farm.DebugNextStage(S.data, S.farmPlot)
+            Save.Write(S.data)
+            if n > 0 then
+                toast("测试：推进了 " .. n .. " 块地")
+            else
+                toast("选一块生长中的地再点", 1.8)
+            end
+        end, { fontSize = 11 })
+        UI.Button("farm_dev_ripe", 164, 664, 110, 30, "全部成熟", function()
             Farm.DebugRipenAll(S.data)
             Save.Write(S.data)
             toast("测试：所有作物已成熟")
         end, { fontSize = 12 })
-        UI.Button("farm_dev_rep", 142, 664, 110, 30, "声望 +100", function()
+        UI.Button("farm_dev_rep", 282, 664, 110, 30, "声望 +100", function()
             Farm.DebugAddRep(S.data, 100)
             Save.Write(S.data)
             toast("测试：声望 +100")

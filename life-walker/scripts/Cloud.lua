@@ -22,8 +22,10 @@ local function FarmHarvest(d)
 end
 
 local function GuildContribution(d)
+    -- 用「累计获得」而不是经验/余额：花掉不会掉榜，也不会因为不消费一直卡着
     local g = d and d.guild
-    return math.floor((g and g.exp) or 0)
+    if not g then return 0 end
+    return math.floor((g.total or 0) + (g.exp or 0) * 0)
 end
 
 Cloud.Boards = {
@@ -44,7 +46,7 @@ Cloud.Boards = {
     },
     {
         id = "guild", key = "lh_guild", name = "公会贡献", unit = "点",
-        tip = "个人累计公会经验",
+        tip = "累计获得的贡献币",
         value = GuildContribution,
     },
 }
@@ -162,17 +164,18 @@ end
 
 -- ---------------------------------------------------------------- 上传
 --- 有变化才上传，且两次上传至少间隔 SUBMIT_INTERVAL 秒；失败静默（下次再试）
-function Cloud.MaybeSubmit(data)
+---@param force boolean|nil 忽略节流（打开排行榜时用，立刻把最新贡献推上去）
+function Cloud.MaybeSubmit(data, force)
     if not data or not Cloud.Available() then return false end
     local now = os.time()
-    if Cloud._lastAt and now - Cloud._lastAt < SUBMIT_INTERVAL then return false end
+    if not force and Cloud._lastAt and now - Cloud._lastAt < SUBMIT_INTERVAL then return false end
 
     local parts = {}
     for _, b in ipairs(Cloud.Boards) do
         parts[#parts + 1] = tostring(b.value(data) or 0)
     end
     local sig = table.concat(parts, ",")
-    if sig == Cloud._lastSig then return false end
+    if not force and sig == Cloud._lastSig then return false end
 
     local ok = pcall(function()
         local batch = clientCloud:BatchSet()
@@ -186,6 +189,11 @@ function Cloud.MaybeSubmit(data)
         Cloud._lastSig = sig
     end
     return ok
+end
+
+--- 无条件上传一次（打开排行榜时调用，避免贡献了却要等 30 秒节流）
+function Cloud.SubmitNow(data)
+    return Cloud.MaybeSubmit(data, true)
 end
 
 -- ---------------------------------------------------------------- 拉取

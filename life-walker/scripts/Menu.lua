@@ -14,6 +14,7 @@ local Farm = require "Farm"
 local FarmUI = require "FarmUI"
 local Cloud = require "Cloud"
 local RankUI = require "RankUI"
+local FarmWalk = require "FarmWalk"
 
 local Menu = {}
 
@@ -800,14 +801,23 @@ function Menu.DrawTestLab()
         S.testDetail = nil
     end, { fontSize = 13 })
     UI.Text(800, 604, 13, "怪物等级", S.col.dim)
+    -- 测试选关同时同步主线进度：农场（通关 2 关）和无尽（通关 10 关）
+    -- 都靠 stageCleared 解锁，只改选关数字会出现「关卡调上去了农场还是锁着」
+    local function SyncTestLevel(lv)
+        lv = math.max(1, math.min(20, lv))
+        S.testLevel = lv
+        S.data.unlocked = math.max(S.data.unlocked or 1, lv)
+        S.data.stageCleared = math.max(S.data.stageCleared or 0, lv - 1)
+        Save.Write(S.data)
+    end
     UI.Button("test_lv_minus", 880, 594, 36, 34, "-", function()
-        S.testLevel = math.max(1, (S.testLevel or 1) - 1)
+        SyncTestLevel((S.testLevel or 1) - 1)
     end, { fontSize = 16 })
     UI.Panel(922, 594, 64, 34, 8, S.col.panel2, S.col.line, 1)
     UI.Text(954, 611, 15, "Lv." .. (S.testLevel or 1), S.col.text,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     UI.Button("test_lv_plus", 990, 594, 36, 34, "+", function()
-        S.testLevel = math.min(20, (S.testLevel or 1) + 1)
+        SyncTestLevel((S.testLevel or 1) + 1)
     end, { fontSize = 16 })
     local tl = math.max(1, math.min(20, S.testLevel or 1))
     local mhp, matk = Config.MonsterStats(tl, 1, "minion")
@@ -1175,6 +1185,7 @@ function Menu.Draw()
             S.farm = true
             S.farmTab = 1
             S.farmPlot = nil
+            FarmWalk.Reset()
         end, { fontSize = farmOpen and 16 or 11, enabled = farmOpen,
                accent = farmMature and S.col.green or nil })
     UI.Button("settings", 904, 34, 122, 40, "设置", function()
@@ -1297,7 +1308,9 @@ function Menu.Draw()
     end, { fontSize = 15, fill = { 40, 52, 74, 255 }, stroke = S.col.cyan })
     UI.Button("claim", 680, 378, 420, 54, claimLabel, function()
         local g, unlocks, streak, rg, rsp, extraExp = Save.Claim(S.data, S.data.todaySteps)
-        S.selectedLevel = S.data.unlocked
+        -- 步数解锁只是上限；真正能打的是「上一关通关 + 步数够」两者取小，
+        -- 这里跟着改成可挑战关卡，避免主界面显示第 N 关、进去却从头降级
+        S.selectedLevel = Save.MaxPlayable(S.data)
         if g > 0 or unlocks > 0 or rg > 0 then
             local msg = string.format("获得 %d 生息，可分配经验 +%d，解锁 %d 关，连续 %d 天",
                 math.floor(g * Guild.GoldMul(S.data) + 0.5), g + (extraExp or 0), unlocks, streak)
@@ -1328,6 +1341,9 @@ function Menu.Draw()
 
     -- 底部：关卡选择 + 开始
     local maxLv = Save.MaxPlayable(data)
+    -- 选关号绝不能超过实际可挑战关卡（步数够了但没通关时会超），否则显示与进入不一致
+    if (S.selectedLevel or 1) > maxLv then S.selectedLevel = maxLv end
+    if (S.selectedLevel or 1) < 1 then S.selectedLevel = 1 end
     UI.Button("lv_minus", 318, 580, 56, 56, "-", function()
         S.selectedLevel = math.max(1, S.selectedLevel - 1)
     end, { fontSize = 26 })
@@ -1438,7 +1454,14 @@ function Menu.UpdateOverlays(dt)
     if healthDayTimer <= 0 then
         healthDayTimer = 1.0
         if d.dayKey ~= Save.TodayKey(d) then
+            local lostSteps = (not d.claimed) and (d.todaySteps or 0) or 0
             Save.RollDay(d)
+            if lostSteps > 0 then
+                -- 跨天会清空当日步数：不提示的话玩家会以为「任务点了没效果」
+                UI.SetToast("已进入新的一天：昨天的步数未领取已清零", 3.0)
+            else
+                UI.SetToast("已进入新的一天，健康任务已刷新", 2.2)
+            end
         end
     end
     -- 农场作物按现实时间自然成长；成熟时给一次提示，而不是只在打开农场时才算
@@ -1469,6 +1492,9 @@ function Menu.UpdateOverlays(dt)
         end
     end
     if S.restPrompt then S.restPrompt.t = (S.restPrompt.t or 0) + dt end
+    if S.farm and (S.farmTab or 1) == 1 then
+        FarmWalk.Update(dt)
+    end
     if S.meditate then S.meditate.t = (S.meditate.t or 0) + dt end
     -- 冥想时切到冥想音乐（主 BGM 自动压低），结束再淡出
     Audio.SetMeditate(S.meditate ~= nil)

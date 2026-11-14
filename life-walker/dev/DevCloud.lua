@@ -24,7 +24,7 @@ function Start()
     d.farm = d.farm or {}
     d.farm.harvestCount = 21
     d.guild = d.guild or {}
-    d.guild.exp = 640
+    d.guild.total = 640   -- 榜单取「累计获得的贡献币」
 
     -- 1) 无云变量环境（例如纯离线运行时）应安全降级
     local realCloud = rawget(_G, "clientCloud")

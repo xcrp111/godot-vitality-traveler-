@@ -6,6 +6,7 @@ local Save = require "Save"
 local UI = require "UI"
 local S = require "State"
 local Menu = require "Menu"
+local FarmWalk = require "FarmWalk"
 local Run = require "Run"
 local Combat = require "Combat"
 local Screens = require "Screens"
@@ -303,6 +304,7 @@ function HandleMouseDown(eventType, eventData)
     end
     if Combat.AimPointer("down", dx, dy, 0) then return end
     if Combat.JoystickPointer("down", dx, dy) then return end
+    S.clickDX, S.clickDY = dx, dy
     UI.Click(dx, dy)
 end
 
@@ -354,6 +356,7 @@ function HandleTouchBegin(eventType, eventData)
     end
     if Combat.AimPointer("down", dx, dy, tid or 0) then return end
     if Combat.JoystickPointer("down", dx, dy, tid) then return end
+    S.clickDX, S.clickDY = dx, dy
     UI.Click(dx, dy)
 end
 
@@ -411,9 +414,23 @@ function HandleKeyDown(eventType, eventData)
             elseif key == KEY_L then
                 Combat.CastSkill(3)
             elseif key == KEY_E then
-                Combat.UseItem()
+                if S.farm and (S.farmTab or 1) == 1 then
+                    FarmWalk.Interact()
+                else
+                    Combat.UseItem()
+                end
             elseif key == KEY_TAB then
                 Combat.ToggleBuffPanel()
+            elseif key == KEY_H then
+                -- 辅助显示（角色光圈 / 普攻范围 / 瞄准线）开关，方便单看动作
+                S.showAssist = not (S.showAssist ~= false)
+                UI.SetToast(S.showAssist and "已显示角色辅助范围" or "已隐藏角色辅助范围", 1.2)
+            elseif key == KEY_T then
+                -- 战斗慢放：1.0× → 0.5× → 0.25× → 1.0×
+                local cur = S.timeScale or 1
+                S.timeScale = (cur == 1) and 0.5 or ((cur == 0.5) and 0.25 or 1)
+                UI.SetToast(string.format("战斗速度 %s",
+                    (S.timeScale == 1) and "1.0×" or ((S.timeScale == 0.5) and "0.5×" or "0.25×")), 1.2)
             end
         end
     end

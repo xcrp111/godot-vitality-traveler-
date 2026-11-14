@@ -3,6 +3,15 @@
 
 local Config = {}
 
+---@class SkillDef
+---@field id integer
+---@field name string
+---@field short string
+---@field unlockLevel integer
+---@field cd number
+---@field desc string
+---@field element? string   -- 只有法师技能带元素
+
 Config.GAME_TITLE = "生命行者"
 Config.VERSION = "0.1.0"
 Config.DESIGN_W = 1280
@@ -685,7 +694,7 @@ Config.ClassBuffs = {
               mod = {}, flag = { chainSymbiosis = 1, debuffChance = 0.4, comboMaster = 1 } },
             { id = "sw_c_compensate", name = "代偿流转", desc = "击杀时抽取目标全部负面并储存；接下来 5 次攻击将其施加给新敌人。代价：储存负面触发的连携伤害 -35%。",
               mod = {}, flag = { compensate = 1 } },
-            { id = "sw_c_misalign", name = "错位反应", desc = "解锁错位连携：挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡。代价：错位连携强度只有 60%。",
+            { id = "sw_c_misalign", name = "错位反应", desc = "解锁错位连携：目标同时存在挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡（并存即触发，只消耗用到的两种负面）。代价：错位连携强度只有 60%。",
               mod = {}, flag = { misalign = 1, comboMaster = 1 } },
             { id = "sw_c_dance", name = "剑舞流转", desc = "旋刃横斩、瞬影连斩命中缩短格挡冷却；格挡成功刷新这两个技能；两者命中直接将挫裂叠满。代价：这两个技能冷却 +25%。",
               mod = {}, flag = { danceFlow = 1, spinCdMul = 0.25, blinkCdMul = 0.25 } },
@@ -758,13 +767,13 @@ Config.ClassBuffs = {
               mod = {}, flag = { shockRefund = 0.5, spreadAdd = 0.5 } },
         },
         gold = {
-            { id = "sp_g_blood", name = "嗜血裁决", desc = "1A 伤害 +40% 且吸血 8%；2A 伤害 +45% 并附加 8% 真实伤害；3A 必定暴击、伤害 +50%，暴击命中直接叠满失衡。",
+            { id = "sp_g_blood", name = "嗜血裁决", desc = "1A 伤害 +40% 且吸血 8%；2A 伤害 +45%，命中额外造成 8% 攻击力真实伤害（无视减伤）；3A 必定暴击、伤害 +50%，暴击命中直接叠满失衡。",
               mod = {}, flag = { a1Pct = 0.4, a1Lifesteal = 0.08, a2Pct = 0.45,
                   a2True = 0.08, a3Pct = 0.5, a3Crit = 1, a3CritMaxStagger = 1 } },
             { id = "sp_g_chase", name = "破军追猎", desc = "突刺距离 +20%，之后 3 秒普攻 +55%；对 35% 生命以下敌人额外 +40% 伤害；击杀永久 +3% 攻击；3A 命中带挫裂目标触发震荡。",
               mod = {}, flag = { dashDist = 0.2, next3aPct = 0.55, executePct = 0.4,
                   killAtkPct = 0.03, a3Combo = 1 } },
-            { id = "sp_g_bastion", name = "固阵壁垒", desc = "铁枪固守 +0.7 秒、减伤 +15%；成功弹开子弹时反击 2.5 倍并施加失衡；生命上限 +20%。",
+            { id = "sp_g_bastion", name = "固阵壁垒", desc = "铁枪固守 +0.7 秒、减伤 +15%；固守期间子弹不再造成伤害，改为沿原弹道反弹回去，反弹造成 2.5 倍伤害并施加失衡；生命上限 +20%。",
               mod = { hpPct = 0.2 }, flag = { guardDur = 0.7, guardDR = 0.15,
                   guardReflect = 2.5, reflectStagger = 1 } },
             { id = "sp_g_wind", name = "枪风无尽", desc = "第二段普攻留下枪风领域（每 0.5 秒 0.4 倍伤害）；普攻范围 +15%、伤害 +48%，领域内敌人持续积累失衡。",
@@ -774,7 +783,7 @@ Config.ClassBuffs = {
                   comboMaster = 1, momentumGainMul = 0.7, debuffCap2 = 1 } },
             { id = "sp_g_echo", name = "Debuff回响", desc = "触发物理连携后向周围敌人施加 1 层随机负面。代价：连携后 5 秒内技能冷却 +20%。",
               mod = {}, flag = { comboEcho = 1 } },
-            { id = "sp_g_return", name = "飞枪轮回", desc = "掷枪会折返，往返两段伤害；每段施加失衡；震荡连携伤害 +40%。代价：掷枪冷却 +2 秒。",
+            { id = "sp_g_return", name = "飞枪轮回", desc = "掷枪会折返并追回手中，接住时返还 2 秒掷枪冷却；往返两段伤害；每段施加失衡；震荡连携伤害 +40%。代价：掷枪冷却 +2 秒。",
               mod = {}, flag = { throwReturn = 1, throwStagger = 1, comboDmg = 0.4, throwCd = 2 } },
             { id = "sp_g_backcharge", name = "奔突回锋", desc = "回马枪获得 2 层充能；命中 35% 概率给周围敌人挂失衡；消耗枪势释放回马枪不消耗层数。代价：回马枪冷却 +1 秒。",
               mod = {}, flag = { backCharges = 1, backStaggerChance = 0.35,
@@ -787,14 +796,14 @@ Config.ClassBuffs = {
             { id = "sp_c_shadow", name = "逐影千旋", desc = "残影复刻技能 55% 伤害，复刻命中也能积攒枪势、施加失衡；所有伤害 +30%。",
               mod = {}, flag = { phantomPct = 0.55, allDmgPct = 0.3,
                   phantomMomentum = 1, phantomStagger = 1 } },
-            { id = "sp_c_charge", name = "猛攻蓄力", desc = "每次 3A 命中叠加 1 层重击（每层 3A 伤害 +7%，最多 10 层）；铁枪固守结束追加 3.2 倍重劈；重击自带 12% 减伤并大范围施加失衡。",
+            { id = "sp_c_charge", name = "猛攻蓄力", desc = "每次普攻命中叠加 1 层重击（3A 额外再叠 1 层，每层 3A 伤害 +7%，最多 10 层）；铁枪固守结束时蓄下一次 3.2 倍重劈，命中下一个目标时结算；重击自带 12% 减伤。",
               mod = {}, flag = { chargePct = 0.07, guardSlam = 3.2, heavyDR = 0.12,
                   heavyStagger = 1, guardSlamCombo = 1 } },
             { id = "sp_c_symbiosis", name = "武链共生", desc = "攻击 40% 概率额外施加另外两种物理负面；可触发全部三套连携。代价：原生枪势不再施加失衡，负面叠层上限减半。",
               mod = {}, flag = { chainSymbiosis = 1, debuffChance = 0.4, comboMaster = 1 } },
             { id = "sp_c_compensate", name = "代偿流转", desc = "击杀时抽取目标全部负面并储存；接下来 5 次攻击将其施加给新敌人。代价：储存负面触发的连携伤害 -35%。",
               mod = {}, flag = { compensate = 1 } },
-            { id = "sp_c_misalign", name = "错位反应", desc = "解锁错位连携：挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡。代价：错位连携强度只有 60%。",
+            { id = "sp_c_misalign", name = "错位反应", desc = "解锁错位连携：目标同时存在挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡（并存即触发，只消耗用到的两种负面）。代价：错位连携强度只有 60%。",
               mod = {}, flag = { misalign = 1, comboMaster = 1 } },
             { id = "sp_c_cycle", name = "枪势轮回", desc = "掷枪、回马枪、枪阵震地命中也能获得枪势；这三个技能不消耗枪势；震荡时 20% 概率挂猎痕。代价：三个技能冷却 +30%，枪势自然获取 -40%。",
               mod = {}, flag = { momentumOnSkill = 1, momentumFreeNew = 1,
@@ -831,18 +840,18 @@ Config.ClassBuffs = {
               mod = {}, flag = { rapidDur = 1.5 } },
             { id = "ra_b_snipe", name = "冲击爆裂", desc = "穿魂狙击命中后产生 1.3 倍范围爆炸并叠加猎痕。",
               mod = {}, flag = { snipeBoom = 1.3 } },
-            { id = "ra_b_mark", name = "续能标记", desc = "普攻命中带猎痕目标时减少技能冷却 0.4 秒，对其普攻伤害额外 +12%。",
-              mod = {}, flag = { huntCdr = 0.4, huntBasicPct = 0.12 } },
+            { id = "ra_b_mark", name = "续能标记", desc = "普攻命中带猎痕目标时减少技能冷却 0.2 秒，对其普攻伤害额外 +6%。",
+              mod = {}, flag = { huntCdr = 0.2, huntBasicPct = 0.06 } },
             { id = "ra_b_leech", name = "汲取箭矢", desc = "普攻伤害 +13%，命中回复 3% 生命。",
               mod = { basicPct = 0.13 }, flag = { basicLifesteal = 0.03 } },
             { id = "ra_b_mist", name = "迷雾隐匿", desc = "受到伤害降低 8%。",
               mod = {}, flag = { hurtReduction = 0.08 } },
             { id = "ra_b_rapid2", name = "急速续射", desc = "普攻伤害 +16%，精准速射每层攻速额外 +4%。",
               mod = { basicPct = 0.16 }, flag = { rapidPct = 0.04 } },
-            { id = "ra_b_slow", name = "减速箭矢", desc = "普攻使目标减速 20%，普攻伤害 +11%。",
+            { id = "ra_b_slow", name = "减速箭矢", desc = "普攻使目标减速 20%（持续 2 秒，重复命中会刷新），普攻伤害 +11%。",
               mod = { basicPct = 0.11 }, flag = { basicSlow = 0.2 } },
-            { id = "ra_b_trap", name = "迟滞罗网", desc = "陷阱减速 +20%、冷却 -0.5 秒，狩猎契机持续 +1 秒。",
-              mod = {}, flag = { trapSlow = 0.2, trapCd = -0.5, trapCritDur = 1 } },
+            { id = "ra_b_trap", name = "迟滞罗网", desc = "陷阱减速 +20%、冷却 -0.5 秒，陷阱额外保留 1 层狩猎契机（下次普攻必定暴击，最多叠 3 层）。",
+              mod = {}, flag = { trapSlow = 0.2, trapCd = -0.5, trapCrit = 1 } },
             { id = "ra_b_volley", name = "齐射增益", desc = "箭影连射 +1 支箭，伤害 +13%。",
               mod = {}, flag = { volleyArrows = 1, volleyPct = 0.13 } },
             { id = "ra_b_swap", name = "瞬跃增益", desc = "掠袭换位后该次普攻伤害额外 +8%，瞬移后移速 +10%，该次普攻 +12%。",
@@ -851,7 +860,7 @@ Config.ClassBuffs = {
         purple = {
             { id = "ra_p_stacks", name = "多层烙印", desc = "普攻一次叠加 2 层猎痕。",
               mod = {}, flag = { huntPerHit = 1 } },
-            { id = "ra_p_frost", name = "凝固寒箭", desc = "普攻使目标减速 30%，普攻伤害 +25%。",
+            { id = "ra_p_frost", name = "凝固寒箭", desc = "普攻使目标减速 30%（持续 2 秒，重复命中会刷新），普攻伤害 +25%。",
               mod = { basicPct = 0.25 }, flag = { basicSlow = 0.3 } },
             { id = "ra_p_dodge2", name = "二段疾退", desc = "疾退腾挪额外获得 1 层狩猎冲动，冷却 -0.5 秒。",
               mod = {}, flag = { dodgeStacks = 1, r2Cd = -0.5 } },
@@ -873,8 +882,8 @@ Config.ClassBuffs = {
               mod = {}, flag = { staggerOnHunt = 0.3, comboMaster = 1 } },
             { id = "ra_p_illusion", name = "虚影回响", desc = "释放技能时 50% 概率召唤虚影，复刻该技能 50% 伤害。",
               mod = {}, flag = { illusionChance = 0.50 } },
-            { id = "ra_p_trap2", name = "诱捕烙印", desc = "陷阱触发时一次叠 2 层猎痕，狩猎契机持续 +2 秒。",
-              mod = {}, flag = { trapHuntStacks = 2, trapCritDur = 2 } },
+            { id = "ra_p_trap2", name = "诱捕烙印", desc = "陷阱触发时施加 3 层猎痕，并额外获得 1 层狩猎契机（下次普攻必定暴击，最多叠 3 层）。",
+              mod = {}, flag = { trapHuntStacks = 2, trapCrit = 1 } },
             { id = "ra_p_volley2", name = "掠影疾射", desc = "箭影连射 +2 支箭，掠袭换位冷却 -2 秒。",
               mod = {}, flag = { volleyArrows = 2, swapCd = -2 } },
             { id = "ra_p_swap2", name = "瞬猎奔袭", desc = "掠袭换位对周围施加猎痕，换位后第一次攻击 +20% 伤害。",
@@ -908,7 +917,7 @@ Config.ClassBuffs = {
               mod = {}, flag = { chainSymbiosis = 1, debuffChance = 0.4, comboMaster = 1 } },
             { id = "ra_c_compensate", name = "代偿流转", desc = "击杀时抽取目标全部负面并储存；接下来 5 次攻击将其施加给新敌人。代价：储存负面触发的连携伤害 -35%。",
               mod = {}, flag = { compensate = 1 } },
-            { id = "ra_c_misalign", name = "错位反应", desc = "解锁错位连携：挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡。代价：错位连携强度只有 60%。",
+            { id = "ra_c_misalign", name = "错位反应", desc = "解锁错位连携：目标同时存在挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡（并存即触发，只消耗用到的两种负面）。代价：错位连携强度只有 60%。",
               mod = {}, flag = { misalign = 1, comboMaster = 1 } },
             { id = "ra_c_cycle", name = "狩命轮转", desc = "陷阱触发刷新箭影连射、掠袭换位；箭影连射/掠袭命中减少陷阱冷却；三者命中都可触发追猎。",
               mod = {}, flag = { huntCycle = 1, comboHuntChance = 0.2, trapCd = -2 } },
@@ -1038,6 +1047,7 @@ Config.ClassBuffSkills = {
         sw_w_stancedur = { 3 }, sw_w_vamp = { 3 }, sw_b_shock = { 3 }, sw_p_control = { 3 },
         sw_g_immovable = { 3 },
         sw_w_spin = { 4 }, sw_b_whirl = { 4 }, sw_p_spin = { 4 }, sw_g_whirl2 = { 4 },
+        sw_p_stagger = { 4 },   -- 借势破斩依赖旋刃横斩，没带就不该刷出来
         sw_w_guard = { 5 }, sw_b_guardheal = { 5 }, sw_p_parry2 = { 5 }, sw_g_guard3 = { 5 },
         sw_w_blink = { 6 }, sw_b_double = { 6 }, sw_p_blinkcd = { 6 }, sw_g_three = { 6 },
         sw_c_dance = { 4, 6 },
@@ -1383,7 +1393,7 @@ Config.ClassSkills = {
         {
             id = 2, name = "疾退腾挪", short = "退", unlockLevel = 1,
             cd = 7.0,
-            desc = "向后翻滚并短暂无敌 0.3 秒，获得 1 层狩猎冲动；翻滚期间碰到敌人子弹会额外补充 1 层。",
+            desc = "向摇杆方向翻滚（没有输入时向后撤）并短暂无敌 0.3 秒，获得 1 层狩猎冲动；翻滚后下一次普攻必定暴击；精准速射期间击杀敌人会立刻刷新本技能。",
         },
         {
             id = 3, name = "穿魂狙击", short = "狙", unlockLevel = 3,
@@ -1398,7 +1408,7 @@ Config.ClassSkills = {
         {
             id = 5, name = "箭影连射", short = "连", unlockLevel = 7,
             cd = 5.5,
-            desc = "向面前扇形射出 4 支箭，每支 0.85 倍伤害并施加猎痕；命中带失衡目标可触发追猎连携。",
+            desc = "向面前扇形射出 4 支箭，每支 0.85 倍伤害并给目标挂 1 层猎痕（猎痕可触发追猎）；命中带失衡目标可触发追猎连携。",
         },
         {
             id = 6, name = "掠袭换位", short = "换", unlockLevel = 9,
@@ -1501,6 +1511,7 @@ function Config.SetClass(id)
     end
 end
 
+---@return SkillDef|nil
 function Config.SkillByID(id)
     for _, s in ipairs(Config.Skills) do
         if s.id == id then return s end

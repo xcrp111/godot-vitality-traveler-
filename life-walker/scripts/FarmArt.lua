@@ -66,4 +66,46 @@ function FarmArt.HitTest(dx, dy)
     end
     return nil
 end
+-- ---------------------------------------------------------------- 作物序列帧
+-- assets/image/farm/crops.png：4 列 × 9 行 @256，列 = 发芽 / 生长 / 成熟 / 果实
+FarmArt.CROP_PATH = "image/farm/crops.png"
+FarmArt.CROP_CELL = 256
+
+-- 行号（1 开始）→ 作物 id，按美术给的顺序定的；如果对不上改这里就行
+FarmArt.CropRow = {
+    ice = 1, thunder = 2, gold = 3, life = 4, mushroom = 5,
+    chaos = 6, timevine = 7, fire = 8, phoenix = 9,
+}
+
+--- 画某种作物的第 col 列（1 发芽 / 2 生长 / 3 成熟 / 4 果实）
+---@param cropId string
+---@param col integer
+---@param x number 左
+---@param y number 上
+---@param w number
+---@param h number
+---@return boolean
+function FarmArt.DrawCrop(cropId, col, x, y, w, h, alpha)
+    local row = FarmArt.CropRow[cropId]
+    if not row then return false end
+    local cell = FarmArt.CROP_CELL
+    return UI.ImageRect(FarmArt.CROP_PATH,
+        (col - 1) * cell, (row - 1) * cell, cell, cell,
+        x, y, w, h, alpha)
+end
+
+--- 已开垦的地块贴图（泥土），画在作物下面
+--- 贴图本身已经去掉了绿草边；四周再多画 4px，
+--- 底图上每块地自带一圈草皮，贴图的圆角处会透出来，
+--- 所以先垫一层土色圆角底把草皮完全盖住，再叠土块贴图。
+FarmArt.PLOT_PATH = "image/farm/plot_tilled.png"
+FarmArt.PLOT_PAD = 4
+FarmArt.PLOT_SOIL = { 118, 64, 28, 255 }
+function FarmArt.DrawPlotTile(x, y, w, h)
+    local p = FarmArt.PLOT_PAD
+    local bx, by, bw, bh = x - p, y - p, w + p * 2, h + p * 2
+    UI.Panel(bx, by, bw, bh, 11, FarmArt.PLOT_SOIL)
+    return UI.Image(FarmArt.PLOT_PATH, bx, by, bw, bh)
+end
+
 return FarmArt

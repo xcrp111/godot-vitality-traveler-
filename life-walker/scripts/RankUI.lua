@@ -7,6 +7,13 @@ local Cloud = require "Cloud"
 
 local RankUI = {}
 
+-- 实时性：打开页面先把本地最新贡献推上去，等一拍再强制拉一次；
+-- 停留期间每 12 秒自动强刷，避免「榜上是旧数据、要关掉再开才更新」。
+local AUTO_REFRESH = 12
+local lastBoard = nil
+local pendingAt = nil
+local autoAt = 0
+
 local MEDAL = {
     { 240, 205, 90 },    -- 第 1 名
     { 205, 210, 220 },   -- 第 2 名
@@ -112,7 +119,23 @@ end
 -- ---------------------------------------------------------------- 主入口
 function RankUI.Draw()
     local id, board = BoardId()
-    Cloud.Sync(S.data, id)
+    local nowT = os.time()
+    if lastBoard ~= id then
+        -- 切榜 / 刚打开：立刻上传本地进度，1 秒后强制重拉（等上传落库）
+        lastBoard = id
+        Cloud.SubmitNow(S.data)
+        pendingAt = nowT + 1
+        autoAt = nowT + AUTO_REFRESH
+    else
+        Cloud.MaybeSubmit(S.data)
+        if pendingAt and nowT >= pendingAt then
+            pendingAt = nil
+            Cloud.Refresh(id, true)
+        elseif nowT >= autoAt then
+            autoAt = nowT + AUTO_REFRESH
+            Cloud.Refresh(id, true)
+        end
+    end
     local st = Cloud.State(id)
 
     nvgBeginPath(S.ctx)

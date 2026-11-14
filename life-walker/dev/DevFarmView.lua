@@ -35,6 +35,10 @@ function Start()
 
     local iw, ih = UI.ImageSize("image/farm/farm_map.jpg")
     print(string.format("[FarmView] 底图尺寸 %g x %g", iw, ih))
+    local cw, ch = UI.ImageSize("image/farm/crops.png")
+    print(string.format("[FarmView] 作物图 %g x %g", cw, ch))
+    local ok1 = UI.ImageRect("image/farm/crops.png", 0, 0, 256, 256, 10, 10, 64, 64)
+    print("[FarmView] 试切图 " .. tostring(ok1))
     SubscribeToEvent(S.ctx, "NanoVGRender", "HandleRender")
     SubscribeToEvent("Update", "HandleUpdate")
 end

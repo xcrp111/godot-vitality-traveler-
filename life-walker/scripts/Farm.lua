@@ -296,6 +296,24 @@ function Farm.CropUnlockText(data, crop)
     return "已解锁"
 end
 
+--- 该品级「怎么才能解锁」的短文案（商店按钮被禁用时显示，避免玩家以为买不了是 bug）
+---@return string|nil
+function Farm.TierUnlockText(data, seedType)
+    if Farm.HasTier(data, seedType) then return nil end
+    local parts, seen = {}, {}
+    for _, c in ipairs(Farm.Crops) do
+        if c.seedType == seedType then
+            local t = Farm.CropUnlockText(data, c)
+            if not seen[t] then
+                seen[t] = true
+                parts[#parts + 1] = t
+            end
+        end
+    end
+    if #parts == 0 then return "该品级还没有解锁作物" end
+    return table.concat(parts, " 或 ")
+end
+
 function Farm.UnlockedCrops(data)
     local list = {}
     for _, c in ipairs(Farm.Crops) do
@@ -767,6 +785,38 @@ function Farm.DebugRipenAll(data)
             end
         end
     end
+end
+
+--- 开发用：把指定地块推进到下一个阶段（不选则推进所有生长中的地）
+---@param data table
+---@param index integer|nil
+---@return integer 推进了几块地
+function Farm.DebugNextStage(data, index)
+    local f = Farm.Ensure(data)
+    if not f then return 0 end
+    local list = {}
+    if index then
+        list[1] = index
+    else
+        for i = 1, f.landCount or 4 do list[#list + 1] = i end
+    end
+    local moved = 0
+    local now = Farm.Now(data)
+    for _, i in ipairs(list) do
+        local info = Farm.PlotInfo(data, i)
+        if info.status == "growing" then
+            local plot = f.plots[i]
+            local elapsed = info.total - info.remain
+            -- 已经到最后一段（成熟期）时，再推一次就是直接可收获
+            local target = (info.stage or 1) >= 3 and (info.total + 1)
+                or (elapsed + info.stageRemain + 1)
+            plot.plantedAt = now - target
+            plot.waterBonus = 0
+            plot.waterAt = 0
+            moved = moved + 1
+        end
+    end
+    return moved
 end
 
 function Farm.DebugAddRep(data, n)

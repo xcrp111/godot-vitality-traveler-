@@ -585,6 +585,8 @@ function Run.OnRoomCleared()
         local data = S.data
         -- 通关记录：下一关要「步数解锁 + 上一关已通关」两个条件都满足才开放
         Save.MarkCleared(data, run.level)
+        -- 通关后立刻把选关推进到新的可挑战关卡，主菜单标识才不会停在旧关卡
+        S.selectedLevel = Save.MaxPlayable(data)
         S.screen = "levelclear"
         S.combat = nil
     else
