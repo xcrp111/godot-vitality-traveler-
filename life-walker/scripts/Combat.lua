@@ -3455,6 +3455,13 @@ function Combat.CastSkill(slot)
         -- 冷却中的分支（提示 / 充能判定）仍走原逻辑，不播施法动作
         return CastSkillNow(slot)
     end
+    -- 记住这一刻的瞄准状态：AimPointer 松手后会立刻清空 cs.aimLock / cs.aimPoint，
+    -- 而真正的施法结算要等命中帧，不能让它退化成自动索敌
+    local aimFace = cs.facing
+    local aimLock = cs.aimLock
+    local aimPoint = cs.aimPoint
+    local lockLeft = cs.facingLock
+
     CharArt.Play(cs, "skill", { skill = id })
     local hitDelay = CharArt.HitDelay("skill", { skill = id })
     -- 起手到命中之间别让自动索敌把方向改掉（手动瞄准时）
@@ -3466,7 +3473,16 @@ function Combat.CastSkill(slot)
         if cs.pendingCast ~= slot then return end
         cs.pendingCast = nil
         if S.combat ~= cs then return end
+        -- 还原手动瞄准：朝向 + 点选目标 + 锁定窗口
+        if aimLock or (lockLeft or 0) > 0 then
+            cs.facing = aimFace
+            cs.aimLock = aimLock
+            cs.aimPoint = aimPoint
+            cs.facingLock = math.max(cs.facingLock or 0, 0.1)
+        end
         CastSkillNow(slot)
+        cs.aimLock = nil
+        cs.aimPoint = nil
     end }
 end
 
