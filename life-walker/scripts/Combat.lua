@@ -3477,10 +3477,11 @@ function Combat.CastSkill(slot)
         if cs.pendingCast ~= slot then return end
         cs.pendingCast = nil
         if S.combat ~= cs then return end
-        -- 还原手动瞄准：朝向 + 点选目标 + 锁定窗口
-        if aimLock or (lockLeft or 0) > 0 then
+        -- 只有「手动瞄准」才还原按下时的方向；没瞄准的（点按 / 按住不动）
+        -- 保持实时朝向，让技能在命中帧按当时的位置重新自动索敌
+        if aimLock then
             cs.facing = aimFace
-            cs.aimLock = aimLock
+            cs.aimLock = true
             cs.aimPoint = aimPoint
             cs.facingLock = math.max(cs.facingLock or 0, 0.1)
         end
