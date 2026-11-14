@@ -53,7 +53,7 @@ function Start()
     check("跨天后领取有生息", gain > 0, gain)
     check("领取后标记已领", d.claimed == true)
     check("早睡奖励已结算", d.earlySleepPending == false, tostring(d.earlySleepPending))
-    check("经验含早睡加成", d.exp >= gain + math.floor(gain * 0.30), d.exp)
+    check("精粹含早睡加成", d.essence >= gain + math.floor(gain * 0.30), d.essence)
 
     -- 同一天重复领取不再发奖励
     local gain2 = Save.Claim(d, 12000)

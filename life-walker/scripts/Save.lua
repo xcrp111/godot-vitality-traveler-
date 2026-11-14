@@ -3,6 +3,7 @@
 
 local Config = require "Config"
 local Guild = require "Guild"
+local Economy = require "Economy"
 local Farm = require "Farm"
 
 local Save = {}
@@ -15,7 +16,10 @@ local function Defaults()
         version = SAVE_VERSION,
         class = "swordsman",    -- 当前出战职业
         gold = 0,
-        exp = 0,                -- 可分配经验池（所有职业共用，需要玩家自己分配）
+        essence = 0,            -- 精粹（每日能量消耗结算产出，用于职业升级 / 局外养成）
+        essenceEarned = 0,      -- 累计获得的精粹（账号等级里程碑，不消耗）
+        accountLevel = 1,       -- 账号等级（由累计获得精粹决定）
+        bodyFat = 0,            -- 体脂率（%）
         levels = { swordsman = 1, spearman = 1, ranger = 1, mage = 1 },   -- 各职业等级
         classExp = { swordsman = 0, spearman = 0, ranger = 0, mage = 0 }, -- 各职业已投入、尚未消耗的经验
         unlocked = 1,           -- 步数解锁到的最高关卡
@@ -172,10 +176,10 @@ end
 ---@param amount number
 ---@return number 实际投入
 function Save.AllocateExp(data, amount)
-    amount = math.floor(math.min(amount, data.exp))
+    amount = math.floor(math.min(amount, data.essence))
     if amount <= 0 then return 0 end
     EnsureMaps(data)
-    data.exp = data.exp - amount
+    data.essence = data.essence - amount
     local class = Save.ActiveClass(data)
     data.classExp[class] = (data.classExp[class] or 0) + amount
     Save.Write(data)
@@ -259,7 +263,7 @@ local function MergeDefaults(data)
             data.classExp[id] = 0
         end
     end
-    if refund > 0 then data.exp = (data.exp or 0) + refund end
+    if refund > 0 then data.essence = (data.essence or 0) + refund end
     data.loadout = nil
     Guild.Ensure(data)   -- 公会存档结构（缺字段补默认）
     Farm.Ensure(data)    -- 农场存档结构
@@ -304,6 +308,28 @@ function Save.Load()
     data = MergeDefaults(data or {})
     Save.RollDay(data)
     return data
+end
+
+-- 按累计精粹刷新账号等级（每级发技能点；超过里程碑表尾按固定增量无限延伸）
+function Save.SyncAccount(data)
+    local e = Config.Economy
+    if not e or not e.accountThresholds then return data.accountLevel end
+    local earned = data.essenceEarned or 0
+    local lv = 1
+    for i, need in ipairs(e.accountThresholds) do
+        if earned >= need then lv = i + 1 else break end
+    end
+    local last = e.accountThresholds[#e.accountThresholds]
+    if last and earned > last then
+        local step = e.accountStepAfterMax or 2000
+        lv = #e.accountThresholds + 1 + math.floor((earned - last) / step)
+    end
+    local prev = data.accountLevel or 1
+    if lv > prev then
+        data.skillPoints = (data.skillPoints or 0) + (lv - prev) * (e.skillPointPerLevel or 1)
+    end
+    data.accountLevel = math.max(1, lv)
+    return data.accountLevel
 end
 
 -- 实际可挑战的最高关卡：既要步数解锁，也要把上一关打完
@@ -377,18 +403,41 @@ function Save.Claim(data, steps)
     end
 
     local gain, pct = Config.StepGold(steps)
-    -- 公会科技·经济线：局外生息收益 +1%/级
+    -- 公会科技·经济线：局外生息收益 +1%/级（生息 = 步数结算）
     local goldGain = math.floor(gain * Guild.GoldMul(data) + 0.5)
     data.gold = data.gold + goldGain
-    data.exp = data.exp + gain
 
-    -- 早睡奖励：昨天打过卡，今天领取时额外给经验
-    local extraExp = 0
+    -- 先算今天的连击天数：精粹倍率要用它
+    local dayNum = math.floor(os.time() / 86400) + (data.dayOffset or 0)
+    local nextStreak = data.streak
+    if pct >= Config.Economy.streakGatePercent then
+        if data.lastActiveDay == dayNum - 1 then
+            nextStreak = data.streak + 1
+        elseif data.lastActiveDay ~= dayNum then
+            nextStreak = 1
+        end
+    else
+        nextStreak = 0
+    end
+
+    -- 精粹：v2 口径（体脂率阶梯 × 连击倍率 + 每日固定项），只来自每日运动结算
+    local lvBefore = data.accountLevel or 1
+    local essenceGain = Economy.DailyEssence(data, steps, nextStreak)
+    data.essence = (data.essence or 0) + essenceGain
+    data.essenceEarned = (data.essenceEarned or 0) + essenceGain
+    Save.SyncAccount(data)
+
+    -- 早睡奖励：昨天打过卡，今天领取时额外给精粹
+    local extraEss = 0
     if data.earlySleepPending then
-        extraExp = math.floor(gain * Config.Health.earlySleepExpPct)
-        data.exp = data.exp + extraExp
+        extraEss = math.floor(essenceGain * Config.Health.earlySleepExpPct)
+        data.essence = data.essence + extraEss
+        data.essenceEarned = (data.essenceEarned or 0) + extraEss
+        Save.SyncAccount(data)
         data.earlySleepPending = false
     end
+    local lvUp = (data.accountLevel or 1) - lvBefore
+    data.streak = nextStreak
 
     local unlocks = 0
     for _, need in ipairs(Config.StepUnlockThresholds) do
@@ -397,23 +446,11 @@ function Save.Claim(data, steps)
         end
     end
     local before = data.unlocked
-    -- 步数解锁是「按今天走到了第几档」算，不是每天累加；只有开发按钮能直接全解锁
     data.unlocked = math.max(before, math.min(20, 1 + unlocks))
-    if data.unlocked > 20 then
-        data.unlocked = 20
-    end
+    if data.unlocked > 20 then data.unlocked = 20 end
     local gotUnlocked = data.unlocked - before
-
-    local dayNum = math.floor(os.time() / 86400) + (data.dayOffset or 0)
-    if pct >= 10 then
-        if data.lastActiveDay == dayNum - 1 then
-            data.streak = data.streak + 1
-        elseif data.lastActiveDay ~= dayNum then
-            data.streak = 1
-        end
+    if pct >= Config.Economy.streakGatePercent then
         data.lastActiveDay = dayNum
-    else
-        data.streak = 0
     end
 
     local rewardGold, rewardSp = 0, 0
@@ -430,7 +467,7 @@ function Save.Claim(data, steps)
 
     data.claimed = true
     Save.Write(data)
-    return gain, gotUnlocked, data.streak, rewardGold, rewardSp, extraExp
+    return essenceGain, gotUnlocked, data.streak, rewardGold, rewardSp, extraEss, lvUp
 end
 
 -- 开发用：重置今日领取
@@ -485,11 +522,11 @@ function Save.LevelUp(data)
     if not cost then
         return false, "已经满级"
     end
-    if (data.exp or 0) < cost then
-        return false, string.format("可分配经验不足，还差 %d", math.ceil(cost - (data.exp or 0)))
+    if (data.essence or 0) < cost then
+        return false, string.format("可分配经验不足，还差 %d", math.ceil(cost - (data.essence or 0)))
     end
     local class = Save.ActiveClass(data)
-    data.exp = data.exp - cost
+    data.essence = data.essence - cost
     data.levels[class] = level + 1
     Save.Write(data)
     return true, Config.Class().name .. "升到 Lv." .. (level + 1)
@@ -629,7 +666,9 @@ function Save.RecordEndless(data, layer)
         res.gold = e.scoreGold + e.scoreGoldPerLayer * layer
         res.exp = e.scoreExp + e.scoreExpPerLayer * layer
         data.gold = (data.gold or 0) + res.gold
-        data.exp = (data.exp or 0) + res.exp
+        data.essence = (data.essence or 0) + res.exp
+        data.essenceEarned = (data.essenceEarned or 0) + res.exp
+        Save.SyncAccount(data)
         -- 破纪录 → 记录勋章升 1 级
         if (data.endlessMedal or 0) < e.medalMax then
             data.endlessMedal = (data.endlessMedal or 0) + 1

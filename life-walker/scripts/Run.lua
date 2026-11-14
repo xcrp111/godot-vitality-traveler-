@@ -362,7 +362,7 @@ end
 -- 破纪录 / 勋章升级的提示
 function Run.AnnounceEndlessRecord(res)
     if not res or not res.best then return end
-    local msg = string.format("新纪录：第 %d 层！（生息 +%d，经验 +%d）", res.layer, res.gold, res.exp)
+    local msg = string.format("新纪录：第 %d 层！（生息 +%d，精粹 +%d）", res.layer, res.gold, res.exp)
     if (res.medalUp or 0) > 0 then
         msg = msg .. string.format(" 记录勋章升到 Lv.%d", res.medal)
     end

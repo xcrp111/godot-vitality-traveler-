@@ -23,6 +23,10 @@
 ---@field class string
 ---@field gold number
 ---@field exp number
+---@field essence number
+---@field essenceEarned number
+---@field accountLevel integer
+---@field bodyFat number
 ---@field levels table<string, integer>
 ---@field classExp table<string, number>
 ---@field unlocked integer
@@ -117,6 +121,22 @@
 ---@field testLevel integer
 ---@field testDetail table|nil
 ---@field confirmReset boolean
+---@field panelMode any
+---@field hover any
+---@field hoverIsMouse any
+---@field camp any
+---@field campTab any
+---@field campBagPage any
+---@field bag any
+---@field bagPage any
+---@field pet any
+---@field petTab any
+---@field petBagTab any
+---@field petEggScroll any
+---@field petEggDrag any
+---@field petAttr any
+---@field petLastDraw any
+---@field petPickLow any
 ---@field showAssist boolean
 ---@field timeScale number
 ---@field showStatus boolean
@@ -245,6 +265,22 @@ local S = {
     settingsTab = "control",
     settingsWipeConfirm = false,
     confirmReset = false,
+    panelMode = nil,
+    bag = nil,
+    bagPage = nil,
+    pet = nil,
+    petTab = nil,
+    petBagTab = nil,
+    petEggScroll = nil,
+    petEggDrag = nil,
+    petAttr = nil,
+    petLastDraw = nil,
+    petPickLow = nil,
+    camp = nil,
+    campTab = nil,
+    campBagPage = nil,
+    hover = nil,
+    hoverIsMouse = nil,
     showAssist = true,     -- 角色辅助显示：光圈 / 普攻范围 / 瞄准线
     timeScale = 1,         -- 战斗时间倍率（慢放看动作，1 / 0.5 / 0.25）
     showStatus = false,

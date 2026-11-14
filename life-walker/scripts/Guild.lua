@@ -50,16 +50,16 @@ Guild.WeeklyItems = {
         desc = "局内宝箱钥匙：跑图时在地图上开一次额外三选一奖励房",
     },
     {
-        id = "crystal", name = "角色经验结晶（大）", price = 150, limit = 5, minLevel = 2, rarity = "稀有",
-        desc = "特殊货币，+300 可分配经验（加速局外角色等级）",
+        id = "crystal", name = "精粹结晶（大）", price = 150, limit = 5, minLevel = 2, rarity = "稀有",
+        desc = "特殊货币，+300 精粹（加速局外角色等级）",
     },
     {
-        id = "reset", name = "经验重置券", price = 300, limit = 1, minLevel = 3, rarity = "史诗",
-        desc = "当前职业等级回到 Lv.1，已投入的升级经验全额退回经验池",
+        id = "reset", name = "精粹重置券", price = 300, limit = 1, minLevel = 3, rarity = "史诗",
+        desc = "当前职业等级回到 Lv.1，已投入的升级精粹全额退回精粹池",
     },
     {
         id = "relic", name = "星辉结晶（巨）", price = 500, limit = 1, minLevel = 4, rarity = "传说",
-        desc = "+1500 可分配经验，并额外 +1 技能点",
+        desc = "+1500 精粹，并额外 +1 技能点",
     },
     {
         id = "sigil", name = "公会秘银钥匙", price = 450, limit = 1, minLevel = 5, rarity = "传说",
@@ -417,12 +417,12 @@ function Guild.BuyWeekly(data, id)
         g.keys = (g.keys or 0) + 1
         return true, "兑换成功：钥匙 +1（当前 " .. g.keys .. " 把）"
     elseif id == "crystal" then
-        data.exp = (data.exp or 0) + 300
-        return true, "兑换成功：可分配经验 +300（当前 " .. data.exp .. "）"
+        data.essence = (data.essence or 0) + 300
+        return true, "兑换成功：精粹 +300（当前 " .. data.essence .. "）"
     elseif id == "relic" then
-        data.exp = (data.exp or 0) + 1500
+        data.essence = (data.essence or 0) + 1500
         data.skillPoints = (data.skillPoints or 0) + 1
-        return true, "兑换成功：可分配经验 +1500，技能点 +1"
+        return true, "兑换成功：精粹 +1500，技能点 +1"
     elseif id == "sigil" then
         g.keys = (g.keys or 0) + 1
         g.perks.reroll = (g.perks.reroll or 0) + 1
@@ -442,9 +442,9 @@ function Guild.BuyWeekly(data, id)
             refund = refund + (Config.LevelCost[i] or 0)
         end
         data.levels[class] = 1
-        data.exp = (data.exp or 0) + refund
+        data.essence = (data.essence or 0) + refund
         Save.Write(data)
-        return true, "已重置 " .. Config.Classes[class].name .. " 到 Lv.1，退回 " .. refund .. " 经验"
+        return true, "已重置 " .. Config.Classes[class].name .. " 到 Lv.1，退回 " .. refund .. " 精粹"
     end
     return true, "兑换成功"
 end

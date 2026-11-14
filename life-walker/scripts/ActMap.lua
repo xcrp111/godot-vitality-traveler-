@@ -853,7 +853,7 @@ function ActMap.ActEndReward(level)
     return {
         actId = act.id, actName = act.name,
         gold = act.reward.gold, exp = act.reward.exp,
-        text = string.format("「%s」幕完成：+%d 金币、+%d 可分配经验。", act.name, act.reward.gold, act.reward.exp),
+        text = string.format("「%s」幕完成：+%d 生息、+%d 精粹。", act.name, act.reward.gold, act.reward.exp),
     }
 end
 

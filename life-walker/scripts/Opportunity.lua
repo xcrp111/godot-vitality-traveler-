@@ -8,7 +8,7 @@
 --   1 单位 = 一次标准战斗房 ≈ 12 银币 + 1 次三选一
 --   1% 最大生命 ≈ 0.36 银币        （小药 12 银币/33%，大药 24 银币/66%）
 --   1 个强化品质档 ≈ 22 银币        （白 24 / 蓝 40 / 紫 64 / 金 115）
---   局外 1 金币 ≈ 1 经验            （12000 步 = 533 金币 + 533 经验）
+--   局外 1 生息 ≈ 1 经验            （12000 步 = 533 生息 + 533 经验）
 --
 -- ---------------------------------------------------------------- 地图上只放两个节点
 -- 原来四种机遇房（村 / 遇 / 愿 / 机）挤在 4×4 的地图上太占格子，也把「选择」稀释了。
@@ -87,7 +87,7 @@ Opportunity.CHANCE_MIN_LEVEL = 6
 
 -- ---------------------------------------------------------------- 机遇池
 -- 每条：{ id, kind, weight, minLevel?, cond?, title, text, options = { {label, desc?, cost?, gain?, minLevel?, enabled?} } }
---   cost / gain 的字段：silver 银币、gold 局外金币、exp 局外经验、healPct 回血、
+--   cost / gain 的字段：silver 银币、gold 局外生息、exp 局外经验、healPct 回血、
 --   hpPct 按最大生命扣血、shieldPct 按护盾上限加盾、buff 品质（"white"/"blue"/"purple"/"gold"）、
 --   item 道具数、intel 揭示地图、reroll 免费重随次数、stepRisk 本层后续强度 +1 档
 Opportunity.DEFS = {
@@ -260,7 +260,7 @@ Opportunity.DEFS = {
                 gain = { buff = "blue" },
             },
             {
-                label = "悟", desc = "+25 可分配经验",
+                label = "悟", desc = "+25 精粹",
                 gain = { exp = 25 },
             },
             {
@@ -560,11 +560,11 @@ function Opportunity.ApplySpec(ctx, spec, label)
         end
         if g.gold and g.gold ~= 0 and ctx.hooks.addGold then
             ctx.hooks.addGold(g.gold)
-            lines[#lines + 1] = string.format("%s+%d 金币（局外）。", prefix, g.gold)
+            lines[#lines + 1] = string.format("%s+%d 生息（局外）。", prefix, g.gold)
         end
         if g.exp and g.exp ~= 0 and ctx.hooks.addExp then
             ctx.hooks.addExp(g.exp)
-            lines[#lines + 1] = string.format("%s+%d 可分配经验。", prefix, g.exp)
+            lines[#lines + 1] = string.format("%s+%d 精粹。", prefix, g.exp)
         end
         if g.healPct and g.healPct > 0 then
             local healed = ApplyHeal(ctx, g.healPct)

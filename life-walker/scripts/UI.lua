@@ -245,4 +245,84 @@ function UI.ImageRect(path, sx, sy, sw, sh, dx, dy, dw, dh, alpha)
     return true
 end
 
+function UI.DrawHover()
+    if not S.hoverIsMouse then return end
+    local hx, hy = S.hover.x or -1, S.hover.y or -1
+    if hx < 0 or hy < 0 then return end
+    local hit
+    for i = #S.regions, 1, -1 do
+        local r = S.regions[i]
+        if r.enabled and not r.selfHover
+            and hx >= r.x and hx <= r.x + r.w and hy >= r.y and hy <= r.y + r.h then
+            -- 过大的区域（整屏点击层、滚动列表容器）不画，否则会变成一个大框
+            if r.w <= 520 and r.h <= 140 then
+                hit = r
+                break
+            end
+        end
+    end
+    if not hit then return end
+    local g = 3
+    UI.Panel(hit.x - g, hit.y - g, hit.w + g * 2, hit.h + g * 2, 8,
+        { 255, 255, 255, 26 }, S.col.cyan, 2)
+end
+
+function UI.DrawPress()
+    local p = S.uiPress
+    if not p then return end
+    UI.Panel(p.x, p.y, p.w, p.h, 10, { 255, 255, 255, 20 }, S.col.cyan, 2)
+end
+
+function UI.FillScreen(color)
+    local x, y, w, h = UI.ViewRect()
+    nvgBeginPath(S.ctx)
+    nvgRect(S.ctx, x, y, w, h)
+    nvgFillColor(S.ctx, C(color or S.col.bg))
+    nvgFill(S.ctx)
+end
+
+function UI.Hit(dx, dy)
+    return HitRegion(dx, dy) ~= nil
+end
+
+function UI.PointerCancel()
+    S.uiPress = nil
+end
+
+function UI.PointerDown(dx, dy, tid)
+    local r = HitRegion(dx, dy)
+    if not r then return false end
+    S.uiPress = { id = r.id, x = r.x, y = r.y, w = r.w, h = r.h, tid = tid, fired = false }
+    if r.press then
+        S.uiPress.fired = true
+        if r.onClick then r.onClick() end
+    end
+    return true
+end
+
+function UI.PointerUp(dx, dy)
+    local p = S.uiPress
+    if not p then return false end
+    S.uiPress = nil
+    if p.fired then return true end
+    local r
+    if dx and dy then
+        r = HitRegion(dx, dy)
+    else
+        -- 触屏抬手没有坐标：按 id 找回同一个控件
+        for i = #S.regions, 1, -1 do
+            local cand = S.regions[i]
+            if cand.id == p.id then r = cand break end
+        end
+    end
+    if r and r.id == p.id and r.enabled then
+        if r.onClick then r.onClick() end
+    end
+    return true
+end
+
+function UI.ViewRect()
+    return -S.offX / S.scale, -S.offY / S.scale, S.W / S.scale, S.H / S.scale
+end
+
 return UI
