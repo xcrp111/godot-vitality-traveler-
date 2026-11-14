@@ -280,7 +280,7 @@ local S = {
     camp = nil,
     campTab = nil,
     campBagPage = nil,
-    hover = nil,
+    hover = { x = 0, y = 0 },   -- 鼠标悬停坐标（ui 版 main 会写它：必须是表，否则 MouseMove 索引 nil 报错）
     hoverIsMouse = nil,
     levelCards = nil,
     showAssist = true,     -- 角色辅助显示：光圈 / 普攻范围 / 瞄准线
