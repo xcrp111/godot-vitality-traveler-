@@ -2517,13 +2517,10 @@ local BasicAttackNow
 
 -- 普攻：动作先起手，伤害/子弹等到挥击帧（约第 3 帧）再结算，
 -- 这样「看到挥出去」和「怪掉血」是同一时刻，动作才有分量
+-- 普攻：动作和伤害同时发生（不再等命中帧，避免瞄准/手感被延迟影响）
 function Combat.BasicAttack(cs)
-    local p = cs.player
     CharArt.Play(cs, "attack")
-    cs.pendingHits[#cs.pendingHits + 1] = { t = CharArt.HitDelay("attack"), fn = function()
-        if S.combat ~= cs then return end
-        BasicAttackNow(cs)
-    end }
+    BasicAttackNow(cs)
 end
 
 function BasicAttackNow(cs)
@@ -3450,45 +3447,14 @@ function Combat.CastSkill(slot)
     if not cs or cs.showBuffs or cs.paused then return end
     local id = cs.run and cs.run.loadout[slot]
     if not id then return end
-    if cs.pendingCast then return end      -- 0.3 秒内连按只认一次
     local p = cs.player
     local ready = (p.cooldowns[id] or 0) <= 0
         or ((p.freeCharges and p.freeCharges[id]) or 0) > 0
         or ((p.charges and p.charges[id]) or 0) > 0
-    if not ready then
-        -- 冷却中的分支（提示 / 充能判定）仍走原逻辑，不播施法动作
-        return CastSkillNow(slot)
-    end
-    -- 记住这一刻的瞄准状态：AimPointer 松手后会立刻清空 cs.aimLock / cs.aimPoint，
-    -- 而真正的施法结算要等命中帧，不能让它退化成自动索敌
-    local aimFace = cs.facing
-    local aimLock = cs.aimLock
-    local aimPoint = cs.aimPoint
-    local lockLeft = cs.facingLock
-
-    CharArt.Play(cs, "skill", { skill = id })
-    local hitDelay = CharArt.HitDelay("skill", { skill = id })
-    -- 起手到命中之间别让自动索敌把方向改掉（手动瞄准时）
-    if cs.aimLock or (cs.facingLock or 0) > 0 then
-        cs.facingLock = hitDelay + 0.1
-    end
-    cs.pendingCast = slot
-    cs.pendingHits[#cs.pendingHits + 1] = { t = hitDelay, fn = function()
-        if cs.pendingCast ~= slot then return end
-        cs.pendingCast = nil
-        if S.combat ~= cs then return end
-        -- 只有「手动瞄准」才还原按下时的方向；没瞄准的（点按 / 按住不动）
-        -- 保持实时朝向，让技能在命中帧按当时的位置重新自动索敌
-        if aimLock then
-            cs.facing = aimFace
-            cs.aimLock = true
-            cs.aimPoint = aimPoint
-            cs.facingLock = math.max(cs.facingLock or 0, 0.1)
-        end
-        CastSkillNow(slot)
-        cs.aimLock = nil
-        cs.aimPoint = nil
-    end }
+    if ready then CharArt.Play(cs, "skill", { skill = id }) end
+    -- 立即结算：松手那一刻的瞄准状态（aimLock / aimPoint / facing）仍然有效，
+    -- 自动索敌也按当时的位置算，不会因为延迟而用上过期方向
+    return CastSkillNow(slot)
 end
 
 function CastSkillNow(slot)
