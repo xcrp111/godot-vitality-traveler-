@@ -54,7 +54,13 @@ end
 
 local function LoadLevel(level)
     View.level = level
-    math.randomseed(20261107 + level)
+    -- ACTMAP_SEED：强制指定种子（B1 的组内相对档约 10% 概率，固定种子下 1~20 关凑巧都不出）
+    local seed = 20261107 + level
+    if os and os.getenv then
+        local v = tonumber(os.getenv("ACTMAP_SEED") or "")
+        if v then seed = math.floor(v) end
+    end
+    math.randomseed(seed)
     View.cards = ActMap.RollCards(level)
     BuildLayer(1)
 end
@@ -66,6 +72,54 @@ local function EnvLevel()
         if v then return math.max(1, math.min(20, math.floor(v))) end
     end
     return 12
+end
+
+-- 排查用：ACTMAP_SCAN=1 时只打印不截图。
+local function ScanRelativeLabels()
+    -- 按 LoadLevel 的种子先扫一遍（这些就是能用 ACTMAP_LEVEL 直接截到的图）
+    local out = {}
+    for lv = 1, 20 do
+        math.randomseed(20261107 + lv)
+        local cards = ActMap.RollCards(lv)
+        local n = 0
+        for _, c in ipairs(cards) do
+            if c.labelRelative then n = n + 1 end
+        end
+        out[#out + 1] = lv .. "=" .. n
+    end
+    print("[Scan] 相对档张数（关卡=张数）：" .. table.concat(out, " "))
+
+    -- 再抽样确认机制本身有效：换个种子跑一大堆，看出现率是否接近 DevActMap 的 22/200
+    local rolls, hits, firstSeed, firstLevel = 0, 0, nil, nil
+    for k = 1, 10 do
+        for lv = 1, 20 do
+            local seed = 20261107 + lv + k * 37
+            math.randomseed(seed)
+            local cards = ActMap.RollCards(lv)
+            rolls = rolls + 1
+            for _, c in ipairs(cards) do
+                if c.labelRelative then
+                    hits = hits + 1
+                    if not firstSeed then firstSeed, firstLevel = seed, lv end
+                    break
+                end
+            end
+        end
+    end
+    print(string.format("[Scan] 抽样 %d 次抽卡，出现组内相对档 %d 次（%.1f%%）",
+        rolls, hits, hits / math.max(1, rolls) * 100))
+    if firstSeed then
+        print(string.format("[Scan] 想截图就用：ACTMAP_LEVEL=%d ACTMAP_SEED=%d", firstLevel, firstSeed))
+    end
+end
+
+local function EnvScan()
+    return os and os.getenv and os.getenv("ACTMAP_SCAN") == "1"
+end
+
+-- ACTMAP_SCAN：只打印排查信息（哪些关卡会出组内相对档），不截图。
+local function EnvScan()
+    return os and os.getenv and os.getenv("ACTMAP_SCAN") == "1"
 end
 
 -- ---------------------------------------------------------------- 绘制
@@ -407,6 +461,7 @@ function Start()
 
     View.level = EnvLevel()
     LoadLevel(View.level)
+    if EnvScan() then ScanRelativeLabels() end
 
     -- 自检：把布局数字打出来，方便在无截图时也能核对
     local cardW, gap = 232, 20
