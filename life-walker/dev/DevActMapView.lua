@@ -262,14 +262,16 @@ local function DrawCards()
         local badgeW, badgeH = 92, 24
         local badgeX, badgeY = winX + winW - badgeW - 8, winY + 8
         UI.Panel(badgeX, badgeY, badgeW, badgeH, 12, rc, { 24, 20, 32, 200 }, 1)
-        UI.Text(badgeX + badgeW / 2, badgeY + badgeH / 2, 13,
+        -- B1：档名是按本组相对位置微调的卡打一个小点（数字仍是绝对强度）。
+        -- 两个坑：① 放徽标外侧会被牌面纹章的同心环吞掉（实测根本看不见）；
+        -- ② 直接 nvgFillColor 传颜色表无效（那是给 UI.Panel 用的），所以用 UI.Panel 画圆点。
+        local relativeDot = card.labelRelative and 8 or 0
+        if card.labelRelative then
+            UI.Panel(badgeX + 8, badgeY + badgeH / 2 - 3, 6, 6, 3, { 24, 20, 32, 230 })
+        end
+        UI.Text(badgeX + badgeW / 2 + relativeDot, badgeY + badgeH / 2, 13,
             string.format("%s %+.2f", card.riskLabel, card.risk), { 24, 20, 32, 255 },
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        -- B1：档名是按本组相对位置微调的卡打一个小点，数字仍是绝对强度
-        if card.labelRelative then
-            UI.Text(badgeX - 9, badgeY + badgeH / 2, 16, "·", RGBA(rc, 235),
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        end
 
         -- 牌名条
         UI.Text(x + 16, y + 150, 17, card.templateName, S.col.text)
