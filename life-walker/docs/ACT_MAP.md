@@ -1,7 +1,7 @@
 # 层间地图 / 局内地图（P0 设计与实现说明）
 
 > 对应代码：`scripts/ActMap.lua`、`scripts/Opportunity.lua`、`dev/DevActMap.lua`
-> 状态：纯逻辑模块已落地并通过回归（`dev/DevActMap.lua` 1600+ 条断言，failures = 0）
+> 状态：纯逻辑模块已落地并通过回归（`dev/DevActMap.lua` 1600+ 条断言，failures = 0；层卡 M1/M2/B1 与机遇池扩容见文末第 7 节）
 > 还没接进 Run / Screens —— 接入步骤见最后一节，一共三步。
 
 ---
@@ -255,7 +255,9 @@ UrhoXRuntime.exe ..\dev\DevActMap.lua "-tapcode_dir=.." -tool_mode -graphicshead
 ## 7. 已知取舍与待定
 
 - **每层只有 1 个机遇房**是刻意的：`ActMap.SPECIAL_ROOM_COUNT = 1`，改成 2 就回到双机遇房版本（其余代码不用动）。
-- **强模板在高关拉不到目标强度**：`Config.NormalizeMap` 的归一阶梯只往上到混战为止，所以第 15 关以后「轻战起步」这类模板的 `risk` 会到 −0.3 左右。这是故意保留的（给玩家一条轻松路），断言只卡「不能三张都偏难」。
+- **强模板在高关拉不到目标强度（已部分修正）**：`Config.NormalizeMap` 的归一阶梯 2026-11-10 补了一档 `mixed→elite`（提交 `dc86218`），所以第 20 关目标 1.75 现在拉得到，不再出现「三张全轻松」。
+  仍保留的：低强度模板（轻战起步 / 双商补给线）在 15 关以后 `risk` 还是可能到 −0.3 左右——这是故意留的（给玩家一条轻松路），断言只卡「三张不能同名同档」。
+  另：B1 同档拆分（`5b946e0`）会在三张卡同档时按组内相对位置微调档名，所以**卡面上的 `risk` 数字不能省**——它是玩家看到绝对强度的唯一渠道。
 - **幕在主线里是只读的**：关卡解锁已经被「步数 + 通关上一关」双条件锁住，幕地图不能有解锁权。
 - **`event` 房在 P0 里只在节点图层被改造**，`Config.CheckMap` 仍然要求模板里有 `event` 格——因为 `RollCards` 校验的是改造前的 `card.grid`。等 Run/Screens 接完，可以把 `CheckMap` 的 `opts.event` 关掉。
 - **需要 `Run` 侧补三个小函数**：`ConsumeItem`、`revealAll` 的绘制、`BuildOpportunityCtx`（复用 `OpenOpportunity` 里那段 ctx 构造）。
