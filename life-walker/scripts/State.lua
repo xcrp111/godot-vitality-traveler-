@@ -23,6 +23,10 @@
 ---@field class string
 ---@field gold number
 ---@field exp number
+---@field essence number
+---@field essenceEarned number
+---@field accountLevel integer
+---@field bodyFat number
 ---@field levels table<string, integer>
 ---@field classExp table<string, number>
 ---@field unlocked integer
@@ -53,6 +57,22 @@
 ---@field showSkillRange boolean
 ---@field enemyHpBar boolean
 ---@field bossWarn boolean
+---@field waterMl number
+---@field sleptEarly boolean
+---@field earlySleepPending boolean
+---@field playSeconds number
+---@field moveBuffUntil number
+---@field cdrBuffUntil number
+---@field endlessBest integer
+---@field endlessMedal integer
+---@field endlessDayKey string
+---@field endlessDayBest integer
+---@field endlessWeekKey string
+---@field endlessWeekBest integer
+---@field endlessMonthKey string
+---@field endlessMonthBest integer
+---@field devUnlockEndless boolean
+---@field guild table|nil
 -- SaveData 字段与 Save.lua 的 Defaults 保持一致
 
 ---@class KeyState
@@ -101,11 +121,43 @@
 ---@field testLevel integer
 ---@field testDetail table|nil
 ---@field confirmReset boolean
+---@field panelMode any
+---@field hover any
+---@field hoverIsMouse any
+---@field camp any
+---@field campTab any
+---@field campBagPage any
+---@field bag any
+---@field bagPage any
+---@field pet any
+---@field petTab any
+---@field petBagTab any
+---@field petEggScroll any
+---@field petEggDrag any
+---@field petAttr any
+---@field petLastDraw any
+---@field petPickLow any
+---@field levelCards any
+---@field showAssist boolean
+---@field timeScale number
 ---@field showStatus boolean
 ---@field statusPanel any
 ---@field kbEdit any
 ---@field settingsTab string
 ---@field settingsWipeConfirm boolean
+---@field healthTasks boolean
+---@field endlessPanel boolean
+---@field guild boolean
+---@field guildTab integer
+---@field farm boolean
+---@field farmTab integer
+---@field farmPlot integer|nil
+---@field clickDX number
+---@field clickDY number
+---@field rank boolean
+---@field rankTab integer
+---@field restPrompt any
+---@field meditate any
 ---@field col table
 
 ---@type GameState
@@ -144,6 +196,21 @@ local S = {
         joyMode = "float",
         joyFollow = true,
         aimMode = "button",
+        waterMl = 0,
+        sleptEarly = false,
+        earlySleepPending = false,
+        playSeconds = 0,
+        moveBuffUntil = 0,
+        cdrBuffUntil = 0,
+        endlessBest = 0,
+        endlessMedal = 0,
+        endlessDayKey = "",
+        endlessDayBest = 0,
+        endlessWeekKey = "",
+        endlessWeekBest = 0,
+        endlessMonthKey = "",
+        endlessMonthBest = 0,
+        devUnlockEndless = false,
         fpsCap = 60,
         lowQuality = false,
         screenShake = true,
@@ -168,6 +235,7 @@ local S = {
     regions = {},
     toast = { text = "", t = 0 },
     input = { x = 0, y = 0 },
+    clickDX = 0, clickDY = 0,
     keys = { up = false, down = false, left = false, right = false, active = false },
     dev = true,
     selectedLevel = 1,
@@ -184,9 +252,39 @@ local S = {
     testSkills = {},
     testLevel = 1,
     testDetail = nil,
+    healthTasks = false,
+    endlessPanel = false,
+    guild = false,
+    guildTab = 1,
+    farm = false,
+    farmTab = 1,
+    farmPlot = nil,
+    rank = false,
+    rankTab = 1,
+    restPrompt = nil,
+    meditate = nil,
     settingsTab = "control",
     settingsWipeConfirm = false,
     confirmReset = false,
+    panelMode = nil,
+    bag = nil,
+    bagPage = nil,
+    pet = nil,
+    petTab = nil,
+    petBagTab = nil,
+    petEggScroll = nil,
+    petEggDrag = nil,
+    petAttr = nil,
+    petLastDraw = nil,
+    petPickLow = nil,
+    camp = nil,
+    campTab = nil,
+    campBagPage = nil,
+    hover = { x = 0, y = 0 },   -- 鼠标悬停坐标（ui 版 main 会写它：必须是表，否则 MouseMove 索引 nil 报错）
+    hoverIsMouse = nil,
+    levelCards = nil,
+    showAssist = true,     -- 角色辅助显示：光圈 / 普攻范围 / 瞄准线
+    timeScale = 1,         -- 战斗时间倍率（慢放看动作，1 / 0.5 / 0.25）
     showStatus = false,
     statusPanel = nil,
     col = {

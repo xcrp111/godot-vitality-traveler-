@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-11-20
+
+### 同步上游 master（`9f80429`：合并 test → master）
+
+**新增模块（20 个）**
+`ActMap` · `Art` · `BagUI` · `Camp` · `CampUI` · `CharArt` · `Cloud` · `Economy` · `Farm` · `FarmArt` · `FarmUI` · `FarmWalk` · `LevelCards` · `Opportunity` · `Pet` · `PetData` · `PetUI` · `RankUI` · `SceneUI` · `TitleUI`
+
+**主要内容**
+- **ui 经济 v2**：局外货币全面改名 —— 经验 → **精粹**、金币 → **生息**、银币 → **血尘**（公会商店 / 特权 / 科技文案同步更新）
+- **dev1 层卡 / 机遇系统**（LevelCards、Opportunity、ActMap）
+- **农场**（Farm / FarmArt / FarmUI / FarmWalk）与宠物（Pet / PetData / PetUI）
+- **战斗与农场修复**：合并残留清理、鼠标拖动选施法方向修复（`S.hover` 为 nil 导致 MouseMove 报错）等
+- 排行榜（RankUI）、云存档（Cloud）、营地（Camp / CampUI）、背包（BagUI）、标题与场景 UI（TitleUI / SceneUI）
+
+**工程结构变化**
+- `scripts/` 13 → **53** 项（含新增 `.meta`）
+- `dev/` 51 → **85** 项（新增 DevFarm / DevPet / DevActMap / DevCloud / DevFeedback4 / DevFixBatch2-3 等自检脚本）
+- 新增 `docs/`（策划与接入文档）、`music_preview/`（音乐预览素材）
+
+**验证**
+- 本地原生预览 `validate`：`COMPLETED`，**Lua 错误 0**，资源错误 0（仅启动首帧耗时 227ms 的环境抖动）
+- `dev/DevGuild.lua` 公会回归自检：**total fails = 0**（公会等级 / 科技上限 / 团本档位 / 商店解锁 全部通过）
+- 字体子集覆盖：`scripts/*.lua` 全量字符 **1637 字形、缺字 0**，无需重新裁剪
+
+### 环境问题记录
+
+- 本地预览 `validate` 报 `ENOENT … maker-cache-<hash>\.maker-preview-owner.json`：这是 `%TEMP%` 下的旧缓存残留，把 `TEMP/TMP` 指向项目内目录（如 `.backup/tmp`）后重跑即可，属环境问题、与工程代码无关
+
+---
+
 ## 2026-10-28
 
 ### 新增：公会系统（依据《公会贡献币》策划文档）
@@ -32,7 +62,7 @@
 
 **科技树（3 线 × 10 级，单线满级 7500 币）**
 - 生存线：初始护盾 +1.5%/级，脱战回复延迟 -0.1s/级
-- 经济线：局内银币 +2%/级，局外金币 +1%/级
+- 经济线：局内货币 +2%/级，局外收益 +1%/级
 - 输出线：技能冷却 -1%/级，暴击伤害 +1%/级
 
 **团本（公会团本 · 瘟衰巨像）**
@@ -41,7 +71,7 @@
 - 难度档位：普通 / 困难 / 噩梦 / 炼狱 / 灭世，Boss 伤害 ×1.0 / 1.35 / 1.8 / 2.4 / 3.2，贡献币 ×1.0 / 1.15 / 1.3 / 1.5 / 1.75
 - 团本中死亡不掉进度，按已造成的输出量结算评级
 
-**局内特权**：Buff 重随券、初始资金加注（+50 银币）、濒死护盾保险（首次致命伤保留 1 血）、精英怪预警（地图标记精英/Boss 房）、钥匙房钥匙（地图上开一次额外三选一）
+**局内特权**：Buff 重随券、初始资金加注（+50 局内货币）、濒死护盾保险（首次致命伤保留 1 血）、精英怪预警（地图标记精英/Boss 房）、钥匙房钥匙（地图上开一次额外三选一）
 
 **测试用按钮**（仅 `S.dev = true` 显示）
 - 主页：+1000 贡献币
@@ -49,13 +79,9 @@
 
 ### 修复
 
-- **启动崩溃**：Lua 5.4 下 `string.format("%d", 物理宽/dpr)` 在非整数 dpr（Windows 125% 缩放、高 DPI 手机）会抛 `number has no integer representation`；已在 `main.lua` 顶部用 `formatIntSafe` 包装 `string.format` 兜底（上游同款修法）
-- **团本 Boss 名称与模型**：UI 之前写错为「畸变巨像」，实际为 `colossus` 瘟衰巨像；团本固定刷关底 Boss（level 1 原本会刷成高热疫魔）
-- **字体方框（tofu）**：`assets/Fonts/MiSans-Regular.ttf` 是按用语裁剪的子集，新增中文文案缺字形会显示方框；已重跑 `dev/make_font_subset.py`（1259 字 / 308KB），并修掉 `U+3000` 全角空格被过滤导致的老问题
-
-### 同步上游
-
-- 从 GitHub `master`（`50652a8`）同步 `scripts/` `dev/` `assets/` `README.md`，保留本地 `.project`（绑新 Maker 应用）与 `.git`
+- **启动崩溃**：Lua 5.4 下 `string.format("%d", 物理宽/dpr)` 在非整数 dpr（Windows 125% 缩放、高 DPI 手机）会抛 `number has no integer representation`；已在 `main.lua` 顶部用 `formatIntSafe` 包装 `string.format` 兜底
+- **团本 Boss 名称与模型**：UI 之前写错为「畸变巨像」，实际为 `colossus` 瘟衰巨像；团本固定刷关底 Boss
+- **字体方框（tofu）**：`assets/Fonts/MiSans-Regular.ttf` 是按用语裁剪的子集，新增中文文案缺字形会显示方框；重跑 `dev/make_font_subset.py`，并修掉 `U+3000` 全角空格被过滤导致的老问题
 
 ---
 
@@ -63,6 +89,7 @@
 
 | 日期 | Maker 提交 | 内容 |
 |---|---|---|
+| 2026-11-20 | `80df2e2` | 同步上游 master `9f80429`（ui 经济 v2 / 层卡机遇 / 农场宠物 / 战斗修复）|
 | 2026-10-28 | `b081778` | 公会：一键重置、团本档位/BOSS 详情、团本按第 1 关数值 |
 | 2026-10-28 | `dc3a379` | 公会：等级 1~5、贡献币→公会经验、科技上限、团本难度档位 |
 | 2026-10-28 | `b96c0bf` | 同步上游 `50652a8` + 字体子集重建 |

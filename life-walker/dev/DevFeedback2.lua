@@ -106,10 +106,16 @@ function Start()
     cs.player.x, cs.player.y = 640, 400
     cs.facing = 0
     local x0 = cs.player.x
-    Combat.CastSkill(3)          -- loadout[3] = 回马枪
-    check("5 回马枪先后撤", cs.player.x < x0 - 30, string.format("%.0f -> %.0f", x0, cs.player.x))
+    Combat.CastSkill(3)          -- loadout[3] = 回马枪（新动作：前刺 → 顿 → 后撤）
+    check("5 出招瞬间不位移", math.abs(cs.player.x - x0) < 0.01, cs.player.x)
     Combat.Update(0.16)          -- 触发前刺
+    check("5 先向前突刺（身位前压）", cs.player.x > x0 + 20,
+        string.format("%.0f -> %.0f", x0, cs.player.x))
     check("5 前刺能打到原来够不到的距离", se.hp < 9999, se.hp)
+    local xLunge = cs.player.x
+    Combat.Update(0.22)          -- 顿完之后后撤
+    check("5 顿一下再后撤", cs.player.x < xLunge - 30,
+        string.format("%.0f -> %.0f", xLunge, cs.player.x))
 
     -- ============ 6. 突刺奔袭：距离更长 ============
     cs = NewCombat("spearman", { 2, 1, 5 })
@@ -152,7 +158,8 @@ function Start()
     we.hp, we.maxHp = 99999, 99999
     we.hunt = 2
     Combat.CastSkill(1)          -- loadout[1] = 掠袭换位
-    check("8 换位落到敌人身后", cs.player.x > we.x, string.format("player %.0f vs enemy %.0f", cs.player.x, we.x))
+    check("8 换位落到敌人身后且留出距离", cs.player.x > we.x + 80,
+        string.format("player %.0f vs enemy %.0f（间隔 %.0f）", cs.player.x, we.x, cs.player.x - we.x))
     check("8 换位后普攻加成标记", (cs.rangerSwap or 0) > 0, cs.rangerSwap)
 
     cs.rangerSwap = 0

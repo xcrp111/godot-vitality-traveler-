@@ -50,16 +50,16 @@ Guild.WeeklyItems = {
         desc = "局内宝箱钥匙：跑图时在地图上开一次额外三选一奖励房",
     },
     {
-        id = "crystal", name = "角色经验结晶（大）", price = 150, limit = 5, minLevel = 2, rarity = "稀有",
-        desc = "特殊货币，+300 可分配经验（加速局外角色等级）",
+        id = "crystal", name = "精粹结晶（大）", price = 150, limit = 5, minLevel = 2, rarity = "稀有",
+        desc = "特殊货币，+300 精粹（加速局外角色等级）",
     },
     {
-        id = "reset", name = "经验重置券", price = 300, limit = 1, minLevel = 3, rarity = "史诗",
-        desc = "当前职业等级回到 Lv.1，已投入的升级经验全额退回经验池",
+        id = "reset", name = "精粹重置券", price = 300, limit = 1, minLevel = 3, rarity = "史诗",
+        desc = "当前职业等级回到 Lv.1，已投入的升级精粹全额退回精粹池",
     },
     {
         id = "relic", name = "星辉结晶（巨）", price = 500, limit = 1, minLevel = 4, rarity = "传说",
-        desc = "+1500 可分配经验，并额外 +1 技能点",
+        desc = "+1500 精粹，并额外 +1 技能点",
     },
     {
         id = "sigil", name = "公会秘银钥匙", price = 450, limit = 1, minLevel = 5, rarity = "传说",
@@ -72,7 +72,7 @@ Guild.Perks = {
     { id = "reroll",   name = "Buff 重随券", price = 80,  minLevel = 1, rarity = "普通",
       desc = "本局奖励房可免费重随 1 次（可叠加）" },
     { id = "silver",   name = "初始资金加注", price = 60, minLevel = 1, rarity = "普通",
-      desc = "本局开局额外携带 +50 银币（可叠加）" },
+      desc = "本局开局额外携带 +50 血尘（可叠加）" },
     { id = "insurance", name = "濒死护盾保险", price = 150, minLevel = 2, rarity = "稀有",
       desc = "本局第一次致命伤保留 1 血（每日限购 3 次）" },
     { id = "warn",     name = "精英怪预警", price = 40,  minLevel = 3, rarity = "史诗",
@@ -88,8 +88,8 @@ Guild.Tech = {
     },
     {
         id = "economy", name = "经济线（掉落）", color = "gold",
-        effectText = "局内银币掉落 +2%/级，局外通用币收益 +1%/级",
-        maxText = "满级：银币掉落 +20%，通用币收益 +10%",
+        effectText = "局内血尘掉落 +2%/级，局外生息收益 +1%/级",
+        maxText = "满级：血尘掉落 +20%，生息收益 +10%",
     },
     {
         id = "offense", name = "输出线（冷却）", color = "orange",
@@ -126,7 +126,7 @@ Guild.Members = {
 
 local FEED_TEXTS = {
     "刚用 %%s 打穿了第 %d 关，血条只剩一丝，手还在抖。",
-    "今天步数达标，领了 %d 金币，公会仓库又满了一点。",
+    "今天步数达标，领了 %d 生息，公会仓库又满了一点。",
     "求购 %%s，谁有多的私我，贡献币好商量。",
     "团本这周打得稀碎，只拿了个 %%s，下周再战。",
     "第一次把 %%s 叠到 5 层，伤害直接翻倍，爽。",
@@ -152,8 +152,18 @@ function Guild.Week(data)
     local offset = (data and data.dayOffset) or 0
     local t = os.time() + offset * 86400
     -- 以周一为周界线（每周一更新周上限与商店）
-    local wd = tonumber(os.date("%w", t)) or 0     -- 0=周日
-    local back = (wd + 6) % 7                      -- 距离最近一个周一的天数
+    -- 注意：不能依赖 os.date("%w")。部分手机 / 网页运行时对 %w 支持不完整，
+    -- 取到空值时会被当成周日，周起点每天往前滚一天，商店就变成「每天重置」。
+    -- 这里优先用 *t 的 wday（Lua 自身解析，跨平台稳定），拿不到再用日序号兜底。
+    local dt = os.date("*t", t)
+    local wday = type(dt) == "table" and dt.wday or nil
+    local back
+    if type(wday) == "number" and wday >= 1 and wday <= 7 then
+        back = (wday + 5) % 7          -- wday: 1=周日 … 7=周六；周一 -> 0
+    else
+        -- 1970-01-01 是周四，+3 天后按 7 天切分（与 Save.WeekKey 同一口径）
+        back = (math.floor(t / 86400) + 3) % 7
+    end
     local weekStart = t - back * 86400
     return os.date("%Y-%m-%d", weekStart)
 end
@@ -306,6 +316,9 @@ function Guild.Rescue(data, idx)
     local usedKey = "rescue_" .. idx
     if g.liked[usedKey] then return false, "今天已经救过这位成员了" end
     g.liked[usedKey] = true
+    -- 计数必须落盘：之前只记录了「救过谁」，没累加 g.rescue，
+    -- 导致界面一直显示 0/3，和后台数据对不上
+    g.rescue = (g.rescue or 0) + 1
     local added, overflow = Guild.AddCoins(data, Guild.EARN.rescue.coins)
     local msg = "摆渡成功：" .. member.name .. " 重新站了起来，+" .. added .. " 贡献币"
     if overflow > 0 then msg = msg .. "（本周已达上限，" .. overflow .. " 溢出折算感谢信）" end
@@ -404,12 +417,12 @@ function Guild.BuyWeekly(data, id)
         g.keys = (g.keys or 0) + 1
         return true, "兑换成功：钥匙 +1（当前 " .. g.keys .. " 把）"
     elseif id == "crystal" then
-        data.exp = (data.exp or 0) + 300
-        return true, "兑换成功：可分配经验 +300（当前 " .. data.exp .. "）"
+        data.essence = (data.essence or 0) + 300
+        return true, "兑换成功：精粹 +300（当前 " .. data.essence .. "）"
     elseif id == "relic" then
-        data.exp = (data.exp or 0) + 1500
+        data.essence = (data.essence or 0) + 1500
         data.skillPoints = (data.skillPoints or 0) + 1
-        return true, "兑换成功：可分配经验 +1500，技能点 +1"
+        return true, "兑换成功：精粹 +1500，技能点 +1"
     elseif id == "sigil" then
         g.keys = (g.keys or 0) + 1
         g.perks.reroll = (g.perks.reroll or 0) + 1
@@ -429,21 +442,21 @@ function Guild.BuyWeekly(data, id)
             refund = refund + (Config.LevelCost[i] or 0)
         end
         data.levels[class] = 1
-        data.exp = (data.exp or 0) + refund
+        data.essence = (data.essence or 0) + refund
         Save.Write(data)
-        return true, "已重置 " .. Config.Classes[class].name .. " 到 Lv.1，退回 " .. refund .. " 经验"
+        return true, "已重置 " .. Config.Classes[class].name .. " 到 Lv.1，退回 " .. refund .. " 精粹"
     end
     return true, "兑换成功"
 end
 
---- 金币兑换通道：满级后的兜底出口，10 贡献币 = 1 金币
+--- 生息兑换通道：满级后的兜底出口，10 贡献币 = 1 生息
 function Guild.ConvertToGold(data)
     local g = Guild.Roll(data)
     if g.coins < 10 then return false, "至少需要 10 贡献币" end
     local units = math.floor(g.coins / 10)
     g.coins = g.coins - units * 10
     data.gold = (data.gold or 0) + units
-    return true, "兑换完成：+" .. units .. " 金币"
+    return true, "兑换完成：+" .. units .. " 生息"
 end
 
 -- ---------------------------------------------------------------- 局内特权

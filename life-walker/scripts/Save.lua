@@ -1,8 +1,10 @@
 -- Save.lua
--- 本地存档：金币 / 经验 / 职业等级 / 今日步数 / 关卡进度 / 技能配置
+-- 本地存档：生息 / 经验 / 职业等级 / 今日步数 / 关卡进度 / 技能配置
 
 local Config = require "Config"
 local Guild = require "Guild"
+local Economy = require "Economy"
+local Farm = require "Farm"
 
 local Save = {}
 
@@ -14,7 +16,10 @@ local function Defaults()
         version = SAVE_VERSION,
         class = "swordsman",    -- 当前出战职业
         gold = 0,
-        exp = 0,                -- 可分配经验池（所有职业共用，需要玩家自己分配）
+        essence = 0,            -- 精粹（每日能量消耗结算产出，用于职业升级 / 局外养成）
+        essenceEarned = 0,      -- 累计获得的精粹（账号等级里程碑，不消耗）
+        accountLevel = 1,       -- 账号等级（由累计获得精粹决定）
+        bodyFat = 0,            -- 体脂率（%）
         levels = { swordsman = 1, spearman = 1, ranger = 1, mage = 1 },   -- 各职业等级
         classExp = { swordsman = 0, spearman = 0, ranger = 0, mage = 0 }, -- 各职业已投入、尚未消耗的经验
         unlocked = 1,           -- 步数解锁到的最高关卡
@@ -33,6 +38,22 @@ local function Defaults()
         joyMode = "float",      -- 摇杆模式：fixed 固定位置 / float 按下即定位
         joyFollow = true,       -- 拖尾跟随：手指拖出圈时基座跟着走
         aimMode = "button",     -- 选位技能瞄准：button 技能键当摇杆 / screen 拖到屏幕对应位置
+        waterMl = 0,            -- 今日已记录饮水量（毫升）
+        sleptEarly = false,     -- 今日是否已打卡早睡
+        earlySleepPending = false, -- 早睡奖励：次日领取步数时结算
+        playSeconds = 0,        -- 累计游戏时长（秒），满 30 分钟提醒起身活动
+        moveBuffUntil = 0,      -- 起身活动奖励：移速加成到期时间（os.time）
+        cdrBuffUntil = 0,       -- 冥想奖励：冷却缩减加成到期时间（os.time）
+        -- 无尽模式记录（本机排行：日 / 周 / 月 / 历史）
+        endlessBest = 0,        -- 历史最高层数
+        endlessMedal = 0,       -- 记录勋章等级（每破一次个人纪录 +1）
+        endlessDayKey = "",
+        endlessDayBest = 0,
+        endlessWeekKey = "",
+        endlessWeekBest = 0,
+        endlessMonthKey = "",
+        endlessMonthBest = 0,
+        devUnlockEndless = false, -- 测试用：强制解锁无尽模式（不动真实进度）
         -- 画面与性能
         fpsCap = 60,            -- 帧率上限 30 / 60 / 120
         lowQuality = false,     -- 低画质：粒子/拖尾/残影减量
@@ -71,8 +92,12 @@ local LAYOUT_DEFAULTS = {
     skill2 = { 1110, 526, 36 },
     skill3 = { 1202, 514, 32 },
     items  = { 1080, 420, 27 },
-    aim_cancel = { 1170, 378, 80 },   -- 瞄准时的「取消施法」框（中心 + 半径，宽 2r 高 1.2r）
+    aim_cancel = { 1170, 300, 80 },   -- 瞄准时的「取消施法」框（中心 + 半径，宽 2r 高 1.2r）
+    -- 旧默认值（1170, 378）：离技能键太近，拖动技能时容易误触取消，已上移
 }
+
+-- 旧版默认取消框位置：没有改过布局的存档自动迁移到新默认值
+local AIM_CANCEL_OLD = { x = 1170, y = 378, r = 80 }
 
 local LAYOUT_IDS = { "joy", "attack", "skill1", "skill2", "skill3", "items", "aim_cancel" }
 
@@ -91,6 +116,12 @@ function Save.Layout(data)
             if type(cur.x) ~= "number" then cur.x = d[1] end
             if type(cur.y) ~= "number" then cur.y = d[2] end
             if type(cur.r) ~= "number" then cur.r = d[3] end
+            -- 老存档里没动过取消框的，跟着新默认值上移；玩家自己改过的保持不动
+            if id == "aim_cancel"
+                and cur.x == AIM_CANCEL_OLD.x and cur.y == AIM_CANCEL_OLD.y
+                and cur.r == AIM_CANCEL_OLD.r then
+                cur.x, cur.y, cur.r = d[1], d[2], d[3]
+            end
         end
     end
     return L
@@ -145,10 +176,10 @@ end
 ---@param amount number
 ---@return number 实际投入
 function Save.AllocateExp(data, amount)
-    amount = math.floor(math.min(amount, data.exp))
+    amount = math.floor(math.min(amount, data.essence))
     if amount <= 0 then return 0 end
     EnsureMaps(data)
-    data.exp = data.exp - amount
+    data.essence = data.essence - amount
     local class = Save.ActiveClass(data)
     data.classExp[class] = (data.classExp[class] or 0) + amount
     Save.Write(data)
@@ -232,9 +263,10 @@ local function MergeDefaults(data)
             data.classExp[id] = 0
         end
     end
-    if refund > 0 then data.exp = (data.exp or 0) + refund end
+    if refund > 0 then data.essence = (data.essence or 0) + refund end
     data.loadout = nil
-    Guild.Ensure(data)
+    Guild.Ensure(data)   -- 公会存档结构（缺字段补默认）
+    Farm.Ensure(data)    -- 农场存档结构
     return data
 end
 
@@ -276,6 +308,28 @@ function Save.Load()
     data = MergeDefaults(data or {})
     Save.RollDay(data)
     return data
+end
+
+-- 按累计精粹刷新账号等级（每级发技能点；超过里程碑表尾按固定增量无限延伸）
+function Save.SyncAccount(data)
+    local e = Config.Economy
+    if not e or not e.accountThresholds then return data.accountLevel end
+    local earned = data.essenceEarned or 0
+    local lv = 1
+    for i, need in ipairs(e.accountThresholds) do
+        if earned >= need then lv = i + 1 else break end
+    end
+    local last = e.accountThresholds[#e.accountThresholds]
+    if last and earned > last then
+        local step = e.accountStepAfterMax or 2000
+        lv = #e.accountThresholds + 1 + math.floor((earned - last) / step)
+    end
+    local prev = data.accountLevel or 1
+    if lv > prev then
+        data.skillPoints = (data.skillPoints or 0) + (lv - prev) * (e.skillPointPerLevel or 1)
+    end
+    data.accountLevel = math.max(1, lv)
+    return data.accountLevel
 end
 
 -- 实际可挑战的最高关卡：既要步数解锁，也要把上一关打完
@@ -322,15 +376,24 @@ end
 ---@return SaveData
 function Save.RollDay(data)
     local today = Save.TodayKey(data)
-    if data.dayKey ~= today then
+    local key = data.dayKey
+    -- dayKey 不可信（老存档空串 / 时钟回拨 / 时区跳变）时也按跨天处理：
+    -- 否则当天任务会一直显示「已领取 / 已打卡」，点按钮也没反应，只能等到第二天
+    local valid = type(key) == "string" and key:match("^%d%d%d%d%-%d%d%-%d%d$") ~= nil
+    if not valid or key > today or key ~= today then
         data.dayKey = today
         data.todaySteps = 0
         data.claimed = false
+        data.waterMl = 0          -- 饮水量按天重置
+        data.sleptEarly = false   -- 早睡打卡按天重置（待领奖励留到下次领取）
     end
+    -- 每日 / 每周结算各自兜底：农场或无尽数据异常时不能把健康任务的每日重置一起拖垮
+    if Save.RollEndless then pcall(Save.RollEndless, data) end
+    pcall(Farm.Roll, data)
     return data
 end
 
--- 领取今日步数：返回 获得金币, 解锁关卡数, 当前连续天数
+-- 领取今日步数：返回 获得生息, 解锁关卡数, 当前连续天数
 ---@return number, number, number, number, number
 function Save.Claim(data, steps)
     Save.RollDay(data)
@@ -340,10 +403,41 @@ function Save.Claim(data, steps)
     end
 
     local gain, pct = Config.StepGold(steps)
-    -- 公会科技·经济线：局外通用币收益 +1%/级
+    -- 公会科技·经济线：局外生息收益 +1%/级（生息 = 步数结算）
     local goldGain = math.floor(gain * Guild.GoldMul(data) + 0.5)
     data.gold = data.gold + goldGain
-    data.exp = data.exp + gain
+
+    -- 先算今天的连击天数：精粹倍率要用它
+    local dayNum = math.floor(os.time() / 86400) + (data.dayOffset or 0)
+    local nextStreak = data.streak
+    if pct >= Config.Economy.streakGatePercent then
+        if data.lastActiveDay == dayNum - 1 then
+            nextStreak = data.streak + 1
+        elseif data.lastActiveDay ~= dayNum then
+            nextStreak = 1
+        end
+    else
+        nextStreak = 0
+    end
+
+    -- 精粹：v2 口径（体脂率阶梯 × 连击倍率 + 每日固定项），只来自每日运动结算
+    local lvBefore = data.accountLevel or 1
+    local essenceGain = Economy.DailyEssence(data, steps, nextStreak)
+    data.essence = (data.essence or 0) + essenceGain
+    data.essenceEarned = (data.essenceEarned or 0) + essenceGain
+    Save.SyncAccount(data)
+
+    -- 早睡奖励：昨天打过卡，今天领取时额外给精粹
+    local extraEss = 0
+    if data.earlySleepPending then
+        extraEss = math.floor(essenceGain * Config.Health.earlySleepExpPct)
+        data.essence = data.essence + extraEss
+        data.essenceEarned = (data.essenceEarned or 0) + extraEss
+        Save.SyncAccount(data)
+        data.earlySleepPending = false
+    end
+    local lvUp = (data.accountLevel or 1) - lvBefore
+    data.streak = nextStreak
 
     local unlocks = 0
     for _, need in ipairs(Config.StepUnlockThresholds) do
@@ -352,22 +446,11 @@ function Save.Claim(data, steps)
         end
     end
     local before = data.unlocked
-    data.unlocked = data.unlocked + unlocks
-    if data.unlocked > 20 then
-        data.unlocked = 20
-    end
+    data.unlocked = math.max(before, math.min(20, 1 + unlocks))
+    if data.unlocked > 20 then data.unlocked = 20 end
     local gotUnlocked = data.unlocked - before
-
-    local dayNum = math.floor(os.time() / 86400) + (data.dayOffset or 0)
-    if pct >= 10 then
-        if data.lastActiveDay == dayNum - 1 then
-            data.streak = data.streak + 1
-        elseif data.lastActiveDay ~= dayNum then
-            data.streak = 1
-        end
+    if pct >= Config.Economy.streakGatePercent then
         data.lastActiveDay = dayNum
-    else
-        data.streak = 0
     end
 
     local rewardGold, rewardSp = 0, 0
@@ -384,7 +467,7 @@ function Save.Claim(data, steps)
 
     data.claimed = true
     Save.Write(data)
-    return gain, gotUnlocked, data.streak, rewardGold, rewardSp
+    return essenceGain, gotUnlocked, data.streak, rewardGold, rewardSp, extraEss, lvUp
 end
 
 -- 开发用：重置今日领取
@@ -405,7 +488,7 @@ function Save.NextDay(data)
     return data.dayOffset
 end
 
--- 开发用：把存档恢复成初始状态（等级 / 金币 / 经验 / 关卡 / 连续天数全部清空）
+-- 开发用：把存档恢复成初始状态（等级 / 生息 / 经验 / 关卡 / 连续天数全部清空）
 function Save.Reset(data)
     local def = Defaults()
     for k in pairs(data) do data[k] = nil end
@@ -439,11 +522,11 @@ function Save.LevelUp(data)
     if not cost then
         return false, "已经满级"
     end
-    if (data.exp or 0) < cost then
-        return false, string.format("可分配经验不足，还差 %d", math.ceil(cost - (data.exp or 0)))
+    if (data.essence or 0) < cost then
+        return false, string.format("可分配经验不足，还差 %d", math.ceil(cost - (data.essence or 0)))
     end
     local class = Save.ActiveClass(data)
-    data.exp = data.exp - cost
+    data.essence = data.essence - cost
     data.levels[class] = level + 1
     Save.Write(data)
     return true, Config.Class().name .. "升到 Lv." .. (level + 1)
@@ -467,5 +550,148 @@ function Save.IsSkillUnlocked(level, id)
     return s ~= nil and level >= s.unlockLevel
 end
 
-return Save
+-- ---------------------------------------------------------------- 健康行为（维度二）
+---@param data table
+---@return number
+function Save.WaterMl(data)
+    Save.RollDay(data)
+    return data.waterMl or 0
+end
 
+function Save.WaterGoal()
+    return Config.Health.waterGoalMl
+end
+
+-- 今日饮水是否达标（达标 → 全局基础生命 +10%）
+function Save.WaterMet(data)
+    Save.RollDay(data)
+    return (data.waterMl or 0) >= Save.WaterGoal()
+end
+
+-- 记录一杯水
+function Save.AddWater(data, ml)
+    Save.RollDay(data)
+    data.waterMl = math.min(Save.WaterGoal(), (data.waterMl or 0) + (ml or Config.Health.waterStepMl))
+    Save.Write(data)
+    return data.waterMl
+end
+
+-- 今日记录早睡（奖励在下次领取步数时结算）
+function Save.CheckSleep(data)
+    Save.RollDay(data)
+    if data.sleptEarly then return false end
+    data.sleptEarly = true
+    data.earlySleepPending = true
+    Save.Write(data)
+    return true
+end
+
+-- 某个时间类加成还剩多少秒
+function Save.BuffLeft(data, field)
+    local left = (data[field] or 0) - os.time()
+    if left < 0 then left = 0 end
+    return left
+end
+
+-- ---------------------------------------------------------------- 无尽模式记录
+local function DayNum(data)
+    return math.floor(os.time() / 86400) + (data.dayOffset or 0)
+end
+
+local function WeekKey(data)
+    local day = DayNum(data)
+    -- 以 1970-01-01（周四）为基准，按 7 天切一周
+    return "W" .. tostring(math.floor((day + 3) / 7))
+end
+
+local function MonthKey(data)
+    return os.date("%Y-%m", os.time() + (data.dayOffset or 0) * 86400)
+end
+
+-- 跨天 / 跨周 / 跨月时清掉对应周期的最好成绩
+---@param data table
+function Save.RollEndless(data)
+    local dk, wk, mk = Save.TodayKey(data), WeekKey(data), MonthKey(data)
+    if data.endlessDayKey ~= dk then
+        data.endlessDayKey = dk
+        data.endlessDayBest = 0
+    end
+    if data.endlessWeekKey ~= wk then
+        data.endlessWeekKey = wk
+        data.endlessWeekBest = 0
+    end
+    if data.endlessMonthKey ~= mk then
+        data.endlessMonthKey = mk
+        data.endlessMonthBest = 0
+    end
+    return data
+end
+
+-- 主线通关第 10 关后解锁无尽模式（测试模式里有开关可以强制解锁）
+---@param data table
+---@return boolean
+function Save.EndlessUnlocked(data)
+    if type(data) ~= "table" then return false end
+    if data.devUnlockEndless then return true end
+    return (data.stageCleared or 0) >= Config.Endless.unlockStage
+end
+
+-- 测试模式用：强制解锁 / 取消强制解锁（不动真实主线进度）
+---@param data table
+---@param on boolean
+---@return boolean 现在的解锁状态
+function Save.SetDevEndlessUnlock(data, on)
+    data.devUnlockEndless = on and true or false
+    Save.Write(data)
+    return Save.EndlessUnlocked(data)
+end
+
+-- 到达某一层：刷新日 / 周 / 月 / 历史记录；破个人纪录给奖励并升级记录勋章
+-- 返回 { best, layer, medal, medalUp, gold, exp }
+---@param data table
+---@param layer integer
+---@return table
+function Save.RecordEndless(data, layer)
+    layer = math.floor(layer or 0)
+    Save.RollEndless(data)
+    local res = { best = false, layer = layer, medal = data.endlessMedal or 0,
+        medalUp = 0, gold = 0, exp = 0 }
+    if layer > (data.endlessDayBest or 0) then data.endlessDayBest = layer end
+    if layer > (data.endlessWeekBest or 0) then data.endlessWeekBest = layer end
+    if layer > (data.endlessMonthBest or 0) then data.endlessMonthBest = layer end
+    if layer > (data.endlessBest or 0) then
+        data.endlessBest = layer
+        res.best = true
+        local e = Config.Endless
+        res.gold = e.scoreGold + e.scoreGoldPerLayer * layer
+        res.exp = e.scoreExp + e.scoreExpPerLayer * layer
+        data.gold = (data.gold or 0) + res.gold
+        data.essence = (data.essence or 0) + res.exp
+        data.essenceEarned = (data.essenceEarned or 0) + res.exp
+        Save.SyncAccount(data)
+        -- 破纪录 → 记录勋章升 1 级
+        if (data.endlessMedal or 0) < e.medalMax then
+            data.endlessMedal = (data.endlessMedal or 0) + 1
+            res.medalUp = 1
+        end
+        res.medal = data.endlessMedal or 0
+    end
+    Save.Write(data)
+    return res
+end
+
+-- 无尽模式记录一览（给界面用）
+---@param data table
+---@return table
+function Save.EndlessRecords(data)
+    Save.RollEndless(data)
+    return {
+        best = data.endlessBest or 0,
+        medal = data.endlessMedal or 0,
+        day = data.endlessDayBest or 0,
+        week = data.endlessWeekBest or 0,
+        month = data.endlessMonthBest or 0,
+    }
+end
+
+return Save

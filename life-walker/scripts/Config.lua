@@ -3,6 +3,15 @@
 
 local Config = {}
 
+---@class SkillDef
+---@field id integer
+---@field name string
+---@field short string
+---@field unlockLevel integer
+---@field cd number
+---@field desc string
+---@field element? string   -- 只有法师技能带元素
+
 Config.GAME_TITLE = "生命行者"
 Config.VERSION = "0.1.0"
 Config.DESIGN_W = 1280
@@ -66,7 +75,7 @@ Config.Monsters = {
         id = "germ", name = "游移病菌", kind = "minion", behavior = "chase",
         radius = 14, speed = 128, color = { 168, 120, 210 },
         desc = "高速游荡，碰到就咬一口",
-        codex = "高速追击玩家，贴身时造成接触伤害。血量与攻击最低，适合用来叠剑意和攒银币。",
+        codex = "高速追击玩家，贴身时造成接触伤害。血量与攻击最低，适合用来叠剑意和攒血尘。",
     },
     {
         id = "spore", name = "病毒孢子囊", kind = "minion", behavior = "shooter",
@@ -97,44 +106,370 @@ Config.Monsters = {
         id = "abscess", name = "脓肿岩行者", kind = "minion", behavior = "chase",
         radius = 18, speed = 88, color = { 190, 150, 100 }, lateGame = true,
         desc = "近战附带皮肤感染，残血滴落脓水",
-        codex = "近战挥拳命中会附加「感染」，4 秒内持续掉血；生命低于 40% 时会在脚下留下腐蚀脓水，站进去会持续受伤。",
+        codex = "近战挥拳命中会附加「感染」：持续 4 秒，每秒造成 0.45 倍攻击的伤害（合计约 1.8 倍，状态栏有图标与倒计时）。生命低于 40% 时会在脚下留下「腐蚀浓水」（棕黄色冒泡地面，持续 5 秒）：站在里面每秒受到 0.22 倍攻击的伤害并减速。",
     },
     {
         id = "golem", name = "疫蚀石魔", kind = "elite", behavior = "golem",
         radius = 28, speed = 68, color = { 130, 120, 105 }, lateGame = true,
         desc = "重锤附带坏死，跺脚留下腐液",
-        codex = "精英模板。重锤命中附加「坏死」，4 秒内受到的治疗减半；每 5 秒跺脚向四周喷溅腐蚀腐液，站在腐液上会持续掉血并减速。",
+        codex = "精英模板。重锤命中附加「坏死」，4 秒内受到的治疗减半；每 5 秒跺脚留下腐蚀腐液（黄绿色冒泡地面，范围明显），站在上面会持续掉血并减速。",
     },
     {
         id = "colossus", name = "瘟衰巨像", kind = "boss", behavior = "colossus",
         radius = 50, speed = 58, color = { 120, 95, 135 }, lateGame = true,
         desc = "衰弱疫域 + 腐化冲击波",
-        codex = "Boss 模板。巨臂拍击附加「衰弱」，4 秒内攻击力 -20%；身边持续存在衰竭疫域（减速 + 掉血）；每 5 秒释放腐化冲击波；血量 50% 时进入狂暴，疫域扩大。",
+        codex = "Boss 模板。巨臂拍击附加「衰弱」，4 秒内攻击力 -20%；开启 3 秒「衰竭疫域」（紫色范围圈，减速 + 掉血），关闭 7 秒后再开（狂暴后间隔缩短到 5 秒、范围更大）；每 5 秒释放腐化冲击波；血量 50% 时进入狂暴。",
     },
 }
 
 Config.MinionPool = { "germ", "spore", "worm" }
 
--- ---------------------------------------------------------------- 地图与房间
--- 4x4 固定布局：row 1 在上，col 1 在左；起点 (4,1)，终点 (1,4)
--- 类型：start / light / standard / mixed / elite / double / shop / event / boss
-Config.MapLayout = {
-    { "standard", "mixed", "elite", "boss" },
-    { "standard", "shop", "event", "elite" },
-    { "standard", "event", "mixed", "double" },
-    { "start", "standard", "shop", "mixed" },
+-- ---------------------------------------------------------------- 健康行为（维度二）
+-- 喝水 / 早睡 / 久坐提醒 / 冥想：都是「现实健康行为 → 游戏内收益」
+Config.Health = {
+    waterGoalMl = 2000,       -- 每日建议饮水量
+    waterStepMl = 250,        -- 每次打卡记录的量
+    waterHpPct = 0.10,        -- 达标后全局基础生命 +10%（不局限单局）
+    earlySleepExpPct = 0.30,  -- 早睡 → 次日领取步数时经验 +30%
+    playReminder = 1800,      -- 每玩 30 分钟提醒一次起来活动
+    restPromptDur = 30,       -- 活动弹窗持续 30 秒（期间不能操作游戏）
+    restMovePct = 0.10,       -- 活动完移速 +10%
+    restMoveBuffSec = 600,    -- 持续 10 分钟
+    meditateDur = 60,         -- 推荐冥想时长（秒），可选 60/120/180
+    meditateChoices = { 60, 120, 180 },
+    meditateCdrPct = 0.10,    -- 冥想完成：技能冷却 -10%
+    meditateBuffSec = 1800,   -- 持续 30 分钟
+}
+
+-- ---------------------------------------------------------------- 伪随机地图
+-- 不是纯随机抽格子，而是「手工模板 + 受控扰动」：
+--   1) 先按关卡权重抽一张排好的模板（保证有商店 / 事件 / 精英，路线不畸形）
+--   2) 有一定概率把商店房和事件房的位置对调（只换位置，不改数量）
+--   3) 按关卡做难度归一：算战斗房平均强度，太高就降级、太低就升级
+-- 每局地图都不一样，但不会随机出「一关全是双精房」这种打不过的图。
+--
+-- 模板约束（Config.CheckMap 会校验）：起点 (rows,1)、Boss (1,cols)、
+-- 起点右边第一间是战斗房、商店房 / 事件房至少各 1 个。
+Config.MapTemplates = {
+    { id = "classic", name = "标准路线", grid = {
+        { "standard", "mixed", "elite", "boss" },
+        { "standard", "shop", "event", "elite" },
+        { "standard", "event", "mixed", "double" },
+        { "start", "standard", "shop", "mixed" },
+    } },
+    { id = "supply", name = "双商补给线", grid = {
+        { "mixed", "elite", "mixed", "boss" },
+        { "standard", "shop", "elite", "event" },
+        { "standard", "event", "standard", "mixed" },
+        { "start", "standard", "shop", "standard" },
+    } },
+    { id = "heavy", name = "精英重压", grid = {
+        { "mixed", "elite", "double", "boss" },
+        { "standard", "mixed", "elite", "event" },
+        { "standard", "shop", "standard", "mixed" },
+        { "start", "standard", "event", "standard" },
+    } },
+    { id = "journey", name = "事件旅路", grid = {
+        { "standard", "event", "elite", "boss" },
+        { "mixed", "standard", "event", "elite" },
+        { "standard", "shop", "standard", "mixed" },
+        { "start", "standard", "event", "standard" },
+    } },
+    { id = "light", name = "轻战起步", grid = {
+        { "standard", "light", "elite", "boss" },
+        { "mixed", "standard", "mixed", "elite" },
+        { "standard", "shop", "event", "standard" },
+        { "start", "standard", "light", "mixed" },
+    } },
+    { id = "twins", name = "双精英", grid = {
+        { "standard", "mixed", "elite", "boss" },
+        { "standard", "elite", "event", "double" },
+        { "standard", "shop", "mixed", "elite" },
+        { "start", "standard", "event", "standard" },
+    } },
+    { id = "detour", name = "商店绕行", grid = {
+        { "standard", "event", "mixed", "boss" },
+        { "mixed", "shop", "standard", "elite" },
+        { "elite", "event", "standard", "mixed" },
+        { "start", "standard", "shop", "standard" },
+    } },
+}
+
+-- 无尽模式单层模板（3×3，起点 (3,1)、Boss (1,3)）
+-- 不是每层都有商店房：无商店的层后面一定跟一层有商店的（Run 里保证相邻两层至少一个商店）
+Config.EndlessTemplates = {
+    { id = "e01", grid = {                   -- 有商店
+        { "mixed", "elite", "boss" },
+        { "standard", "event", "elite" },
+        { "start", "standard", "shop" },
+    } },
+    { id = "e02", grid = {                   -- 有商店
+        { "standard", "shop", "boss" },
+        { "event", "mixed", "elite" },
+        { "start", "standard", "event" },
+    } },
+    { id = "e03", grid = {                   -- 有商店
+        { "elite", "event", "boss" },
+        { "standard", "mixed", "shop" },
+        { "start", "standard", "mixed" },
+    } },
+    { id = "e04", grid = {                   -- 有商店
+        { "standard", "event", "boss" },
+        { "mixed", "shop", "elite" },
+        { "start", "standard", "mixed" },
+    } },
+    { id = "e05", grid = {                   -- 有商店（前期轻一点）
+        { "light", "elite", "boss" },
+        { "standard", "event", "mixed" },
+        { "start", "standard", "shop" },
+    } },
+    { id = "e06", grid = {                   -- 有商店（带双精，偏难）
+        { "standard", "mixed", "boss" },
+        { "elite", "double", "shop" },
+        { "start", "standard", "event" },
+    } },
+    { id = "e07", grid = {                   -- 无商店：纯战斗层
+        { "mixed", "event", "boss" },
+        { "standard", "elite", "mixed" },
+        { "start", "standard", "event" },
+    } },
+    { id = "e08", grid = {                   -- 无商店
+        { "elite", "standard", "boss" },
+        { "standard", "event", "elite" },
+        { "start", "standard", "mixed" },
+    } },
+    { id = "e09", grid = {                   -- 无商店
+        { "standard", "mixed", "boss" },
+        { "event", "standard", "elite" },
+        { "start", "standard", "event" },
+    } },
+    { id = "e10", grid = {                   -- 无商店（前期轻一点）
+        { "light", "mixed", "boss" },
+        { "standard", "elite", "standard" },
+        { "start", "standard", "event" },
+    } },
+}
+
+-- 战斗房的难度权重（用来做关卡归一）
+Config.RoomCost = { light = 0.6, standard = 1.0, mixed = 1.4, elite = 2.2, double = 3.0 }
+
+-- 目标平均强度：第 1 关约 1.2，之后每关 +0.03（第 20 关约 1.75）
+-- 战斗房的组成只做小幅调整：只降级 / 只升到混战，不会凭空造精英房
+function Config.MapTargetCost(level)
+    level = math.max(1, math.min(60, math.floor(level or 1)))
+    return 1.15 + 0.03 * level
+end
+
+local COMBAT_SET = { light = true, standard = true, mixed = true, elite = true, double = true }
+local DOWN = { double = "elite", elite = "mixed", mixed = "standard", standard = "light" }
+local UP = { light = "standard", standard = "mixed", mixed = "elite" }
+
+local function CloneGrid(grid)
+    local out = {}
+    for r = 1, #grid do
+        out[r] = {}
+        for c = 1, #grid[r] do out[r][c] = grid[r][c] end
+    end
+    return out
+end
+
+-- 战斗房的平均强度（不算起点 / Boss / 商店 / 事件）
+function Config.AvgCombatCost(map)
+    local total, n = 0, 0
+    for r = 1, #map do
+        for c = 1, #map[r] do
+            local t = map[r][c]
+            if COMBAT_SET[t] then
+                total = total + (Config.RoomCost[t] or 1)
+                n = n + 1
+            end
+        end
+    end
+    if n == 0 then return 0 end
+    return total / n
+end
+
+-- 按关卡把强度往目标值上拉：太高降级、太低升级
+local function NormalizeMap(map, level)
+    local target = Config.MapTargetCost(level)
+    for _ = 1, 16 do
+        local avg = Config.AvgCombatCost(map)
+        if avg > target + 0.28 then
+            local best, bestCost = nil, -1
+            for r = 1, #map do
+                for c = 1, #map[r] do
+                    local t = map[r][c]
+                    if DOWN[t] and (Config.RoomCost[t] or 0) > bestCost then
+                        best, bestCost = { r, c }, Config.RoomCost[t] or 0
+                    end
+                end
+            end
+            if not best then break end
+            map[best[1]][best[2]] = DOWN[map[best[1]][best[2]]]
+        elseif avg < target - 0.30 then
+            local best, bestCost = nil, 99
+            for r = 1, #map do
+                for c = 1, #map[r] do
+                    local t = map[r][c]
+                    if UP[t] and (Config.RoomCost[t] or 0) < bestCost then
+                        best, bestCost = { r, c }, Config.RoomCost[t] or 0
+                    end
+                end
+            end
+            if not best then break end
+            map[best[1]][best[2]] = UP[map[best[1]][best[2]]]
+        else
+            break
+        end
+    end
+    -- 前 5 关不出双精房
+    if level < 6 then
+        for r = 1, #map do
+            for c = 1, #map[r] do
+                if map[r][c] == "double" then map[r][c] = "elite" end
+            end
+        end
+    end
+    return map
+end
+
+-- 商店房 / 事件房偶尔换位置（数量不变，只换路线体验）
+local function JitterSpecial(map)
+    if math.random() > 0.45 then return map end
+    local shops, events = {}, {}
+    for r = 1, #map do
+        for c = 1, #map[r] do
+            if map[r][c] == "shop" then shops[#shops + 1] = { r, c } end
+            if map[r][c] == "event" then events[#events + 1] = { r, c } end
+        end
+    end
+    if #shops == 0 or #events == 0 then return map end
+    local s = shops[math.random(1, #shops)]
+    local e = events[math.random(1, #events)]
+    map[s[1]][s[2]], map[e[1]][e[2]] = "event", "shop"
+    return map
+end
+
+local function PickTemplate(list, level)
+    local total = 0
+    local weights = {}
+    for i, t in ipairs(list) do
+        local w = 1
+        if level < (t.minLevel or 1) then w = 0.15 end
+        weights[i] = w
+        total = total + w
+    end
+    if total <= 0 then return list[math.random(1, #list)] end
+    local x = math.random() * total
+    for i, t in ipairs(list) do
+        x = x - weights[i]
+        if x <= 0 then return t end
+    end
+    return list[#list]
+end
+
+-- 主线地图：伪随机，返回 地图 + 模板 id
+---@param level integer
+---@return string[][], string
+function Config.PickMainMap(level)
+    level = math.max(1, math.floor(level or 1))
+    local tpl = PickTemplate(Config.MapTemplates, level)
+    local map = CloneGrid(tpl.grid)
+    JitterSpecial(map)
+    NormalizeMap(map, level)
+    return map, tpl.id
+end
+
+local function GridHasRoom(grid, kind)
+    for r = 1, #grid do
+        for col = 1, #grid[r] do
+            if grid[r][col] == kind then return true end
+        end
+    end
+    return false
+end
+Config.GridHasRoom = GridHasRoom
+
+-- 无尽模式单层地图：伪随机（难度按等效主线关卡归一）
+-- needShop = true 时只从「带商店房」的模板里抽（保证相邻两层之间至少有一个商店）
+---@param layer integer
+---@param needShop boolean|nil
+---@return string[][], string
+function Config.PickEndlessMap(layer, needShop)
+    layer = math.max(1, math.floor(layer or 1))
+    local level = Config.Endless.levelOffset + layer
+    local pool = {}
+    for _, t in ipairs(Config.EndlessTemplates) do
+        if not needShop or GridHasRoom(t.grid, "shop") then pool[#pool + 1] = t end
+    end
+    if #pool == 0 then pool = Config.EndlessTemplates end
+    local tpl = PickTemplate(pool, level)
+    local map = CloneGrid(tpl.grid)
+    JitterSpecial(map)
+    NormalizeMap(map, level)
+    return map, tpl.id
+end
+
+-- 校验一张图的硬约束（回归测试 / 模板自检用）
+-- opts.shop = false 表示允许这张图没有商店房（无尽模式里只有隔层保证）
+---@param map string[][]
+---@param opts table|nil
+---@return boolean, string|nil
+function Config.CheckMap(map, opts)
+    opts = opts or {}
+    local rows = #map
+    local cols = rows > 0 and #map[1] or 0
+    if rows == 0 or cols == 0 then return false, "空地图" end
+    if map[rows][1] ~= "start" then return false, "起点不在左下" end
+    if map[1][cols] ~= "boss" then return false, "Boss 不在右上" end
+    if cols >= 2 then
+        local t = map[rows][2]
+        if not COMBAT_SET[t] then return false, "起点右边第一间不是战斗房" end
+    end
+    local shop, event = 0, 0
+    for r = 1, rows do
+        for col = 1, cols do
+            if map[r][col] == "shop" then shop = shop + 1 end
+            if map[r][col] == "event" then event = event + 1 end
+        end
+    end
+    if opts.shop ~= false and shop < 1 then return false, "没有商店房" end
+    if opts.event ~= false and event < 1 then return false, "没有事件房" end
+    return true, nil
+end
+
+-- ---------------------------------------------------------------- 无尽模式
+-- 文档：无尽模式.docx
+--   解锁：主线通关第 10 关
+--   单层 3×3 共 9 个房间，从起点走到 Boss
+--   强度：等效主线关卡 N = 层数 L + 9（每层 +1 关）
+--   Buff 上限 10 个，满了以后每层改成「拿 1 个换掉 1 个」
+Config.Endless = {
+    unlockStage = 10,     -- 通关第 10 关解锁
+    rows = 3,
+    cols = 3,
+    buffCap = 10,         -- Buff 上限
+    levelOffset = 9,      -- 等效主线关卡 = 层数 + 9
+    medalMax = 20,        -- 记录勋章最高等级
+    scoreGold = 30,       -- 破纪录奖励：生息 = scoreGold + scoreGoldPerLayer * 层数
+    scoreGoldPerLayer = 10,
+    scoreExp = 30,        -- 破纪录奖励：经验（同上）
+    scoreExpPerLayer = 10,
+    leaderboard = "local", -- 排行榜目前只存本机记录（日 / 周 / 月 / 历史）
 }
 
 Config.RoomNames = {
     start = "起点", light = "轻战房", standard = "标战房", mixed = "混战房",
     elite = "精英房", double = "双精房", shop = "商店房", event = "事件房", boss = "Boss房",
     raid = "公会团本",
+    encounter = "机遇房", wish = "心愿房", event = "机遇房",
 }
 
 Config.RoomIcons = {
     start = "起", light = "战", standard = "战", mixed = "混",
     elite = "精", double = "精", shop = "商", event = "?", boss = "B",
     raid = "团",
+    encounter = "遇", wish = "愿",
 }
 
 -- 波次：每波是 { minion = n, elite = n, boss = n }
@@ -161,18 +496,63 @@ Config.RoomWaves = {
         { minion = 2 },
         { boss = 1 },
     },
-    -- 公会团本：沿用关底 Boss「瘟衰巨像」的模型，先清一小波杂兵再进 Boss
+    -- 公会团本：先清一小波杂兵，再进固定 Boss
     raid = {
         { minion = 2 },
         { boss = 1 },
     },
 }
 
--- ---------------------------------------------------------------- 银币
+-- ---------------------------------------------------------------- 血尘
 Config.SilverDrop = {
     minion = { 2, 4 },
     elite = { 30, 45 },
     boss = { 0, 0 },
+}
+
+-- ---------------------------------------------------------------- 经济（v2 · 双币线）
+-- 精粹 = 每日能量消耗结算；金币 = 局内房间掉落。两条线互不换算。
+Config.Economy = {
+    -- 每日固定项（精粹）
+    baseEssence = 3,             -- 每日基础精粹（任意在线日）
+    vitalityBonus = 5,           -- 活力满满额外（连续 >7 天且当日 ≥10%）
+    streakGatePercent = 10,      -- 达标门槛：低于此值不计连击、只拿固定项
+    healthyDays = 3,             -- 连续 3~7 天 → 健康 ×2
+    vitalityDays = 8,            -- 连续 ≥8 天（即 >7 天）→ 活力满满 ×3
+    healthyMult = 2,
+    vitalityMult = 3,
+
+    -- 体脂率双状态阶梯：每 1% 按所在档单价累加（不是末档单价 × 总百分比）
+    overweightFat = 25,          -- 体脂率 ≥25% 判为「超重肥胖」，走另一条单价阶梯
+    -- 正常范围到 20%：4×1 + 5×5 + 6×20 + 5×5 = 174；超重肥胖同档 209
+    tiers = {
+        { upTo = 4,         normal = 1,  over = 1 },
+        { upTo = 9,         normal = 5,  over = 10 },
+        { upTo = 15,        normal = 20, over = 25 },
+        { upTo = 20,        normal = 5,  over = 1 },
+        { upTo = math.huge, normal = 1,  over = 1 },
+    },
+
+    -- 账号等级：累计获得精粹的里程碑（不消耗，获得够多自动升）
+    -- 表内 22 级；**22 级之后不封顶**，每级沿用 21→22 的增量（+2000）无限延伸
+    accountThresholds = {
+        47, 115, 218, 370, 585, 877, 1260, 1748, 2355, 3095, 3982,
+        5030, 6253, 7665, 9280, 11112, 13175, 15483, 18050, 20650,
+        22650, 24650,
+    },
+    accountStepAfterMax = 2000,  -- 22 级以后每级需要的累计精粹增量
+    skillPointPerLevel = 1,      -- 每升 1 级发 1 技能点
+
+    -- 金币储存上限 = 账号等级 × 300 × 产出倍率（回收通胀）
+    goldCapPerAccountLevel = 300,
+
+    -- 关卡内金币产出一律 × 这个倍率（掉落 / 事件奖励 / 跳过奖励）
+    -- 单价（商店）不随之变化；储存上限同比放大，否则一进关就顶到上限
+    goldIncomeMul = 10,
+
+    -- 单局金币期望（文档口径，只用于界面提示与自检）
+    goldPerRun = 194,
+    goldMinRun = 120,            -- 单局典型最小花费（1 小恢复 + 1 药水 + 1 蓝 Buff）
 }
 
 -- ---------------------------------------------------------------- 商店
@@ -226,14 +606,12 @@ Config.Buffs = {
         { id = "p_critdmg", name = "暴击伤害提升", desc = "暴击伤害 +30%", mod = { critDmg = 0.30 } },
         { id = "p_as", name = "急速强化", desc = "攻速 +35%", mod = { asPct = 0.35 } },
         { id = "p_ms", name = "移速强化", desc = "移速 +30%", mod = { msPct = 0.30 } },
-        { id = "p_ls", name = "全局吸血", desc = "18% 吸血，单次不超过伤害 50%", mod = { lifesteal = 0.18 } },
+        { id = "p_ls", name = "全局吸血", desc = "6% 吸血（普攻与技能都吃），单次最多回本次伤害的 100%", mod = { lifesteal = 0.06 } },
         { id = "p_reflect", name = "镜面反射", desc = "被弹幕命中时 35% 概率反弹一发（1.5 倍攻击），完全免伤",
           mod = {}, flag = { reflectBullet = 0.35 } },
-        { id = "p_clear", name = "弹幕清除", desc = "普通攻击会击碎范围内的敌人子弹",
-          mod = {}, flag = { clearBullet = 1 } },
     },
     gold = {
-        { id = "g_ls", name = "吸血", desc = "造成伤害的 5% 回复生命", mod = { lifesteal = 0.05 } },
+        { id = "g_ls", name = "吸血", desc = "造成伤害的 10% 回复生命（普攻与技能都吃），单次最多回本次伤害的 100%", mod = { lifesteal = 0.10 } },
         { id = "g_dodge", name = "闪避", desc = "10% 概率躲避伤害", mod = { dodge = 0.10 } },
         { id = "g_as", name = "急速强化", desc = "攻速 +50%", mod = { asPct = 0.50 } },
         { id = "g_ms", name = "移速强化", desc = "移速 +45%", mod = { msPct = 0.45 } },
@@ -251,7 +629,7 @@ Config.Buffs = {
 Config.ClassBuffs = {
     swordsman = {
         white = {
-            { id = "sw_w_sharpen", name = "利刃打磨", desc = "三段斩每段伤害 +8%；第三段命中 35% 概率额外施加 1 层挫裂。",
+            { id = "sw_w_sharpen", name = "利刃打磨", desc = "三段斩每段伤害 +8%；第三段命中 35% 概率额外施加 1 层挫裂（挫裂持续 4 秒，每层使目标受到的物理伤害 +12%）。",
               mod = {}, flag = { triplePct = 0.08, triple3CrackChance = 0.35 } },
             { id = "sw_w_dashcd", name = "疾行突袭", desc = "闪影突进冷却 -1.5 秒。",
               mod = {}, flag = { dashCd = -1.5 } },
@@ -267,7 +645,7 @@ Config.ClassBuffs = {
               mod = { crit = 0.05 }, flag = {} },
             { id = "sw_w_hp", name = "体魄坚韧", desc = "生命上限 +12%。",
               mod = { hpPct = 0.12 }, flag = {} },
-            { id = "sw_w_spin", name = "环刃轻舞", desc = "旋刃横斩伤害 +8%，冷却 -0.4 秒。",
+            { id = "sw_w_spin", name = "环刃轻舞", desc = "旋刃横斩伤害 +8%，冷却 -0.4 秒（在冷却缩减之后额外减少）。",
               mod = {}, flag = { spinPct = 0.08, spinCd = -0.4 } },
             { id = "sw_w_guard", name = "坚守姿态", desc = "卸势格挡持续 +0.15 秒；格挡成功回复 5% 生命。",
               mod = {}, flag = { parryDur = 0.15, parryHeal = 0.05 } },
@@ -289,7 +667,7 @@ Config.ClassBuffs = {
               mod = {}, flag = { hurtReduction = 0.08 } },
             { id = "sw_b_flow", name = "速斩衔接", desc = "普攻伤害 +15%；释放技能后下一次普攻额外获得 1 层剑意。",
               mod = { basicPct = 0.15 }, flag = { skillIntent = 1 } },
-            { id = "sw_b_chase", name = "追击本能", desc = "移速 +8%；附近有残血敌人时再 +12% 移速。",
+            { id = "sw_b_chase", name = "追击本能", desc = "移速 +8%；260 范围内有生命低于 30% 的敌人时，再 +12% 移速。",
               mod = { msPct = 0.08 }, flag = { executeMs = 0.12 } },
             { id = "sw_b_lowhp", name = "残血续航", desc = "普攻伤害 +11%；生命低于 40% 时额外获得 10% 吸血。",
               mod = { basicPct = 0.11 }, flag = { lowLifesteal = 0.10 } },
@@ -297,7 +675,7 @@ Config.ClassBuffs = {
               mod = {}, flag = { missRefund = 0.25 } },
             { id = "sw_b_whirl", name = "裂风回旋", desc = "旋刃横斩范围 +22%、伤害 +13%，额外 15% 概率再施加 1 层挫裂。",
               mod = {}, flag = { spinRange = 0.22, spinPct = 0.13, spinCrackChance = 0.15 } },
-            { id = "sw_b_guardheal", name = "卸劲回生", desc = "格挡成功后 3 秒内吸血 +12%，并减少旋刃横斩 1.5 秒冷却。",
+            { id = "sw_b_guardheal", name = "卸劲回生", desc = "格挡成功后 3 秒内吸血 +12%；每次成功格挡额外减少旋刃横斩 1.5 秒冷却（连续挡下多段弹幕会累计触发）。",
               mod = {}, flag = { parryLifesteal = 0.12, parrySpinCd = 1.5 } },
             { id = "sw_b_double", name = "双冲贯体", desc = "瞬影连斩每段伤害 +14%，命中使目标挫裂持续 +0.5 秒。",
               mod = {}, flag = { blinkPct = 0.14, blinkCrackExtend = 0.5 } },
@@ -319,19 +697,19 @@ Config.ClassBuffs = {
               mod = {}, flag = { phantomPct = 0.9 } },
             { id = "sw_p_bleed", name = "持续蚀伤", desc = "普攻伤害 +32%；挫裂不再随时间衰减；攻击附带每秒 0.3 倍攻击的流血，持续 3 秒。",
               mod = { basicPct = 0.32 }, flag = { crackNoDecay = 1, bleedDps = 0.3 } },
-            { id = "sw_p_charge", name = "蓄力斩击", desc = "三段斩第一段伤害 +33%，命中直接施加 2 层挫裂。",
+            { id = "sw_p_charge", name = "蓄力斩击", desc = "三段斩第一段伤害 +33%；仅第一段命中时直接施加 2 层挫裂（第二、三段不额外施加）。",
               mod = {}, flag = { triple1Pct = 0.33, triple1Crack = 2 } },
             { id = "sw_p_harvest", name = "收割增益", desc = "所有伤害 +26%；击杀时全部技能冷却 -1.5 秒，并立刻获得 5 层剑意。",
               mod = {}, flag = { allDmgPct = 0.26, killCdr = 1.5, killIntent = 5 } },
             { id = "sw_p_stagger", name = "借势破斩", desc = "普攻、旋刃横斩 30% 概率施加 1 层失衡；挫裂 + 失衡可触发粉碎连携。代价：失衡持续减半，粉碎伤害 -20%。",
               mod = {}, flag = { staggerChance = 0.3, comboMaster = 1, comboDmg = -0.2, staggerShort = 1 } },
-            { id = "sw_p_illusion", name = "虚影回响", desc = "释放技能时 35% 概率召唤虚影，0.4 秒后以 0.35 倍伤害攻击并施加随机物理负面。",
-              mod = {}, flag = { illusionChance = 0.35 } },
+            { id = "sw_p_illusion", name = "虚影回响", desc = "释放技能时 50% 概率召唤虚影，0.4 秒后以 0.5 倍伤害攻击并施加随机物理负面。",
+              mod = {}, flag = { illusionChance = 0.50 } },
             { id = "sw_p_spin", name = "旋刃风暴", desc = "旋刃横斩范围 +22%、额外 20% 概率施加挫裂，连携伤害 +22%。",
               mod = {}, flag = { spinRange = 0.22, spinCrackChance = 0.2, comboDmg = 0.22 } },
-            { id = "sw_p_parry2", name = "铁壁卸锋", desc = "卸势格挡持续 +0.3 秒；格挡成功立刻获得 2 层剑意，额外返还 0.6 秒技能冷却，之后 4 秒挫裂叠加上限 +1。",
+            { id = "sw_p_parry2", name = "铁壁卸锋", desc = "卸势格挡持续 +0.3 秒；格挡成功立刻获得 2 层剑意，额外返还 0.6 秒技能冷却，并在接下来 4 秒内使挫裂叠加上限 +1（每次格挡刷新，不需要维持格挡）。",
               mod = {}, flag = { parryDur = 0.3, parryIntent = 2, parryCdr = 0.6, parryCrackCap = 1 } },
-            { id = "sw_p_blinkcd", name = "瞬影卸锋", desc = "瞬影连斩冷却 -1 秒；格挡成功时为瞬影连斩补充 1 次免费充能；每段命中延长挫裂 0.5 秒。",
+            { id = "sw_p_blinkcd", name = "瞬影卸锋", desc = "瞬影连斩冷却 -1 秒；每次成功格挡为瞬影连斩叠加 1 次免费施放（技能键右上角显示，冷却中也能用，可叠层）；每段命中延长挫裂 0.5 秒。",
               mod = {}, flag = { blinkCd = -1, parryBlinkCharge = 1, blinkCrackExtend = 0.5 } },
         },
         gold = {
@@ -363,7 +741,7 @@ Config.ClassBuffs = {
               mod = {}, flag = { chainSymbiosis = 1, debuffChance = 0.4, comboMaster = 1 } },
             { id = "sw_c_compensate", name = "代偿流转", desc = "击杀时抽取目标全部负面并储存；接下来 5 次攻击将其施加给新敌人。代价：储存负面触发的连携伤害 -35%。",
               mod = {}, flag = { compensate = 1 } },
-            { id = "sw_c_misalign", name = "错位反应", desc = "解锁错位连携：挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡。代价：错位连携强度只有 60%。",
+            { id = "sw_c_misalign", name = "错位反应", desc = "解锁错位连携：目标同时存在挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡（并存即触发，只消耗用到的两种负面）。代价：错位连携强度只有 60%。",
               mod = {}, flag = { misalign = 1, comboMaster = 1 } },
             { id = "sw_c_dance", name = "剑舞流转", desc = "旋刃横斩、瞬影连斩命中缩短格挡冷却；格挡成功刷新这两个技能；两者命中直接将挫裂叠满。代价：这两个技能冷却 +25%。",
               mod = {}, flag = { danceFlow = 1, spinCdMul = 0.25, blinkCdMul = 0.25 } },
@@ -413,35 +791,36 @@ Config.ClassBuffs = {
         purple = {
             { id = "sp_p_sweep", name = "横扫千军", desc = "第二段普攻范围 +25%、伤害 +28%，并给范围内敌人施加 1 层失衡。",
               mod = {}, flag = { sweepRange = 0.25, sweepPct = 0.28, sweepStagger = 1 } },
-            { id = "sp_p_dash2", name = "双重突刺", desc = "突刺奔袭获得 2 层充能，伤害 +26%，命中积累 1 层失衡。",
-              mod = {}, flag = { dashCharges = 1, dashPct = 0.26, dashStagger = 1 } },
-            { id = "sp_p_guard", name = "不动如山", desc = "铁枪固守减伤 +10%，震地伤害 +30%，失衡持续时间 +1 秒。",
-              mod = {}, flag = { guardDR = 0.10, shockPct = 0.30, staggerDur = 1 } },
-            { id = "sp_p_combo", name = "三连循环", desc = "普攻伤害 +32%；打满三段返还技能 1 冷却并额外获得 1 层枪势。",
+            { id = "sp_p_dash2", name = "双重突刺", desc = "突刺奔袭充能 +1（可连放两次），伤害 +26%，收尾失衡额外 +1 层。",
+              mod = {}, flag = { dashCharges = 1, dashPct = 0.26, dashFinishStagger = 1 } },
+            { id = "sp_p_guard", name = "不动如山", desc = "铁枪固守减伤 +10%、持续 +0.4 秒；震地伤害 +30%、范围 +15%；失衡层数上限 +1、持续时间 +1 秒。",
+              mod = {}, flag = { guardDR = 0.10, guardDur = 0.4, shockPct = 0.30, shockRange = 0.15,
+                                 staggerDur = 1, staggerCapUp = 1 } },
+            { id = "sp_p_combo", name = "三连循环", desc = "普攻伤害 +32%；打满三段时「三段枪式」的冷却立即清零（返还全部剩余 CD），并额外获得 1 层枪势。",
               mod = { basicPct = 0.32 }, flag = { comboFullRefund = 1, comboFullMomentum = 1 } },
-            { id = "sp_p_break", name = "双重破军", desc = "突刺奔袭获得 2 层充能；对第 2 名及之后的敌人额外 0.33 倍伤害，命中积累失衡。",
+            { id = "sp_p_break", name = "双重破军", desc = "突刺奔袭充能 +1（可连放两次）；对第 2 名及之后的敌人额外 0.33 倍伤害，命中积累 1 层失衡。",
               mod = {}, flag = { dashCharges = 1, dashPierce = 0.33, dashStagger = 1 } },
-            { id = "sp_p_air", name = "破空突袭", desc = "突刺奔袭期间无敌，伤害 +25%。",
-              mod = {}, flag = { dashInvuln = 1, dashPct = 0.25 } },
+            { id = "sp_p_air", name = "破空突袭", desc = "突刺奔袭伤害 +25%；冲刺结束后再无敌 0.25 秒（位移期间本来就无敌）。",
+              mod = {}, flag = { dashInvuln = 0.25, dashPct = 0.25 } },
             { id = "sp_p_resonance", name = "印记共振", desc = "攻击带失衡目标 30% 概率施加 1 层猎痕；消耗枪势的技能命中带挫裂+猎痕目标触发震荡。代价：猎痕持续减半，震荡扩散层数减半。",
               mod = {}, flag = { huntOnStagger = 0.3, momentumCombo = 1, huntDurMul = 0.5, spreadMul = 0.5 } },
-            { id = "sp_p_illusion", name = "虚影回响", desc = "释放技能时 35% 概率召唤虚影，复刻该技能 35% 伤害并施加随机物理负面。",
-              mod = {}, flag = { illusionChance = 0.35 } },
-            { id = "sp_p_throwpierce", name = "飞枪破阵", desc = "掷枪贯穿 +1，命中额外施加 1 层失衡；由枪势触发的震荡扩散 +0.7 格。",
-              mod = {}, flag = { throwPierce = 1, throwStagger = 1, spreadAdd = 0.7 } },
-            { id = "sp_p_backshock", name = "回马震阵", desc = "回马枪后撤 +20%，枪阵震地范围 +20%；震地 20% 概率施加 1 层猎痕。",
-              mod = {}, flag = { backDist = 0.2, shockRange = 0.2, shockHunt = 0.2 } },
+            { id = "sp_p_illusion", name = "虚影回响", desc = "释放技能时 50% 概率召唤虚影，复刻该技能 50% 伤害并施加随机物理负面。",
+              mod = {}, flag = { illusionChance = 0.50 } },
+            { id = "sp_p_throwpierce", name = "飞枪破阵", desc = "掷枪贯穿不再消耗次数（一路穿到底），命中额外施加 1 层失衡；由枪势触发的震荡扩散 +0.7 格。",
+              mod = {}, flag = { throwInfinite = 1, throwStagger = 1, spreadAdd = 0.7 } },
+            { id = "sp_p_backshock", name = "回马震阵", desc = "回马枪后撤 +20%，枪阵震地范围 +20%；震地 45% 概率施加 1 层猎痕。",
+              mod = {}, flag = { backDist = 0.2, shockRange = 0.2, shockHunt = 0.45 } },
             { id = "sp_p_shockrefund", name = "震荡蓄势", desc = "枪阵震地命中 2 名以上敌人时 50% 概率返还 1 层枪势；震荡扩散 +0.5 格。",
               mod = {}, flag = { shockRefund = 0.5, spreadAdd = 0.5 } },
         },
         gold = {
-            { id = "sp_g_blood", name = "嗜血裁决", desc = "1A 伤害 +40% 且吸血 8%；2A 伤害 +45% 并附加 8% 真实伤害；3A 必定暴击、伤害 +50%，暴击命中直接叠满失衡。",
+            { id = "sp_g_blood", name = "嗜血裁决", desc = "1A 伤害 +40% 且吸血 8%；2A 伤害 +45%，命中额外造成 8% 攻击力真实伤害（无视减伤）；3A 必定暴击、伤害 +50%，暴击命中直接叠满失衡。",
               mod = {}, flag = { a1Pct = 0.4, a1Lifesteal = 0.08, a2Pct = 0.45,
                   a2True = 0.08, a3Pct = 0.5, a3Crit = 1, a3CritMaxStagger = 1 } },
             { id = "sp_g_chase", name = "破军追猎", desc = "突刺距离 +20%，之后 3 秒普攻 +55%；对 35% 生命以下敌人额外 +40% 伤害；击杀永久 +3% 攻击；3A 命中带挫裂目标触发震荡。",
               mod = {}, flag = { dashDist = 0.2, next3aPct = 0.55, executePct = 0.4,
                   killAtkPct = 0.03, a3Combo = 1 } },
-            { id = "sp_g_bastion", name = "固阵壁垒", desc = "铁枪固守 +0.7 秒、减伤 +15%；成功弹开子弹时反击 2.5 倍并施加失衡；生命上限 +20%。",
+            { id = "sp_g_bastion", name = "固阵壁垒", desc = "铁枪固守 +0.7 秒、减伤 +15%；固守期间子弹不再造成伤害，改为沿原弹道反弹回去，反弹造成 2.5 倍伤害并施加失衡；生命上限 +20%。",
               mod = { hpPct = 0.2 }, flag = { guardDur = 0.7, guardDR = 0.15,
                   guardReflect = 2.5, reflectStagger = 1 } },
             { id = "sp_g_wind", name = "枪风无尽", desc = "第二段普攻留下枪风领域（每 0.5 秒 0.4 倍伤害）；普攻范围 +15%、伤害 +48%，领域内敌人持续积累失衡。",
@@ -451,7 +830,7 @@ Config.ClassBuffs = {
                   comboMaster = 1, momentumGainMul = 0.7, debuffCap2 = 1 } },
             { id = "sp_g_echo", name = "Debuff回响", desc = "触发物理连携后向周围敌人施加 1 层随机负面。代价：连携后 5 秒内技能冷却 +20%。",
               mod = {}, flag = { comboEcho = 1 } },
-            { id = "sp_g_return", name = "飞枪轮回", desc = "掷枪会折返，往返两段伤害；每段施加失衡；震荡连携伤害 +40%。代价：掷枪冷却 +2 秒。",
+            { id = "sp_g_return", name = "飞枪轮回", desc = "掷枪会折返并追回手中，接住时返还 2 秒掷枪冷却；往返两段伤害；每段施加失衡；震荡连携伤害 +40%。代价：掷枪冷却 +2 秒。",
               mod = {}, flag = { throwReturn = 1, throwStagger = 1, comboDmg = 0.4, throwCd = 2 } },
             { id = "sp_g_backcharge", name = "奔突回锋", desc = "回马枪获得 2 层充能；命中 35% 概率给周围敌人挂失衡；消耗枪势释放回马枪不消耗层数。代价：回马枪冷却 +1 秒。",
               mod = {}, flag = { backCharges = 1, backStaggerChance = 0.35,
@@ -464,14 +843,14 @@ Config.ClassBuffs = {
             { id = "sp_c_shadow", name = "逐影千旋", desc = "残影复刻技能 55% 伤害，复刻命中也能积攒枪势、施加失衡；所有伤害 +30%。",
               mod = {}, flag = { phantomPct = 0.55, allDmgPct = 0.3,
                   phantomMomentum = 1, phantomStagger = 1 } },
-            { id = "sp_c_charge", name = "猛攻蓄力", desc = "每次 3A 命中叠加 1 层重击（每层 3A 伤害 +7%，最多 10 层）；铁枪固守结束追加 3.2 倍重劈；重击自带 12% 减伤并大范围施加失衡。",
+            { id = "sp_c_charge", name = "猛攻蓄力", desc = "每次普攻命中叠加 1 层重击（3A 额外再叠 1 层，每层 3A 伤害 +7%，最多 10 层）；铁枪固守结束时蓄下一次 3.2 倍重劈，命中下一个目标时结算；重击自带 12% 减伤。",
               mod = {}, flag = { chargePct = 0.07, guardSlam = 3.2, heavyDR = 0.12,
                   heavyStagger = 1, guardSlamCombo = 1 } },
             { id = "sp_c_symbiosis", name = "武链共生", desc = "攻击 40% 概率额外施加另外两种物理负面；可触发全部三套连携。代价：原生枪势不再施加失衡，负面叠层上限减半。",
               mod = {}, flag = { chainSymbiosis = 1, debuffChance = 0.4, comboMaster = 1 } },
             { id = "sp_c_compensate", name = "代偿流转", desc = "击杀时抽取目标全部负面并储存；接下来 5 次攻击将其施加给新敌人。代价：储存负面触发的连携伤害 -35%。",
               mod = {}, flag = { compensate = 1 } },
-            { id = "sp_c_misalign", name = "错位反应", desc = "解锁错位连携：挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡。代价：错位连携强度只有 60%。",
+            { id = "sp_c_misalign", name = "错位反应", desc = "解锁错位连携：目标同时存在挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡（并存即触发，只消耗用到的两种负面）。代价：错位连携强度只有 60%。",
               mod = {}, flag = { misalign = 1, comboMaster = 1 } },
             { id = "sp_c_cycle", name = "枪势轮回", desc = "掷枪、回马枪、枪阵震地命中也能获得枪势；这三个技能不消耗枪势；震荡时 20% 概率挂猎痕。代价：三个技能冷却 +30%，枪势自然获取 -40%。",
               mod = {}, flag = { momentumOnSkill = 1, momentumFreeNew = 1,
@@ -508,18 +887,18 @@ Config.ClassBuffs = {
               mod = {}, flag = { rapidDur = 1.5 } },
             { id = "ra_b_snipe", name = "冲击爆裂", desc = "穿魂狙击命中后产生 1.3 倍范围爆炸并叠加猎痕。",
               mod = {}, flag = { snipeBoom = 1.3 } },
-            { id = "ra_b_mark", name = "续能标记", desc = "普攻命中带猎痕目标时减少技能冷却 0.4 秒，对其普攻伤害额外 +12%。",
-              mod = {}, flag = { huntCdr = 0.4, huntBasicPct = 0.12 } },
+            { id = "ra_b_mark", name = "续能标记", desc = "普攻命中带猎痕目标时减少技能冷却 0.2 秒，对其普攻伤害额外 +6%。",
+              mod = {}, flag = { huntCdr = 0.2, huntBasicPct = 0.06 } },
             { id = "ra_b_leech", name = "汲取箭矢", desc = "普攻伤害 +13%，命中回复 3% 生命。",
               mod = { basicPct = 0.13 }, flag = { basicLifesteal = 0.03 } },
             { id = "ra_b_mist", name = "迷雾隐匿", desc = "受到伤害降低 8%。",
               mod = {}, flag = { hurtReduction = 0.08 } },
             { id = "ra_b_rapid2", name = "急速续射", desc = "普攻伤害 +16%，精准速射每层攻速额外 +4%。",
               mod = { basicPct = 0.16 }, flag = { rapidPct = 0.04 } },
-            { id = "ra_b_slow", name = "减速箭矢", desc = "普攻使目标减速 20%，普攻伤害 +11%。",
+            { id = "ra_b_slow", name = "减速箭矢", desc = "普攻使目标减速 20%（持续 2 秒，重复命中会刷新），普攻伤害 +11%。",
               mod = { basicPct = 0.11 }, flag = { basicSlow = 0.2 } },
-            { id = "ra_b_trap", name = "迟滞罗网", desc = "陷阱减速 +20%、冷却 -0.5 秒，狩猎契机持续 +1 秒。",
-              mod = {}, flag = { trapSlow = 0.2, trapCd = -0.5, trapCritDur = 1 } },
+            { id = "ra_b_trap", name = "迟滞罗网", desc = "陷阱减速 +20%、冷却 -0.5 秒，陷阱额外保留 1 层狩猎契机（下次普攻必定暴击，最多叠 3 层）。",
+              mod = {}, flag = { trapSlow = 0.2, trapCd = -0.5, trapCrit = 1 } },
             { id = "ra_b_volley", name = "齐射增益", desc = "箭影连射 +1 支箭，伤害 +13%。",
               mod = {}, flag = { volleyArrows = 1, volleyPct = 0.13 } },
             { id = "ra_b_swap", name = "瞬跃增益", desc = "掠袭换位后该次普攻伤害额外 +8%，瞬移后移速 +10%，该次普攻 +12%。",
@@ -528,7 +907,7 @@ Config.ClassBuffs = {
         purple = {
             { id = "ra_p_stacks", name = "多层烙印", desc = "普攻一次叠加 2 层猎痕。",
               mod = {}, flag = { huntPerHit = 1 } },
-            { id = "ra_p_frost", name = "凝固寒箭", desc = "普攻使目标减速 30%，普攻伤害 +25%。",
+            { id = "ra_p_frost", name = "凝固寒箭", desc = "普攻使目标减速 30%（持续 2 秒，重复命中会刷新），普攻伤害 +25%。",
               mod = { basicPct = 0.25 }, flag = { basicSlow = 0.3 } },
             { id = "ra_p_dodge2", name = "二段疾退", desc = "疾退腾挪额外获得 1 层狩猎冲动，冷却 -0.5 秒。",
               mod = {}, flag = { dodgeStacks = 1, r2Cd = -0.5 } },
@@ -548,10 +927,10 @@ Config.ClassBuffs = {
               mod = {}, flag = { swapBasicPct = 0.35, swapHunt = 2 } },
             { id = "ra_p_stagger", name = "残响硬直", desc = "命中带猎痕目标 30% 概率施加 1 层失衡。",
               mod = {}, flag = { staggerOnHunt = 0.3, comboMaster = 1 } },
-            { id = "ra_p_illusion", name = "虚影回响", desc = "释放技能时 35% 概率召唤虚影，复刻该技能 35% 伤害。",
-              mod = {}, flag = { illusionChance = 0.35 } },
-            { id = "ra_p_trap2", name = "诱捕烙印", desc = "陷阱触发时一次叠 2 层猎痕，狩猎契机持续 +2 秒。",
-              mod = {}, flag = { trapHuntStacks = 2, trapCritDur = 2 } },
+            { id = "ra_p_illusion", name = "虚影回响", desc = "释放技能时 50% 概率召唤虚影，复刻该技能 50% 伤害。",
+              mod = {}, flag = { illusionChance = 0.50 } },
+            { id = "ra_p_trap2", name = "诱捕烙印", desc = "陷阱触发时施加 3 层猎痕，并额外获得 1 层狩猎契机（下次普攻必定暴击，最多叠 3 层）。",
+              mod = {}, flag = { trapHuntStacks = 2, trapCrit = 1 } },
             { id = "ra_p_volley2", name = "掠影疾射", desc = "箭影连射 +2 支箭，掠袭换位冷却 -2 秒。",
               mod = {}, flag = { volleyArrows = 2, swapCd = -2 } },
             { id = "ra_p_swap2", name = "瞬猎奔袭", desc = "掠袭换位对周围施加猎痕，换位后第一次攻击 +20% 伤害。",
@@ -567,7 +946,7 @@ Config.ClassBuffs = {
                   comboMaster = 1, dodgeCap = -1, debuffCap2 = 1 } },
             { id = "ra_g_echo", name = "Debuff回响", desc = "触发物理连携后向周围敌人施加 1 层随机负面。代价：连携后 5 秒内技能冷却 +20%。",
               mod = {}, flag = { comboEcho = 1 } },
-            { id = "ra_g_trap", name = "多重罗网", desc = "陷阱可存 2 个，触发保留 2 层狩猎契机，并给周围敌人挂猎痕。代价：陷阱冷却 +3 秒。",
+            { id = "ra_g_trap", name = "多重罗网", desc = "陷阱额外获得 1 层充能（可连续放 2 个），触发保留 2 层狩猎契机，并给周围敌人挂猎痕。代价：陷阱冷却 +3 秒。",
               mod = {}, flag = { trapCount = 1, trapCritStacks = 1, trapHuntAoe = 1, trapCd = 3 } },
             { id = "ra_g_rain", name = "箭雨倾泻", desc = "箭影连射 +4 支箭，每支 40% 概率触发追猎，伤害 +35%。",
               mod = {}, flag = { volleyArrows = 4, volleyComboChance = 0.4, volleyPct = 0.35 } },
@@ -585,7 +964,7 @@ Config.ClassBuffs = {
               mod = {}, flag = { chainSymbiosis = 1, debuffChance = 0.4, comboMaster = 1 } },
             { id = "ra_c_compensate", name = "代偿流转", desc = "击杀时抽取目标全部负面并储存；接下来 5 次攻击将其施加给新敌人。代价：储存负面触发的连携伤害 -35%。",
               mod = {}, flag = { compensate = 1 } },
-            { id = "ra_c_misalign", name = "错位反应", desc = "解锁错位连携：挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡。代价：错位连携强度只有 60%。",
+            { id = "ra_c_misalign", name = "错位反应", desc = "解锁错位连携：目标同时存在挫裂+猎痕→粉碎、挫裂+失衡→追猎、失衡+猎痕→震荡（并存即触发，只消耗用到的两种负面）。代价：错位连携强度只有 60%。",
               mod = {}, flag = { misalign = 1, comboMaster = 1 } },
             { id = "ra_c_cycle", name = "狩命轮转", desc = "陷阱触发刷新箭影连射、掠袭换位；箭影连射/掠袭命中减少陷阱冷却；三者命中都可触发追猎。",
               mod = {}, flag = { huntCycle = 1, comboHuntChance = 0.2, trapCd = -2 } },
@@ -715,6 +1094,7 @@ Config.ClassBuffSkills = {
         sw_w_stancedur = { 3 }, sw_w_vamp = { 3 }, sw_b_shock = { 3 }, sw_p_control = { 3 },
         sw_g_immovable = { 3 },
         sw_w_spin = { 4 }, sw_b_whirl = { 4 }, sw_p_spin = { 4 }, sw_g_whirl2 = { 4 },
+        sw_p_stagger = { 4 },   -- 借势破斩依赖旋刃横斩，没带就不该刷出来
         sw_w_guard = { 5 }, sw_b_guardheal = { 5 }, sw_p_parry2 = { 5 }, sw_g_guard3 = { 5 },
         sw_w_blink = { 6 }, sw_b_double = { 6 }, sw_p_blinkcd = { 6 }, sw_g_three = { 6 },
         sw_c_dance = { 4, 6 },
@@ -996,7 +1376,7 @@ Config.ClassSkills = {
         {
             id = 2, name = "闪影突进", short = "突", unlockLevel = 1,
             cd = 6.0,
-            desc = "向前突进并造成 1.7 倍伤害，命中后该技能冷却 -0.8 秒。突进期间无敌（0.22 秒），可以穿怪。",
+            desc = "向前突进并造成 1.7 倍伤害，命中后该技能冷却 -0.8 秒；突进期间无敌（0.22 秒）、可以穿怪。点按立即朝最近敌人/输入方向释放，按住拖动可选方向。",
         },
         {
             id = 3, name = "剑心护体", short = "护", unlockLevel = 3,
@@ -1016,7 +1396,7 @@ Config.ClassSkills = {
         {
             id = 6, name = "瞬影连斩", short = "瞬", unlockLevel = 9,
             cd = 7.0,
-            desc = "两段短冲刺，每段 1.2 倍伤害，每段命中获得 1 层剑意。突进期间无敌（约 0.45 秒，覆盖两段之间的间隙）。",
+            desc = "两段短冲刺：第一段短促、第二段更重更亮，每段 1.2 倍伤害，段间约 0.2 秒停顿；每段命中获得 1 层剑意。突进期间无敌（覆盖两段之间的间隙）。",
         },
     },
     spearman = {
@@ -1043,7 +1423,7 @@ Config.ClassSkills = {
         {
             id = 5, name = "回马枪", short = "回", unlockLevel = 7,
             cd = 6.5,
-            desc = "后撤一步再向前突刺：突刺距离与范围都更大，1.75 倍伤害并施加 1 层失衡。消耗枪势时，命中带挫裂目标触发震荡连携。",
+            desc = "向前突刺（1.75 倍伤害、施加 1 层失衡），命中后顿一下再向后撤步拉开距离。消耗枪势时，命中带挫裂目标触发震荡连携。",
         },
         {
             id = 6, name = "枪阵震地", short = "震", unlockLevel = 9,
@@ -1060,7 +1440,7 @@ Config.ClassSkills = {
         {
             id = 2, name = "疾退腾挪", short = "退", unlockLevel = 1,
             cd = 7.0,
-            desc = "向后翻滚并短暂无敌 0.3 秒，获得 1 层狩猎冲动；翻滚期间碰到敌人子弹会额外补充 1 层。",
+            desc = "向摇杆方向翻滚（没有输入时向后撤）并短暂无敌 0.3 秒，获得 1 层狩猎冲动；翻滚后下一次普攻必定暴击；精准速射期间击杀敌人会立刻刷新本技能。",
         },
         {
             id = 3, name = "穿魂狙击", short = "狙", unlockLevel = 3,
@@ -1075,12 +1455,12 @@ Config.ClassSkills = {
         {
             id = 5, name = "箭影连射", short = "连", unlockLevel = 7,
             cd = 5.5,
-            desc = "向面前扇形射出 4 支箭，每支 0.85 倍伤害并施加猎痕；命中带失衡目标可触发追猎连携。",
+            desc = "向面前扇形射出 4 支箭，每支 0.85 倍伤害并给目标挂 1 层猎痕（猎痕可触发追猎）；命中带失衡目标可触发追猎连携。",
         },
         {
             id = 6, name = "掠袭换位", short = "换", unlockLevel = 9,
             cd = 10.0,
-            desc = "瞬移到最近带猎痕的敌人身后，下一次普攻伤害 +25% 并额外施加 2 层猎痕。",
+            desc = "瞬移到最近带猎痕的敌人身后一段距离（不贴脸，留出拉弓空间），下一次普攻伤害 +25% 并额外施加 2 层猎痕。",
         },
     },
     mage = {
@@ -1138,7 +1518,13 @@ Config.Skills = Config.ClassSkills.swordsman
 -- 按住技能键 0.22 秒进入瞄准：dir = 选方向（显示扇形/直线预览），point = 选落点（显示圆圈）
 -- 松手立刻释放；轻点（不到 0.22 秒且没拖动）仍然是原来的自动瞄准
 Config.SkillAim = {
-    swordsman = {},
+    -- tapInstant：点按立即施法（自动索敌），只有真正拖动才进入选方向，
+    -- 不需要等 0.22 秒长按 —— 闪影突进这种应急位移必须瞬发
+    swordsman = {
+        [1] = { mode = "dir", range = 92, arc = math.rad(120) },
+        [2] = { mode = "dir", range = 240, arc = math.rad(30), tapInstant = true },
+        [6] = { mode = "dir", range = 260, arc = math.rad(36), tapInstant = true },
+    },
     spearman = {
         [2] = { mode = "dir", range = 230, arc = math.rad(44) },
         [4] = { mode = "dir", range = 620, arc = math.rad(16) },
@@ -1172,6 +1558,7 @@ function Config.SetClass(id)
     end
 end
 
+---@return SkillDef|nil
 function Config.SkillByID(id)
     for _, s in ipairs(Config.Skills) do
         if s.id == id then return s end
@@ -1185,7 +1572,7 @@ function Config.ActivityPercent(steps)
     return steps * Config.STEP_KCAL / Config.REST_KCAL * 100
 end
 
--- 百分比 -> 每 1% 金币
+-- 百分比 -> 每 1% 生息
 function Config.GoldRate(percent)
     if percent < 10 then return 1 end
     if percent < 20 then return 5 end
@@ -1213,7 +1600,7 @@ Config.RewardWeights = {
     double = { white = 0, blue = 15, purple = 55, gold = 30 },
 }
 
--- 连续健康天数奖励（v1 只给金币 + 技能点）
+-- 连续健康天数奖励（v1 只给生息 + 技能点）
 Config.StreakRewards = {
     { days = 3, gold = 300, sp = 0 },
     { days = 7, gold = 700, sp = 1 },

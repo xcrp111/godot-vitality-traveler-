@@ -78,10 +78,10 @@ local function logicTests()
     ok, msg = Guild.BuyPerk(data, "insurance")
     check("低等级锁住稀有特权", not ok, msg)
     data.guild.level = 4
-    local expBefore = data.exp
+    local expBefore = data.essence
     ok = Guild.BuyWeekly(data, "crystal")
     check("Lv.2 解锁经验结晶", ok, msg)
-    check("经验结晶 +300 经验", data.exp == expBefore + 300, data.exp - expBefore)
+    check("精粹结晶 +300 精粹", data.essence == expBefore + 300, data.essence - expBefore)
     local sp = data.skillPoints
     ok = Guild.BuyWeekly(data, "stone")
     check("技能突破石 +1 技能点", ok and data.skillPoints == sp + 1)
