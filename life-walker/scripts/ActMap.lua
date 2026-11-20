@@ -92,7 +92,7 @@ end
 ActMap.MODS = {
     {
         id = "plain", name = "荒径", icon = "径", risk = 0.00, silverMul = 1.00,
-        desc = "什么也没有。地图保持模板原样。",
+        desc = "词条无附加效果，地图保持模板原样。",
     },
     {
         id = "market", name = "商路通畅", icon = "商", risk = -0.15, silverMul = 0.90,

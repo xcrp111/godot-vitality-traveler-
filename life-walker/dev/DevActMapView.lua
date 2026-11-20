@@ -294,9 +294,9 @@ local function DrawCards()
 
         -- 底栏：银币（左）+ 相对分档（右，右对齐到卡片内边）
         -- M2：「轻松」只描述战斗强度，收益必须自己可读，不能靠比较数字。
-        local tierColor = (card.silverTier == 3) and ACCENT.gold or { 158, 150, 176, 255 }
+        local tierColor = (card.silverTier == 3) and ACCENT.gold or { 190, 183, 212, 255 }
         UI.Text(x + 16, y + 278, 11, p.silver .. " 银币", S.col.text)
-        UI.Text(x + cardW - 16, y + 278, 11,
+        UI.Text(x + cardW - 16, y + 277, 13,
             (card.silverStars or "") .. " " .. (card.silverLabel or ""),
             tierColor, NVG_ALIGN_RIGHT)
 
