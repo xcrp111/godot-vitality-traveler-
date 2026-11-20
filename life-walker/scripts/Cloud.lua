@@ -162,6 +162,25 @@ local function FetchNicknames(userIds, onDone)
     if not ok and onDone then onDone() end
 end
 
+Cloud.FetchNicknames = FetchNicknames
+
+-- ---------------------------------------------------------------- 公会快照
+--- 公会名片：随榜单一起上传，别人拉榜时能看到（异步联机 A 部分）
+Cloud.SNAP_KEY = "lh_guild_snap"
+
+function Cloud.GuildSnapshot(data)
+    local g = data and data.guild
+    if not g then return nil end
+    local tech = g.tech or {}
+    return {
+        lv = g.level or 1,
+        total = math.floor(g.total or 0),
+        tech = (tech.survival or 0) + (tech.economy or 0) + (tech.offense or 0),
+        grade = (g.raid and g.raid.grade) or "",
+        keys = g.keys or 0,
+    }
+end
+
 -- ---------------------------------------------------------------- 上传
 --- 有变化才上传，且两次上传至少间隔 SUBMIT_INTERVAL 秒；失败静默（下次再试）
 ---@param force boolean|nil 忽略节流（打开排行榜时用，立刻把最新贡献推上去）
@@ -182,6 +201,8 @@ function Cloud.MaybeSubmit(data, force)
         for _, b in ipairs(Cloud.Boards) do
             batch:SetInt(b.key, b.value(data) or 0)
         end
+        local snap = Cloud.GuildSnapshot(data)
+        if snap then batch:Set(Cloud.SNAP_KEY, snap) end
         batch:Save("排行榜同步", {})
     end)
     if ok then
@@ -229,6 +250,7 @@ function Cloud.Refresh(id, force)
                         userId = uid,
                         score = iscore[board.key] or 0,
                         nickname = Cloud._names[uid],
+                        snap = (item.score and item.score[Cloud.SNAP_KEY]) or nil,
                     }
                 end
                 st.list = list
@@ -249,7 +271,7 @@ function Cloud.Refresh(id, force)
                 st.status = "error"
                 st.err = reason or code or "请求失败"
             end,
-        })
+        }, Cloud.SNAP_KEY)
     end)
     if not ok then
         st.status = "error"

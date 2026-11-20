@@ -98,6 +98,13 @@ local function drawRows(board, st, x, y, w)
         UI.Text(x + w - 8, ry + 2, 14,
             string.format("%d %s", entry.score or 0, board.unit), S.col.gold,
             NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        if entry.snap then
+            UI.Text(x + w - 96, ry + 2, 11, "名片", { 130, 190, 160 },
+                NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+        end
+        UI.Region("rank_row_" .. i, x - 6, ry - 1, w + 12, rowH, function()
+            if S.rankSel == entry then S.rankSel = nil else S.rankSel = entry end
+        end, true)
     end
 end
 
@@ -114,6 +121,41 @@ local function drawFooter(board, st)
     UI.Button("rank_refresh", 940, 600, 120, 30, "刷新", function()
         Cloud.Refresh(board.id, true)
     end, { fontSize = 13 })
+end
+
+-- ---------------------------------------------------------------- 详情（公会名片）
+local function drawDetail(board)
+    local e = S.rankSel
+    if not e then return end
+    local x, y, w, h = 700, 372, 372, 212
+    UI.Panel(x, y, w, h, 12, { 18, 22, 20, 252 }, { 90, 130, 105, 255 }, 1)
+    UI.Text(x + 16, y + 12, 17, DisplayName(e), S.col.text,
+        NVG_ALIGN_LEFT + NVG_ALIGN_TOP, NickFace())
+    UI.Text(x + w - 16, y + 14, 12, "第 " .. tostring(e.rank) .. " 名", S.col.dim,
+        NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+    UI.Text(x + 16, y + 40, 13,
+        string.format("%s %d %s", board.name, e.score or 0, board.unit), S.col.gold)
+
+    local snap = e.snap
+    UI.Line(x + 16, y + 64, x + w - 16, y + 64, S.col.line, 1)
+    if snap then
+        local grade = (snap.grade ~= "" and snap.grade) or "—"
+        UI.Text(x + 16, y + 74, 13, "公会等级", S.col.dim)
+        UI.Text(x + 116, y + 74, 14, "Lv." .. tostring(snap.lv or 1), S.col.cyan)
+        UI.Text(x + 16, y + 98, 13, "累计贡献", S.col.dim)
+        UI.Text(x + 116, y + 98, 14, UI.FormatNumber(snap.total or 0), S.col.text)
+        UI.Text(x + 16, y + 122, 13, "科技总等级", S.col.dim)
+        UI.Text(x + 116, y + 122, 14, tostring(snap.tech or 0) .. " / 30", S.col.text)
+        UI.Text(x + 16, y + 146, 13, "本周团本", S.col.dim)
+        UI.Text(x + 116, y + 146, 14, grade .. " 级", S.col.orange)
+        UI.Text(x + 16, y + 170, 11, "名片随排行榜一起上传，非实时刷新", S.col.dim)
+    else
+        UI.Text(x + 16, y + 78, 13, "这位行者还没上传公会名片", S.col.dim)
+        UI.Text(x + 16, y + 100, 11, "对方打开过一次排行榜后就会带上名片", S.col.dim)
+    end
+    UI.Button("rank_sel_close", x + w - 100, y + h - 40, 84, 28, "关闭", function()
+        S.rankSel = nil
+    end, { fontSize = 12 })
 end
 
 -- ---------------------------------------------------------------- 主入口
@@ -165,9 +207,10 @@ function RankUI.Draw()
         else
             drawEmpty("还没有人上榜，去打出第一个纪录")
         end
-    else
-        drawRows(board, st, 232, 192, 820)
     end
+
+    drawRows(board, st, 232, 192, 820)
+    drawDetail(board)
 
     drawFooter(board, st)
 end

@@ -7,6 +7,7 @@ local UI = require "UI"
 local S = require "State"
 local Save = require "Save"
 local Guild = require "Guild"
+local RaidCloud = require "RaidCloud"
 local CharArt = require "CharArt"
 
 ---@class Enemy
@@ -2143,7 +2144,14 @@ function Combat.FinishRaid(cs, killed)
     if percent > 120 then percent = 120 end
     local grade, coins, msg = Guild.CompleteRaid(S.data, percent, S.dev == true, cs.raidDamage)
     local tierName = Guild.RaidTierInfo(cs.run and cs.run.raidTier or 1).name
+    -- 公会共斗：把本次输出累进本周共享血量池并上报
+    RaidCloud.AddLocalDamage(S.data, cs.raidDamage or 0)
     Save.Write(S.data)
+    pcall(RaidCloud.Submit, S.data, true)
+    local pool = RaidCloud.Pool(S.data)
+    if pool.available then
+        msg = msg .. "；公会血量池 " .. math.floor(pool.ratio * 100) .. "% 已打掉"
+    end
     S.input.x = 0
     S.input.y = 0
     if cs.joystick then

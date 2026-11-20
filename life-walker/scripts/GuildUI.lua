@@ -7,6 +7,7 @@ local UI = require "UI"
 local S = require "State"
 local Guild = require "Guild"
 local Run = require "Run"
+local RaidCloud = require "RaidCloud"
 
 local GuildUI = {}
 
@@ -299,26 +300,50 @@ local function drawRaid()
     local maxTier = Guild.RaidTierMax(S.data)
     local bossName = raidBossName()
 
+    -- 异步共斗：先把本地输出补传，再按 TTL 拉一次共享血量池
+    RaidCloud.Sync(S.data)
+    local pool = RaidCloud.Pool(S.data)
+
     UI.Panel(130, 168, 520, 452, 14, S.col.panel, S.col.line, 1)
     UI.Text(154, 184, 20, "公会团本 · " .. bossName, S.col.orange)
-    UI.TextBox(154, 208, 472, 12,
-        "每周一次（周一重置）。Boss 使用关底模型，数值先按第 1 关关底计算；"
-        .. "出场技能跟随主界面选择的技能配置，个人贡献按输出量评 D~S。", S.col.dim)
+    UI.TextBox(154, 206, 472, 12,
+        "每周一次（周一重置）。Boss 使用关底模型，数值按第 1 关关底计算；"
+        .. "出场技能跟随主界面配置，个人贡献按输出量评 D~S。", S.col.dim)
 
-    -- 当前档位 + BOSS 信息
-    UI.Panel(154, 250, 472, 56, 10, S.col.panel2, S.col.line, 1)
-    UI.Text(168, 258, 14, "难度：" .. info.name .. "  ·  BOSS：" .. bossName, S.col.cyan)
-    UI.Text(168, 280, 12,
-        "Boss 伤害 x" .. info.atkMul .. "  ·  结算贡献币 x" .. info.coinMul
+    -- 档位 + BOSS
+    UI.Panel(154, 244, 472, 52, 10, S.col.panel2, S.col.line, 1)
+    UI.Text(168, 250, 13, "难度：" .. info.name .. "  ·  BOSS：" .. bossName, S.col.cyan)
+    UI.Text(168, 270, 11,
+        "Boss 伤害 x" .. info.atkMul .. "  ·  贡献币 x" .. info.coinMul
         .. "  ·  已解锁 " .. maxTier .. "/" .. #Guild.RAID_TIERS .. " 档", S.col.text)
 
-    UI.Text(154, 318, 13, "切换难度（公会 Lv." .. lv .. " 已解锁 " .. maxTier .. " 档）", S.col.dim)
+    -- 共享血量池（异步共斗）
+    local remainPct = math.floor((1 - pool.ratio) * 100 + 0.5)
+    local dealtPct = math.floor(pool.ratio * 100 + 0.5)
+    UI.Panel(154, 302, 472, 72, 10,
+        pool.available and { 46, 34, 34, 255 } or { 32, 30, 40, 255 },
+        pool.available and { 150, 90, 80, 255 } or S.col.line, 1)
+    if pool.available then
+        UI.Text(168, 308, 13, "公会共享血量池 · 剩余 " .. remainPct .. "%", S.col.red)
+        UI.Bar(168, 330, 300, 10, math.max(0, 1 - pool.ratio), S.col.red,
+            { 60, 34, 34, 255 }, { 140, 80, 78, 255 })
+        UI.Text(476, 326, 12, "已打掉 " .. dealtPct .. "%", S.col.gold)
+        UI.Text(168, 348, 11,
+            "参与 " .. pool.participants .. " 人  ·  我已输出 " .. UI.FormatNumber(pool.mine)
+            .. (pool.remaining <= 0 and "  ·  Boss 已被推倒！" or ""), S.col.dim)
+    else
+        UI.Text(168, 308, 13, "共享血量池：当前离线", S.col.dim)
+        UI.Text(168, 330, 11, "联网（TapTap 客户端）后自动同步全公会输出；本地仍可单独打", S.col.dim)
+        UI.Text(168, 348, 11, "本地本周已输出 " .. UI.FormatNumber(pool.mine), S.col.dim)
+    end
+
+    UI.Text(154, 384, 12, "切换难度（公会 Lv." .. lv .. " 已解锁 " .. maxTier .. " 档）", S.col.dim)
     for i = 1, #Guild.RAID_TIERS do
         local ti = Guild.RAID_TIERS[i]
         local x = 154 + (i - 1) * 98
         local unlocked = i <= maxTier
         local active = (tier == i)
-        UI.Button("guild_tier_" .. i, x, 338, 90, 34,
+        UI.Button("guild_tier_" .. i, x, 402, 90, 32,
             unlocked and ti.name or (ti.name .. "·锁"), function()
                 if not unlocked then
                     toast("公会 Lv." .. i .. " 解锁" .. ti.name .. "难度")
@@ -333,12 +358,12 @@ local function drawRaid()
     end
 
     local canRaid = Guild.RaidReady(S.data, S.dev)
-    UI.Text(154, 384, 14, "本周状态：" ..
+    UI.Text(154, 444, 13, "我的本周状态：" ..
         (g.raid.done and ("已结算 · " .. (g.raid.tier and Guild.RaidTierInfo(g.raid.tier).name or "")
             .. " · 评级 " .. g.raid.grade .. "（输出 " .. g.raid.percent .. "%）")
             or "可挑战"), g.raid.done and S.col.dim or S.col.green)
 
-    UI.Button("guild_raid_start", 154, 408, 300, 50,
+    UI.Button("guild_raid_start", 154, 464, 300, 46,
         (g.raid.done and S.dev) and "再次挑战（测试）" or (g.raid.done and "本周已完成" or "挑战团本"),
         function()
             if not Guild.RaidReady(S.data, S.dev) then
@@ -350,32 +375,51 @@ local function drawRaid()
         end, { fontSize = 18, enabled = canRaid,
                fill = { 64, 40, 34, 255 }, stroke = { 150, 90, 60, 255 } })
 
-    UI.Text(154, 466, 12, "提示：团本里死亡不会掉进度，按已造成的输出量结算评级。", S.col.dim)
+    UI.Button("guild_pool_refresh", 470, 464, 156, 46, "刷新血量池", function()
+        RaidCloud.Submit(S.data, true)
+        RaidCloud.Refresh(true)
+        toast("已刷新公会血量池")
+    end, { fontSize = 13, enabled = pool.available })
+
+    UI.Text(154, 516, 11, "团本里死亡不掉进度，按输出量结算；共享血量池按全公会累计输出计算。", S.col.dim)
 
     if S.dev then
-        UI.Button("guild_reset_week", 154, 490, 380, 36,
+        UI.Button("guild_reset_week", 154, 532, 380, 32,
             "一键重置（测试）：周限购 + 团本次数", function()
                 local ok, msg = Guild.ResetWeeklyForTest(S.data)
                 commit(ok, msg)
-            end, { fontSize = 13, fill = { 56, 40, 36, 255 }, stroke = { 130, 80, 60, 255 } })
-        UI.Text(154, 534, 12, "测试模式：团本可无限次重复体验，不计每周次数", S.col.cyan)
+            end, { fontSize = 12, fill = { 56, 40, 36, 255 }, stroke = { 130, 80, 60, 255 } })
     end
 
     UI.Panel(690, 168, 460, 452, 14, S.col.panel, S.col.line, 1)
     UI.Text(714, 186, 20, "评级与奖励", S.col.gold)
     for i, row in ipairs(Guild.RAID_GRADES) do
-        local y = 222 + (i - 1) * 56
-        UI.Panel(714, y, 412, 48, 10, S.col.panel2, S.col.line, 1)
-        UI.Text(730, y + 12, 22, row.grade,
+        local y = 222 + (i - 1) * 52
+        UI.Panel(714, y, 412, 44, 10, S.col.panel2, S.col.line, 1)
+        UI.Text(730, y + 10, 20, row.grade,
             row.grade == "S" and S.col.gold or (row.grade == "A" and S.col.orange or S.col.text))
-        UI.Text(790, y + 10, 13, "输出 ≥ Boss 血量 " .. row.min .. "%", S.col.dim)
-        UI.Text(1090, y + 10, 18,
+        UI.Text(790, y + 8, 12, "输出 ≥ Boss 血量 " .. row.min .. "%", S.col.dim)
+        UI.Text(1090, y + 8, 17,
             math.floor(row.coins * info.coinMul + 0.5) .. " 币", S.col.gold,
             NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
     end
-    UI.Text(714, 500, 12, "本周已获得团本贡献：" .. (g.raid.coins or 0) .. " 币", S.col.dim)
-    UI.Text(714, 522, 12, "难度越高 Boss 伤害越高，贡献币也越多", S.col.dim)
-    UI.Text(714, 544, 12, "BOSS 数值来源：第 1 关关底（瘟衰巨像模型）", S.col.dim)
+
+    UI.Text(714, 496, 12, "本周已获得团本贡献：" .. (g.raid.coins or 0) .. " 币", S.col.dim)
+    UI.Text(714, 518, 12, "难度越高 Boss 伤害越高，贡献币也越多", S.col.dim)
+    UI.Text(714, 540, 12, "BOSS 数值来源：第 1 关关底（瘟衰巨像模型）", S.col.dim)
+
+    -- 公会输出前三（异步共斗）
+    if pool.available and #RaidCloud.State().list > 0 then
+        local parts = {}
+        for i = 1, math.min(3, #RaidCloud.State().list) do
+            local e = RaidCloud.State().list[i]
+            local nm = e.nickname or ("行者#" .. tostring(e.userId))
+            parts[#parts + 1] = nm .. " " .. UI.FormatNumber(e.dmg)
+        end
+        UI.Text(714, 566, 12, "输出前三：" .. table.concat(parts, "  ·  "), S.col.cyan)
+    end
+    UI.Text(714, 588, 11, "本周已上报：" .. UI.FormatNumber(pool.mine) .. " / 全公会 "
+        .. UI.FormatNumber(pool.dealt), S.col.dim)
 end
 
 -- ---------------------------------------------------------------- 互助（战报）

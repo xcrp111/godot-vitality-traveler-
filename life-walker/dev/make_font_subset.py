@@ -22,7 +22,7 @@ FONT = os.path.join(ROOT, "assets", "Fonts", "MiSans-Regular.ttf")
 CHARS_FILE = os.path.join(ROOT, ".tmp", "subset_chars.txt")
 
 # 额外保险字符
-EXTRA = "×·—…「」『』【】、。，：；！？（）《》“”‘’±%‰℃①②③④⑤"
+EXTRA = "　×·—…「」『』【】、。，：；！？（）《》“”‘’±%‰℃①②③④⑤※→←↑↓"
 
 
 def main() -> int:
@@ -32,7 +32,7 @@ def main() -> int:
             chars.update(f.read())
     chars.update(chr(c) for c in range(0x20, 0x7F))
     chars.update(EXTRA)
-    chars = {c for c in chars if c.isprintable() or c == " "}
+    chars = {c for c in chars if c.isprintable() or c == " " or c == "　"}
 
     os.makedirs(os.path.dirname(CHARS_FILE), exist_ok=True)
     with io.open(CHARS_FILE, "w", encoding="utf-8") as f:
