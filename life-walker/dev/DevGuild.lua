@@ -225,7 +225,7 @@ local function drawTests()
         S.data = Save.Load()
         Config.SetClass(Save.ActiveClass(S.data))
         S.ctx = S.ctx or nvgCreate(1)
-        S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Regular.ttf")
+        S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Game.ttf")
         S.screen = "menu"
         S.guild = true
         for tab = 1, 5 do

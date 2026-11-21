@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-11-21 · 同步上游 master `10c596b9`（联机底座 + 好友 + 农场联机）
+
+### 新增（上游）
+
+- **联机底座**：`scripts/network/NetCore.lua`（身份 / 连接 / 请求-响应 / 服务端路由 / 云端 KV）、`network/FarmShared.lua`、`network/FarmServer.lua`、`network/FarmClient.lua`
+- **双入口**：`scripts/server_main.lua`（服务端入口）、`scripts/lobby_runtime.lua`（自定义大厅：单机 / 联机）
+- **好友**：`scripts/Friend.lua` + `FriendUI.lua`
+- **农场联机**：`scripts/FarmStore.lua`（双端共用纯逻辑）
+- **其它**：`EffectArt.lua`、`DevPanel.lua`，以及 `docs/联机接入指南.md`、`docs/联机踩坑记录-2026-11-21.md`、`docs/农场联机方案-2026-11-16.md`
+- 上游同时改动：`Combat` `Menu` `main` `State` `SceneUI` `Farm` `FarmUI` `CampUI` `CharArt`
+
+### 工程变化
+
+- 切换为**多人游戏模式**：`.project/settings.json` → `@runtime.multiplayer.enabled = true`（Maker 构建回报"本项目是多人游戏模式"）
+- 本地预览校验必须加 `--network`（会分配测试服务器）；不加会报"网络/server 项目"
+
+### 合并方式
+
+以 `9f80429` 为 base 做三方合并：`git merge`，冲突仅 13 个 `.meta`（取上游带 `path_refs` 的版本），业务代码自动合并。
+**保留我们的改动**：`RaidCloud.lua`（公会共斗血量池）、`Guild/GuildUI` 的公会等级 / 科技上限 / 团本档位、`Cloud.lua` 公会名片、`RankUI.lua` 详情面板、字体子集脚本的 `U+3000` 修复。
+
+### 修复
+
+- `FriendUI.lua` 用了字体里没有的 `◐`(U+25D0)，显示为方框 → 改为 `◎`(U+25CE)，并把 `◎○●◆◇` 加进子集 `EXTRA`
+- 字体重新裁剪：1678 字符 / 423 KB，`scripts/*.lua` **缺字 0**
+
+### 验证
+
+- `dev/DevGuild.lua`：**total fails = 0**
+- `dev/DevRaidCloud.lua`：**total fails = 0**
+- 联机模式 validate（`--network`）：`COMPLETED`，**Lua 错误 0**
+
 ## 2026-11-20 · 异步联机（A，不含农场）+ 公会共斗（B）
 
 ### 新增：公会团本共享血量池（B）
@@ -131,6 +163,7 @@
 
 | 日期 | Maker 提交 | 内容 |
 |---|---|---|
+| 2026-11-21 | `d74b190` | 同步上游 master `10c596b9`（联机底座 / 好友 / 农场联机）+ 工程切多人模式 |
 | 2026-11-20 | `898a2c9` | 补 Maker 自动生成的 `RaidCloud.lua.meta`（资源元数据）|
 | 2026-11-20 | `523f5c0` | 异步联机 A（公会名片上云 + 排行榜详情）+ 公会共斗共享血量池（B）|
 | 2026-11-20 | `80df2e2` | 同步上游 master `9f80429`（ui 经济 v2 / 层卡机遇 / 农场宠物 / 战斗修复）|

@@ -20,10 +20,6 @@ Camp.ShopItems = {
       limit = { kind = "none" },                              desc = "盖窝用（每次 10 个）" },
     { id = "mat_mid",   name = "中级建材",   group = "养成", price = 100, qty = 5, unit = "个",
       limit = { kind = "none" },                              desc = "盖窝用（每次 5 个）" },
-    { id = "seed_basic", name = "基础种子",  group = "农场", price = 50, qty = 1,  unit = "颗",
-      limit = { kind = "daily", key = "seedBasicBought", n = 3 }, desc = "种出白色/蓝色果实（30 分钟成熟）" },
-    { id = "seed_rare", name = "稀有种子",   group = "农场", price = 200, qty = 1, unit = "颗",
-      limit = { kind = "daily", key = "seedRareBought", n = 1 },  desc = "种出紫色/金色果实（120 分钟成熟）" },
 }
 
 -- 种子 → 果实（1 表：种植 → 果实 → 局内 Buff）
@@ -304,8 +300,6 @@ function Camp.Inventory(data)
     add("门票", "间断卡", c.streakCards, "张", "断签当天领取时自动续上连续天数（限 1 天）")
     add("材料", "基础建材", c.mats.basic, "个", "盖窝用（窝升级要基础 + 中级建材）")
     add("材料", "中级建材", c.mats.mid, "个", "盖窝用（窝升级要基础 + 中级建材）")
-    add("农场", "基础种子", c.seeds.basic, "颗", "30 分钟成熟，产白/蓝果实")
-    add("农场", "稀有种子", c.seeds.rare, "颗", "120 分钟成熟，产紫/金果实")
     for _, r in ipairs({ "white", "blue", "purple", "gold" }) do
         add("果实", Config.Rarity[r].name .. "果实", c.fruits[r] or 0, "颗",
             "装背包后，下一局开局获得一个该品质随机 Buff", r)

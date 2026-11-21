@@ -468,70 +468,7 @@ local function CompendiumClassBuffs()
     end
 end
 
--- ---------------------------------------------------------------- 图鉴：农作物
-local function CompendiumFarm()
-    -- 左：种子与规则
-    UI.Text(130, 196, 14, "种子", S.col.gold)
-    local y = 226
-    for _, kind in ipairs({ "basic", "rare" }) do
-        local def = Camp.Seeds[kind]
-        local item = Camp.Item(kind == "basic" and "seed_basic" or "seed_rare")
-        local limit = item and item.limit or {}
-        local limitText = limit.kind == "daily" and string.format("每日 %d 颗", limit.n) or "不限购"
-        UI.Text(130, y, 16, def.name, S.col.green)
-        UI.Text(360, y, 12, string.format("%d 精粹 / 颗 · %s", item and item.price or 0, limitText), S.col.dim,
-            NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
-        local out = {}
-        for _, o in ipairs(def.outcomes) do
-            out[#out + 1] = string.format("%s果实 %d%%", Config.Rarity[o.rarity].name, o.w)
-        end
-        UI.TextBox(130, y + 22, 480, 12, string.format("%d 分钟成熟　→　%s", def.minutes,
-            table.concat(out, " · ")), S.col.dim)
-        y = y + 64
-    end
-
-    UI.Text(130, y + 4, 14, "农场规则", S.col.gold)
-    local rules = {
-        "地块数 = 窝等级 + 1（窝 Lv.1~Lv.5 → 2~6 块地），第 1 块从开局就有。",
-        "一次种一颗；成熟后手动收获，领到的是「果实」，不会自动变成 Buff。",
-        "计时用真实时间，关掉游戏也会继续长。",
-        "种子只能从「营地 · 局外商店」买，只能用精粹。",
-    }
-    local ry = y + 32
-    for _, r in ipairs(rules) do
-        UI.TextBox(130, ry, 480, 11, "· " .. r, S.col.dim)
-        ry = ry + 30
-    end
-
-    -- 右：果实 → 局内 Buff
-    UI.Text(680, 196, 14, "果实 → 局内强化", S.col.gold)
-    local fy = 226
-    for _, rarity in ipairs({ "white", "blue", "purple", "gold" }) do
-        local rc = Config.Rarity[rarity]
-        local pool = Config.Buffs[rarity] or {}
-        local samples = {}
-        for i = 1, math.min(3, #pool) do samples[#samples + 1] = pool[i].name end
-        UI.Text(680, fy, 16, rc.name .. "果实", rc.color)
-        UI.Text(1160, fy, 12, string.format("强化池 %d 种 · 局内单价 %d 金币", #pool, rc.price),
-            S.col.dim, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
-        UI.TextBox(680, fy + 22, 480, 12, "例：" .. table.concat(samples, " / ") .. " …", S.col.dim)
-        fy = fy + 58
-    end
-
-    UI.Text(680, fy + 4, 14, "怎么用", S.col.gold)
-    local use = {
-        "在「营地 · 农场」把果实装进背包（一次只能装一颗）。",
-        "下一局开局自动消耗，直接获得一个该品质的随机强化。",
-        "不想要就取下；装着的果实不会过期。",
-    }
-    local uy = fy + 32
-    for _, t in ipairs(use) do
-        UI.TextBox(680, uy, 480, 11, "· " .. t, S.col.dim)
-        uy = uy + 26
-    end
-end
-
--- ---------------------------------------------------------------- ---------------------------------------------------------------- 图鉴：宠物（按《宠物系统（最新）》的 42 只）
+-- ---------------------------------------------------------------- 图鉴：宠物（按《宠物系统（最新）》的 42 只）
 local function CompendiumPets()
     local data = S.data
     UI.Text(130, 196, 13, string.format("共 42 只（低阶 10 / 高阶 15 / 究极 17），已点亮 %d 只；详细收集、孵蛋、家园在「宠物」界面",
@@ -576,13 +513,13 @@ function Menu.DrawCompendium()
 
     UI.Panel(90, 48, 1100, 624, 18, { 28, 24, 38, 252 }, S.col.line, 1)
     UI.Text(130, 68, 30, "生命行者 · 图鉴", S.col.gold)
-    UI.Text(130, 108, 14, "怪物 / 强化 / " .. Config.Class().name .. "专属 / 技能 / 状态与道具 / 农作物 / 宠物", S.col.dim)
+    UI.Text(130, 108, 14, "怪物 / 强化 / " .. Config.Class().name .. "专属 / 技能 / 状态与道具 / 宠物", S.col.dim)
 
     UI.Button("codex_close", 1010, 76, 150, 40, "关闭", function()
         S.compendium = false
     end, { fontSize = 16 })
 
-    local tabs = { "怪物", "通用强化", Config.Class().name .. "专属", "技能", "状态 / 道具", "农作物", "宠物" }
+    local tabs = { "怪物", "通用强化", Config.Class().name .. "专属", "技能", "状态 / 道具", "宠物" }
     for i, label in ipairs(tabs) do
         local active = S.compendiumTab == i
         UI.Button("codex_tab_" .. i, 130 + (i - 1) * 148, 140, 136, 40, label, function()
@@ -605,8 +542,6 @@ function Menu.DrawCompendium()
         CompendiumSkills()
     elseif S.compendiumTab == 5 then
         CompendiumStatus()
-    elseif S.compendiumTab == 6 then
-        CompendiumFarm()
     else
         CompendiumPets()
     end
@@ -1173,7 +1108,7 @@ function Menu.DrawSettings()
             KbLayout.Open()
         end, { fontSize = 15 })
         r = r + 1
-        SetRow(y0 + (r - 1) * rowH, "图鉴", "怪物 / 强化 / 技能 / 状态与道具 / 农作物 / 宠物")
+        SetRow(y0 + (r - 1) * rowH, "图鉴", "怪物 / 强化 / 技能 / 状态与道具 / 宠物")
         UI.Button("set_codex", 790, y0 + (r - 1) * rowH, 190, 36, "打开图鉴", function()
             S.settings = false
             S.compendium = true
@@ -1931,6 +1866,20 @@ function Menu.DrawCharacter()
     local x, y = PanelBackdrop(680, 500)
     UI.Text(x + 32, y + 26, 26, "角色", S.col.gold)
     UI.Text(x + 120, y + 34, 13, "职业切换 · 升级 · 出战技能", S.col.dim)
+
+    -- 我的身份（TapTap ID / 好友码）：联机时显示真实 ID 与好友码
+    do
+        local FarmClient = require "network.FarmClient"
+        local online = FarmClient.online == true
+        local uid = FarmClient.uid or (GetUserId and tostring(GetUserId()) or "未登录")
+        local code = FarmClient.code or "——"
+        UI.Panel(x + 352, y + 14, 296, 44, 8, { 22, 26, 30, 220 }, S.col.line, 1)
+        UI.Text(x + 364, y + 20, 11,
+            online and "● 联机中" or "○ 离线（大厅选「联机进入」）",
+            online and { 130, 220, 150 } or S.col.dim)
+        UI.Text(x + 364, y + 38, 12,
+            string.format("ID %s　好友码 %s", tostring(uid), tostring(code)), S.col.text)
+    end
 
     -- 职业
     local bx = x + 32

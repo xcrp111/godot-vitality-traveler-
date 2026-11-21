@@ -22,7 +22,7 @@ FONT = os.path.join(ROOT, "assets", "Fonts", "MiSans-Regular.ttf")
 CHARS_FILE = os.path.join(ROOT, ".tmp", "subset_chars.txt")
 
 # 额外保险字符
-EXTRA = "　×·—…「」『』【】、。，：；！？（）《》“”‘’±%‰℃①②③④⑤※→←↑↓"
+EXTRA = "　×·—…「」『』【】、。，：；！？（）《》“”‘’±%‰℃①②③④⑤※→←↑↓◎○●◆◇"
 
 
 def main() -> int:

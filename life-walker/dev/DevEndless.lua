@@ -227,7 +227,7 @@ function Start()
     -- ============ ⑨ 界面能画、按钮能点 ============
     local okUi, errUi = pcall(function()
         S.ctx = nvgCreate(1)
-        S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Regular.ttf")
+        S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Game.ttf")
         S.data = Save.Fresh()
         Save.SetClass(S.data, "swordsman")
         Save.DebugUnlockAll(S.data)

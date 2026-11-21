@@ -43,7 +43,7 @@ function Start()
     S.offX = (S.W - Config.DESIGN_W * S.scale) / 2
     S.offY = (S.H - Config.DESIGN_H * S.scale) / 2
     S.ctx = nvgCreate(1)
-    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Regular.ttf")
+    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Game.ttf")
 
     -- 图集能加载
     for _, cls in ipairs({ "swordsman", "spearman", "ranger", "mage" }) do
@@ -56,10 +56,10 @@ function Start()
     -- 行映射
     check("剑客 普攻行", CharArt.RowOf("swordsman", "attack") == 5)
     check("剑客 技能3 行", CharArt.RowOf("swordsman", "skill", 3) == 8)
-    check("法师 技能1 行", CharArt.RowOf("mage", "skill", 1) == 6)
-    check("法师 技能9 行", CharArt.RowOf("mage", "skill", 9) == 11)
-    check("法师 闪避行", CharArt.RowOf("mage", "dodge") == 15)
-    check("法师 胜利行", CharArt.RowOf("mage", "victory") == 16)
+    check("法师 技能1 行", CharArt.RowOf("mage", "skill", 1) == 9)
+    check("法师 技能9 行", CharArt.RowOf("mage", "skill", 9) == 17)
+    check("法师 闪避行", CharArt.RowOf("mage", "dodge") == 8)
+    check("法师 胜利行", CharArt.RowOf("mage", "victory") == 18)
 
     -- 状态机：待机 / 行走自动切换
     local cs = NewCombat("swordsman", { 1, 2, 3 })

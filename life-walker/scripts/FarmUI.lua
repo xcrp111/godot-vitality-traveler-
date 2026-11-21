@@ -4,6 +4,8 @@ local Save = require "Save"
 local UI = require "UI"
 local S = require "State"
 local Farm = require "Farm"
+local Friend = require "Friend"
+local FriendUI = require "FriendUI"
 local FarmArt = require "FarmArt"
 local FarmWalk = require "FarmWalk"
 
@@ -68,6 +70,11 @@ local function drawHeader()
         })
     end
 
+    local frUnread = Friend.Unread(S.data)
+    UI.Button("farm_friends2", 848, 72, 104, 36,
+        frUnread > 0 and ("好友 " .. frUnread) or "好友农场", function()
+            FriendUI.Open()
+        end, { fontSize = 13, fill = { 40, 96, 60, 240 }, stroke = { 120, 200, 140 } })
     UI.Button("farm_close", 960, 72, 100, 36, "关闭 Esc", function()
         S.farm = false
     end, { fontSize = 14 })
@@ -364,6 +371,11 @@ local function drawSlimHeader()
             stroke = active and { 120, 200, 140, 255 } or S.col.line,
         })
     end
+    local unread = Friend.Unread(S.data)
+    UI.Button("farm_friends", 1058, 12, 104, 32,
+        unread > 0 and ("好友 " .. unread) or "好友农场", function()
+            FriendUI.Open()
+        end, { fontSize = 13, fill = { 40, 96, 60, 240 }, stroke = { 120, 200, 140 } })
     UI.Button("farm_close", 1170, 12, 92, 32, "关闭 Esc", function()
         S.farm = false
     end, { fontSize = 13 })

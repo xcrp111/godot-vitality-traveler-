@@ -13,7 +13,7 @@ const path = require("path");
 const fontkit = require("fontkit");
 
 const ROOT = path.resolve(__dirname, "..");
-const FONT = path.join(ROOT, "assets", "Fonts", "MiSans-Regular.ttf");
+const FONT = path.join(ROOT, "assets", "Fonts", "MiSans-Game.ttf");
 
 function main() {
     const font = fontkit.openSync(FONT);

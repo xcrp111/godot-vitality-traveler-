@@ -168,7 +168,7 @@ function Start()
     -- ============ 设置界面本身：能画、按钮能点、改动能落到存档 ============
     local okUi, errUi = pcall(function()
         S.ctx = nvgCreate(1)
-        S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Regular.ttf")
+        S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Game.ttf")
         S.data = Save.Load()
         S.screen = "menu"
         S.settings = true

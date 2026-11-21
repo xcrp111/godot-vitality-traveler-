@@ -16,7 +16,7 @@ local frame = 0
 
 function Start()
     S.ctx = nvgCreate(1)
-    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Regular.ttf")
+    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Game.ttf")
     local dpr = graphics:GetDPR()
     if not dpr or dpr <= 0 then dpr = 1 end
     S.dpr = dpr

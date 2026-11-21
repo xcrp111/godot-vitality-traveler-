@@ -298,7 +298,7 @@ function Start()
     S.offY = (S.H - Config.DESIGN_H * S.scale) / 2
 
     S.ctx = nvgCreate(1)
-    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Regular.ttf")
+    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Game.ttf")
     if S.font == -1 then print("[View] WARNING: font load failed") end
 
     S.regions = {}

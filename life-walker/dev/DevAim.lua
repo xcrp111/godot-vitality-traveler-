@@ -73,7 +73,7 @@ function Start()
     S.offX = (S.W - Config.DESIGN_W * S.scale) / 2
     S.offY = (S.H - Config.DESIGN_H * S.scale) / 2
     S.ctx = nvgCreate(1)
-    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Regular.ttf")
+    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Game.ttf")
 
     -- 游侠：3=穿魂狙击(dir) 4=凝固寒箭(point) 5=箭影连射(dir)
     local cs = NewCombat({ 3, 4, 5 })
