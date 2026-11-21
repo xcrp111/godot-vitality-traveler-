@@ -259,6 +259,11 @@ local S = {
     farm = false,
     farmTab = 1,
     farmPlot = nil,
+    devPanel = false,      -- 开发/测试工具面板
+    friend = nil,          -- 农场好友系统（Friend.lua）
+    friendOpen = false,    -- 好友农场界面是否打开
+    friendView = nil,      -- { view = "farm"|"notify", id = 好友 id }
+    friendTicked = nil,    -- 本次打开是否已经跑过好友回访结算
     rank = false,
     rankTab = 1,
     restPrompt = nil,
@@ -280,7 +285,7 @@ local S = {
     camp = nil,
     campTab = nil,
     campBagPage = nil,
-    hover = { x = 0, y = 0 },   -- 鼠标悬停坐标（ui 版 main 会写它：必须是表，否则 MouseMove 索引 nil 报错）
+    hover = { x = 0, y = 0 },   -- ui 版 main 的鼠标悬停坐标：必须是表，否则 MouseMove 里索引 nil 直接报错
     hoverIsMouse = nil,
     levelCards = nil,
     showAssist = true,     -- 角色辅助显示：光圈 / 普攻范围 / 瞄准线

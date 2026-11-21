@@ -30,10 +30,12 @@ local ROWS = {
         idle = 1, walk = 2, hurt = 3, death = 4, attack = 5, victory = 12,
         skill = { [1] = 6, [2] = 7, [3] = 8, [4] = 9, [5] = 10, [6] = 11 },
     },
+    -- 法师：换用迭代素材包（mage_assets_62_sheets），行号见 dev/make_mage_sheets.js
     mage = {
-        idle = 1, walk = 2, hurt = 3, death = 4, attack = 5, victory = 16, dodge = 15,
+        idle = 1, walk = 2, hurt = 3, death = 4, attack = 5,
+        run = 6, channel = 7, dodge = 8, victory = 18,
         -- 火球 / 冰冻波 / 雷击术 / 冰锥术 / 闪电链 / 烈焰冲击 / 静电力场 / 流星陨落 / 暴风雪
-        skill = { [1] = 6, [2] = 9, [3] = 13, [4] = 10, [5] = 12, [6] = 7, [7] = 14, [8] = 8, [9] = 11 },
+        skill = { [1] = 9, [2] = 10, [3] = 11, [4] = 12, [5] = 13, [6] = 14, [7] = 15, [8] = 16, [9] = 17 },
     },
 }
 
@@ -200,6 +202,16 @@ function CharArt.Draw(classId, row, frame, x, y, flip, alpha, scaleY)
     if not iw or iw <= 0 or not ih or ih <= 0 then
         FAILED[classId] = true
         return false
+    end
+    -- 图集实际行数兜底：行号映射改错/用了旧图集时，越界行会采样到图外（人物凭空消失），
+    -- 这里夹到实际行数内，并只报一次日志，方便发现映射没同步
+    local rows = math.floor(ih / CharArt.CELL_H)
+    if rows > 0 and (row < 1 or row > rows) then
+        if not FAILED["rowwarn_" .. classId] then
+            FAILED["rowwarn_" .. classId] = true
+            print(string.format("[CharArt] 行号越界：%s 请求第 %d 行，图集只有 %d 行", classId, row, rows))
+        end
+        row = math.max(1, math.min(rows, row))
     end
     local cw, ch = CharArt.CELL_W, CharArt.CELL_H
     local dw, dh = CharArt.DRAW_W, CharArt.DRAW_H

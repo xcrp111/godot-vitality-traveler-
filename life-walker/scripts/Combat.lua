@@ -8,6 +8,7 @@ local S = require "State"
 local Save = require "Save"
 local Guild = require "Guild"
 local CharArt = require "CharArt"
+local EffectArt = require "EffectArt"
 
 ---@class Enemy
 ---@field id string
@@ -603,6 +604,25 @@ local function NearestEnemyTo(cs, x, y, maxDist)
 end
 
 -- 远程弹道（箭矢 / 元素弹）
+--- 生成一个序列帧特效（技能弹道 / 命中 / 连锁闪电）
+---@param cs table
+---@param id string 特效 id（EffectArt.Defs 里的键）
+---@param x number
+---@param y number
+---@param opts table|nil { rot=弧度, scale=倍数, alpha= }
+local function SpawnFx(cs, id, x, y, opts)
+    if not id or not EffectArt.Def(id) then return end
+    opts = opts or {}
+    cs.fx = cs.fx or {}
+    cs.fx[#cs.fx + 1] = {
+        id = id, x = x, y = y, t = 0,
+        dur = opts.life or EffectArt.Duration(id),
+        delay = opts.delay or 0,
+        rot = opts.rot, scale = opts.scale, alpha = opts.alpha,
+    }
+end
+Combat.SpawnFx = SpawnFx
+
 local function SpawnProj(cs, o)
     cs.projs[#cs.projs + 1] = {
         x = o.x, y = o.y, vx = o.vx, vy = o.vy,
@@ -615,6 +635,7 @@ local function SpawnProj(cs, o)
         combo = o.combo, crit = o.crit,
         aoe = o.aoe, aoePct = o.aoePct,
         color = o.color or { 235, 245, 255 },
+        fx = o.fx, fxImpact = o.fxImpact, fxScale = o.fxScale,
         splash = o.splash, splashPct = o.splashPct,
         lifesteal = o.lifesteal,
         boom = o.boom,
@@ -3091,12 +3112,14 @@ function Combat.MageCastSkill(slot)
                 r = 12, life = 1.2, dmg = p.atk * 2.0 * skillMul * elemMul,
                 isSkill = true, kind = "fire", element = "fire", skill = id,
                 color = { 255, 150, 90 },
+                fx = "fire_proj", fxImpact = "fire_impact", fxImpactRot = true, fxScale = 0.55,
             })
             AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = facing,
                 len = 760, width = 40, color = { 255, 150, 90 }, life = 0.4 })
         end
     elseif id == 2 then
         local radius = 128
+        SpawnFx(cs, "frost", p.x, p.y, { rot = facing, scale = 0.95 })
         local arc = math.rad(60) + F(p, "freezeArc")
         local targets
         if F(p, "iceNova") > 0 then
@@ -3125,6 +3148,7 @@ function Combat.MageCastSkill(slot)
             if (e.burnTimer or 0) > 0 or (e.freezeTimer or 0) > 0 then bonus = 1.5 end
             if F(p, "thunderCrit") > 0 then bonus = bonus + (F(p, "thunderCrit") - 1.5) end
             AddBolt(cs, e.x, e.y - 210, e.x, e.y, { 255, 240, 150 }, 0.22)
+            SpawnFx(cs, "thunder", e.x, e.y, { scale = 0.9 })
             AddTelegraph(cs, { kind = "line", x = p.x, y = p.y, x2 = e.x, y2 = e.y,
                 color = { 255, 235, 140 }, life = 0.28 })
             Combat.HitEnemy(cs, e, p.atk * 2.5 * bonus * skillMul * elemMul, true, true, false, "skill")
@@ -3138,6 +3162,7 @@ function Combat.MageCastSkill(slot)
             r = 9, life = 1.1, dmg = p.atk * 1.2 * skillMul * elemMul,
             isSkill = true, kind = "ice", element = "ice", skill = id,
             slow = 0.5 + F(p, "slowBonus"), color = { 150, 220, 255 },
+            fx = "ice_proj", fxImpact = "ice_impact", fxImpactRot = true, fxScale = 0.55,
         })
         AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = facing,
             len = 860, width = 30, color = { 150, 220, 255 }, life = 0.38 })
@@ -3150,6 +3175,7 @@ function Combat.MageCastSkill(slot)
             local done = {}
             local current = first
             local count = 0
+            local fxFromX, fxFromY = p.x, p.y
             AddTelegraph(cs, { kind = "line", x = p.x, y = p.y, x2 = first.x, y2 = first.y,
                 color = { 255, 235, 140 }, life = 0.3 })
             while current and count < chain do
@@ -3160,6 +3186,10 @@ function Combat.MageCastSkill(slot)
                 end
                 Combat.HitEnemy(cs, current, amount, true, true, false, "skill")
                 ApplyElementHit(cs, current, "bolt", id)
+                -- 连锁闪电特效：从上一个被电到的目标指向当前目标
+                SpawnFx(cs, "chain", current.x, current.y,
+                    { rot = math.atan(current.y - fxFromY, current.x - fxFromX) })
+                fxFromX, fxFromY = current.x, current.y
                 if F(p, "boltKillCdr") > 0 then
                     for oid, v in pairs(p.cooldowns) do
                         if v > 0 then p.cooldowns[oid] = math.max(0, v - F(p, "boltKillCdr")) end
@@ -3199,6 +3229,7 @@ function Combat.MageCastSkill(slot)
             ApplyElementHit(cs, e, "fire", id)
         end
         AddSlash(cs, p.x, p.y, facing, 120, math.rad(140), { 255, 150, 90 }, 7)
+        SpawnFx(cs, "flame", p.x, p.y, { rot = facing, scale = 0.95 })
         AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = facing,
             range = 120, arc = math.rad(140), color = { 255, 150, 90 }, life = 0.42 })
     elseif id == 7 then
@@ -3206,7 +3237,7 @@ function Combat.MageCastSkill(slot)
         MageField(cs, {
             x = p.x, y = p.y, r = fieldR,
             t = 0, life = 5, tick = 0, dmg = 0.2, slow = 0.2,
-            element = "bolt", skill = id,
+            element = "bolt", skill = id, fx = "static",
         })
         AddTelegraph(cs, { kind = "circle", x = p.x, y = p.y, r = fieldR,
             color = { 255, 235, 140 }, life = 0.55 })
@@ -3215,6 +3246,9 @@ function Combat.MageCastSkill(slot)
         if cs.aimPoint then cx, cy = cs.aimPoint.x, cs.aimPoint.y
         elseif target then cx, cy = target.x, target.y end
         AddBolt(cs, cx, cy - 240, cx, cy, { 255, 170, 100 }, 0.26)
+        -- 落下的陨石 + 落地冲击（冲击稍微延后，和陨石落点对上）
+        SpawnFx(cs, "meteor", cx, cy - 150, { rot = math.pi / 2, scale = 0.75, life = 0.32 })
+        SpawnFx(cs, "meteor_hit", cx, cy, { scale = 1.05, delay = 0.22 })
         for _, e in ipairs(ArcTargets(cs, cx, cy, 0, 96, math.pi * 2)) do
             Combat.HitEnemy(cs, e, p.atk * 3.0 * skillMul * elemMul, true, true, false, "skill")
             ApplyElementHit(cs, e, "fire", id)
@@ -3227,7 +3261,7 @@ function Combat.MageCastSkill(slot)
         MageField(cs, {
             x = p.x, y = p.y, r = 128,
             t = 0, life = 4 + F(p, "blizzardDur"), tick = 0, dmg = 0.3,
-            slow = 0.3 + F(p, "blizzardSlow"), element = "ice", skill = id,
+            slow = 0.3 + F(p, "blizzardSlow"), element = "ice", skill = id, fx = "blizzard",
             eternal = F(p, "eternalWinter") > 0,
             iceBonus = F(p, "blizzardIce"),
         })
@@ -4303,6 +4337,18 @@ function Combat.UpdatePlayer(cs, dt)
     if (cs.phoenixCd or 0) > 0 then cs.phoenixCd = cs.phoenixCd - dt end
 
     -- 远程弹道
+    if cs.fx then
+        for i = #cs.fx, 1, -1 do
+            local fx = cs.fx[i]
+            if (fx.delay or 0) > 0 then
+                fx.delay = fx.delay - dt
+            else
+                fx.t = fx.t + dt
+                if fx.t >= (fx.dur or 0) then table.remove(cs.fx, i) end
+            end
+        end
+    end
+
     if cs.projs then
         for i = #cs.projs, 1, -1 do
             local pr = cs.projs[i]
@@ -4400,7 +4446,13 @@ function Combat.UpdatePlayer(cs, dt)
                     end
                 end
             end
-            if remove then table.remove(cs.projs, i) end
+            if remove then
+                if pr.fxImpact then
+                    SpawnFx(cs, pr.fxImpact, pr.x, pr.y,
+                        { rot = pr.fxImpactRot and math.atan(pr.vy, pr.vx) or nil })
+                end
+                table.remove(cs.projs, i)
+            end
         end
     end
 
@@ -5116,6 +5168,17 @@ local function DrawEnemy(cs, e)
     end
     nvgFill(S.ctx)
 
+    -- 状态特效：灼烧 / 冰冻 / 减速（跟着敌人缩放，循环播放）
+    local stScale = math.max(0.35, r / 40)
+    if (e.burnTimer or 0) > 0 then
+        EffectArt.Draw("burn", cs.time, e.x, e.y - r * 0.2, { scale = stScale })
+    end
+    if (e.freezeTimer or 0) > 0 then
+        EffectArt.Draw("freeze", cs.time, e.x, e.y, { scale = stScale })
+    elseif (e.slowTimer or 0) > 0 then
+        EffectArt.Draw("slow", cs.time, e.x, e.y + r * 0.3, { scale = stScale })
+    end
+
     -- 纤毛 / 尖刺
     local spikes = e.kind == "boss" and 14 or (e.kind == "elite" and 10 or 6)
     for i = 1, spikes do
@@ -5807,6 +5870,10 @@ local function DrawRangedFx(cs)
         elseif f.element == "ice" then c = { 150, 220, 255 } end
         local k = math.min(1, f.t / f.life)
         local a = math.floor(110 * (1 - k))
+        if f.fx then
+            -- 范围类特效按半径缩放，循环播放，贴着地面圈
+            EffectArt.Draw(f.fx, cs.time, f.x, f.y, { scale = f.r / 70 })
+        end
         UI.Circle(f.x, f.y, f.r, { c[1], c[2], c[3], math.floor(a * 0.18) },
             { c[1], c[2], c[3], a }, 2)
     end
@@ -5820,10 +5887,18 @@ local function DrawRangedFx(cs)
             local y2 = pr.y + math.sin(ang) * 16
             UI.Line(x1, y1, x2, y2, { c[1], c[2], c[3], 240 }, 3)
             UI.Circle(x2, y2, 3, { 255, 255, 255, 230 })
+        elseif pr.fx and EffectArt.Draw(pr.fx, cs.time, pr.x, pr.y, { rot = ang }) then
+            -- 用序列帧画（素材朝右，按速度方向旋转）
         else
             UI.Circle(pr.x, pr.y, pr.r, { c[1], c[2], c[3], 200 },
                 { c[1], c[2], c[3], 255 }, 2)
             UI.Circle(pr.x, pr.y, pr.r + 5, { c[1], c[2], c[3], 45 })
+        end
+    end
+    for _, fx in ipairs(cs.fx or {}) do
+        if (fx.delay or 0) <= 0 then
+            EffectArt.Draw(fx.id, fx.t, fx.x, fx.y,
+                { rot = fx.rot, scale = fx.scale, alpha = fx.alpha })
         end
     end
 end

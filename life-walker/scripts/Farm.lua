@@ -480,6 +480,7 @@ function Farm.PlotInfo(data, index)
         total = total,
         waterCd = waterCd,
         waterReady = (not mature) and waterCd <= 0,
+        stolen = plot.stolen == true,
     }
 end
 
@@ -573,6 +574,12 @@ function Farm.Harvest(data, index)
         return false, string.format("仓库已满：%s最多存 %d 个", crop.fruitName, Farm.FRUIT_CAP)
     end
     local plot = f.plots[index]
+    -- 被好友偷过：收获少 1 个
+    if plot.stolen then
+        yield = math.max(0, yield - 1)
+        plot.stolen = false
+        plot.stolenAt = nil
+    end
     plot.crop = nil
     plot.plantedAt = 0
     plot.waterBonus = 0

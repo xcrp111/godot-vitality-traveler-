@@ -17,7 +17,7 @@ function Start()
     S.offY = (S.H - Config.DESIGN_H * S.scale) / 2
     VirtualControls.Initialize(Config.DESIGN_W, Config.DESIGN_H)
     S.ctx = nvgCreate(1)
-    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Regular.ttf")
+    S.font = nvgCreateFont(S.ctx, "sans", "Fonts/MiSans-Game.ttf")
     S.data = Save.Load()
     Save.SetClass(S.data, "spearman")
     Save.SetClassLevel(S.data, 10)

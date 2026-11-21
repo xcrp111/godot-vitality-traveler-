@@ -6,7 +6,7 @@
  *     npm i subset-font --prefix .tmp/font-deps
  *     NODE_PATH=<装 subset-font 的 node_modules> node dev/make_font_subset.js
  *
- * 背景：assets/Fonts/MiSans-Regular.ttf 是裁剪过的子集（9.7MB -> 260KB 左右）。
+ * 背景：assets/Fonts/MiSans-Game.ttf 是裁剪过的子集（9.7MB -> 260KB 左右）。
  * **每次在 scripts/ 里新增中文文案后都要重跑一次**，否则新字没有字形（显示成方框）。
  * 源文件是 dev/fonts/MiSans-Regular.full.ttf（完整字体，不进构建包）。
  */
@@ -16,7 +16,7 @@ const subsetFont = require("subset-font");
 
 const ROOT = path.resolve(__dirname, "..");
 const SOURCE = path.join(ROOT, "dev", "fonts", "MiSans-Regular.full.ttf");
-const OUT = path.join(ROOT, "assets", "Fonts", "MiSans-Regular.ttf");
+const OUT = path.join(ROOT, "assets", "Fonts", "MiSans-Game.ttf");
 
 // 额外保险字符（标点、符号、圈号）
 const EXTRA = "×·—…「」『』【】、。，：；！？（）《》“”‘’±%‰℃①②③④⑤·・－";

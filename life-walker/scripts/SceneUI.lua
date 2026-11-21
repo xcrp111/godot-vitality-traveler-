@@ -302,10 +302,135 @@ function SceneUI.WalkTo(wx, wy, approach)
     return true
 end
 
+-- ---------------------------------------------------------------- 触屏方向摇杆
+-- 手机端没有键盘，靠点地面走太别扭：左下角常驻一个八向摇杆。
+-- 摇杆只写 S.input.x / S.input.y，和键盘走同一套移动逻辑（农场界面也吃这套输入）
+local JOY_X, JOY_Y, JOY_R = 150, 592, 62
+local JOY_KNOB = 26
+SceneUI.JOY = { x = JOY_X, y = JOY_Y, r = JOY_R }
+local joy = { active = false, tid = nil, kx = JOY_X, ky = JOY_Y }
+
+--- 摇杆中心偏移 → 归一化输入（带死区，拖多远就是多快）
+local function JoyVector()
+    if not joy.active then return 0, 0 end
+    local ox, oy = joy.kx - JOY_X, joy.ky - JOY_Y
+    local len = math.sqrt(ox * ox + oy * oy)
+    local dead = 9
+    if len <= dead then return 0, 0 end
+    local k = math.min(1, (len - dead) / (JOY_R - dead))
+    return ox / len * k, oy / len * k
+end
+
+--- 触屏摇杆是否显示：用过触屏就显示（PC 上不挡视野），也可以在设置里强开/关掉
+function SceneUI.JoyVisible()
+    if S.data and S.data.sceneJoyDisabled then return false end
+    return S.touchMode == true or (S.data and S.data.sceneJoy == true) or false
+end
+
+--- 指针分发（down/move/up），命中摇杆返回 true 表示这次输入被吞掉
+---@return boolean
+function SceneUI.Pointer(phase, dx, dy, tid)
+    if S.screen ~= "menu" or S.panelMode then return false end
+    if phase == "down" then
+        if joy.active then return joy.tid == tid end
+        if not SceneUI.JoyVisible() then return false end
+        local ox, oy = dx - JOY_X, dy - JOY_Y
+        local reach = JOY_R + 30               -- 按压范围比视觉半径略大，好按
+        if ox * ox + oy * oy <= reach * reach then
+            joy.active = true
+            joy.tid = tid
+            joy.kx, joy.ky = dx, dy
+            return true
+        end
+        return false
+    elseif phase == "move" then
+        if not joy.active then return false end
+        if tid and joy.tid and tid ~= joy.tid then return false end
+        joy.kx, joy.ky = dx, dy
+        return true
+    elseif phase == "up" then
+        if not joy.active then return false end
+        if tid and joy.tid and tid ~= joy.tid then return false end
+        joy.active = false
+        joy.tid = nil
+        S.input.x, S.input.y = 0, 0
+        S.keys.active = false
+        return true
+    end
+    return false
+end
+
+--- 摇杆外观：外圈轨道 + 位置四向箭头 + 跟随手指的手柄
+local function DrawJoystick()
+    if not SceneUI.JoyVisible() then return end
+    local vg = S.ctx
+    local pressed = joy.active
+    local alpha = pressed and 1 or 0.55
+
+    -- 轨道
+    nvgBeginPath(vg)
+    nvgCircle(vg, JOY_X, JOY_Y, JOY_R)
+    nvgFillColor(vg, nvgRGBA(18, 16, 26, math.floor(96 * alpha)))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(150, 200, 255, math.floor(120 * alpha)))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    -- 四向小箭头（提示可以上下左右走）
+    for i = 0, 3 do
+        local a = i * math.pi / 2
+        local ax, ay = JOY_X + math.cos(a) * (JOY_R - 13), JOY_Y + math.sin(a) * (JOY_R - 13)
+        local tx, ty = JOY_X + math.cos(a) * (JOY_R - 25), JOY_Y + math.sin(a) * (JOY_R - 25)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, ax, ay)
+        nvgLineTo(vg, tx + math.cos(a + 0.9) * 5, ty + math.sin(a + 0.9) * 5)
+        nvgLineTo(vg, tx + math.cos(a - 0.9) * 5, ty + math.sin(a - 0.9) * 5)
+        nvgClosePath(vg)
+        nvgFillColor(vg, nvgRGBA(170, 205, 255, math.floor(120 * alpha)))
+        nvgFill(vg)
+    end
+
+    -- 手柄（跟手，超出半径就贴边）
+    local kx, ky = joy.kx, joy.ky
+    if pressed then
+        local ox, oy = kx - JOY_X, ky - JOY_Y
+        local len = math.sqrt(ox * ox + oy * oy)
+        if len > JOY_R then
+            kx = JOY_X + ox / len * JOY_R
+            ky = JOY_Y + oy / len * JOY_R
+        end
+    else
+        kx, ky = JOY_X, JOY_Y
+    end
+    nvgBeginPath(vg)
+    nvgCircle(vg, kx, ky, JOY_KNOB)
+    nvgFillColor(vg, nvgRGBA(90, 130, 200, pressed and 235 or 170))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(200, 225, 255, pressed and 240 or 180))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+end
+
 -- ---------------------------------------------------------------- 更新
 function SceneUI.Update(dt)
-    if S.screen ~= "menu" or S.panelMode then return end
+    if S.screen ~= "menu" or S.panelMode then
+        -- 弹面板 / 离开场景时别让摇杆卡在按下状态，否则人物会一直走
+        if joy.active then
+            joy.active = false
+            joy.tid = nil
+            S.input.x, S.input.y = 0, 0
+            S.keys.active = false
+        end
+        return
+    end
     local sc = scene()
+
+    -- 触屏摇杆优先：写进 S.input，和键盘共用同一套移动逻辑（农场界面也吃这套输入）
+    if joy.active then
+        local jx, jy = JoyVector()
+        S.input.x, S.input.y = jx, jy
+        S.keys.active = false            -- 别让键盘逻辑把摇杆值清掉
+    end
 
     local ix, iy = S.input.x or 0, S.input.y or 0
     local moving = false
@@ -383,8 +508,7 @@ end
 
 --- 点击地面：走过去（设计坐标 → 世界坐标）
 ---@return boolean 是否消费了这次点击
-function SceneUI.GroundClick(dx, dy)
-    if S.screen ~= "menu" or S.panelMode then return false end
+function SceneUI.GroundClick(dx, dy)    if S.screen ~= "menu" or S.panelMode then return false end
     if dy < 92 then return false end
     local camX, camY = SceneUI.Camera()
     local wx, wy = dx + camX, dy + camY
@@ -779,6 +903,9 @@ end
 local ENTRIES = {
     { id = "farm",     name = "农场", open = function()
         S.farm = true; S.farmTab = 1; S.farmPlot = nil; FarmWalk.Reset() end },
+    { id = "friends",  name = "好友", open = function()
+        S.farm = true; S.farmTab = 1; S.farmPlot = nil; FarmWalk.Reset()
+        local FriendUI = require "FriendUI"; FriendUI.Open() end },
     { id = "rank",     name = "排行", open = function()
         S.rank = true; S.rankTab = S.rankTab or 1
         Cloud.Refresh((Cloud.Boards[S.rankTab] or Cloud.Boards[1]).id, true) end },
@@ -807,6 +934,13 @@ local function DrawHUD()
 
     -- 顶部功能入口（缩小）
     local w, h, gap = 72, 26, 6
+    -- 开发模式：左上角一个入口，把测试工具都收进去
+    if S.dev then
+        UI.Button("scene_devpanel", 24, 26, 72, 26, "测试", function()
+            local DevPanel = require "DevPanel"
+            DevPanel.Open()
+        end, { fontSize = 12, radius = 8, fill = { 88, 56, 40, 255 }, stroke = S.col.orange })
+    end
     local total = #ENTRIES * w + (#ENTRIES - 1) * gap
     local startX = (VIEW_W - total) / 2
     for i, e in ipairs(ENTRIES) do
@@ -816,8 +950,13 @@ local function DrawHUD()
     end
 
     -- 底部提示
-    UI.Text(640, 700, 10, "WASD / 方向键移动　·　右键点地面走过去　·　E 与身旁物件互动　·　G 网格/坐标",
-        S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    if SceneUI.JoyVisible() then
+        UI.Text(640, 700, 10, "左下摇杆四向移动　·　点地面自动走过去　·　E 与身旁物件互动",
+            S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    else
+        UI.Text(640, 700, 10, "WASD / 方向键移动　·　右键点地面走过去　·　E 与身旁物件互动　·　G 网格/坐标",
+            S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    end
 
     -- 右下：今日运动（独立主入口，带今日步数）+ 选关
     UI.Button("scene_sports_entry", 1016, 620, 236, 34,
@@ -910,6 +1049,7 @@ function SceneUI.Draw()
     nvgFill(S.ctx)
 
     DrawHUD()
+    DrawJoystick()
 end
 
 --- 面板模式下的返回按钮

@@ -12,8 +12,7 @@ local CampUI = {}
 
 local TABS = {
     { id = 1, name = "局外商店" },
-    { id = 2, name = "农场" },
-    { id = 3, name = "窝" },
+    { id = 2, name = "窝" },
 }
 
 local function FmtTime(sec)
@@ -88,110 +87,11 @@ local function DrawShop(data, c)
         S.col.dim)
 end
 
--- ---------------------------------------------------------------- 农场
-local function DrawFarm(data, c)
-    local plots = Camp.Plots(data)
-    UI.Panel(64, 122, 700, 540, 14, S.col.panel, S.col.cyan, 1)
-    UI.Text(84, 138, 20, string.format("农场地块（%d / %d，盖窝可加）", plots, 6), S.col.gold)
-    UI.Text(84, 168, 12, string.format("种子：基础 ×%d（30 分 · 白/蓝）　稀有 ×%d（120 分 · 紫/金）",
-        c.seeds.basic, c.seeds.rare), S.col.dim)
-
-    local perRow = 3
-    for i = 1, 6 do
-        local col = (i - 1) % perRow
-        local row = math.floor((i - 1) / perRow)
-        local x = 84 + col * 224
-        local y = 196 + row * 226
-        local w, h = 208, 208
-        local unlocked = i <= plots
-        local plot = c.plots[i]
-        local busy = plot and plot.seed
-        local left = busy and Camp.PlotLeft(plot) or 0
-        local ready = busy and left <= 0
-
-        UI.Panel(x, y, w, h, 12,
-            not unlocked and { 44, 38, 60, 255 } or (ready and { 40, 108, 68, 255 } or { 88, 72, 126, 255 }),
-            ready and S.col.green or S.col.line, 1)
-
-        if not unlocked then
-            UI.Text(x + w / 2, y + h / 2, 13, "未开垦\n（升级窝解锁）", S.col.dim,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        elseif not busy then
-            UI.Text(x + w / 2, y + 26, 14, "空地", S.col.dim, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-            UI.Button("camp_plant_basic_" .. i, x + 20, y + 62, w - 40, 32, "种基础种子",
-                function()
-                    local ok, msg = Camp.Plant(S.data, i, "basic")
-                    UI.SetToast(msg, 2.4)
-                    if ok then Save.Write(S.data) end
-                end, { fontSize = 13, enabled = c.seeds.basic > 0,
-                    fill = { 40, 116, 74, 255 }, stroke = S.col.green })
-            UI.Button("camp_plant_rare_" .. i, x + 20, y + 104, w - 40, 32, "种稀有种子",
-                function()
-                    local ok, msg = Camp.Plant(S.data, i, "rare")
-                    UI.SetToast(msg, 2.4)
-                    if ok then Save.Write(S.data) end
-                end, { fontSize = 13, enabled = c.seeds.rare > 0,
-                    fill = { 96, 62, 148, 255 }, stroke = S.col.purple })
-            UI.Text(x + w / 2, y + 154, 11, "收获 → 果实 → 开局 Buff", S.col.cyan,
-                NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-        else
-            local def = Camp.Seeds[plot.seed]
-            UI.Text(x + w / 2, y + 26, 14, def and def.name or "作物", S.col.text,
-                NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-            UI.Text(x + w / 2, y + 56, 12, ready and "已成熟" or FmtTime(left),
-                ready and S.col.green or S.col.cyan, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-            local total = math.max(1, def and def.minutes * 60 or 1)
-            UI.Bar(x + 20, y + 88, w - 40, 12, 1 - math.min(1, left / total), S.col.green,
-                { 40, 34, 56, 255 }, S.col.line)
-            UI.Button("camp_harvest_" .. i, x + 20, y + 118, w - 40, 36, ready and "收获" or "还没熟",
-                function()
-                    local ok, msg = Camp.Harvest(S.data, i)
-                    UI.SetToast(msg, 2.4)
-                    if ok then Save.Write(S.data) end
-                end, { fontSize = 15, enabled = ready,
-                    fill = { 40, 116, 74, 255 }, stroke = S.col.green })
-        end
-    end
-
-    -- 右：果实库存
-    UI.Panel(788, 122, 428, 540, 14, S.col.panel, S.col.cyan, 1)
-    UI.Text(808, 138, 20, "果实（局内 Buff 券）", S.col.gold)
-    UI.Text(808, 168, 12, "装一颗进背包，下一局开局自动换成一个该品质的随机 Buff", S.col.dim)
-
-    local equipped = c.equippedFruit
-    UI.Panel(808, 192, 388, 56, 10, equipped and { 96, 82, 40, 255 } or { 88, 72, 126, 255 },
-        equipped and S.col.gold or S.col.line, 1)
-    if equipped then
-        UI.Text(824, 210, 16, "背包里：" .. RarityName(equipped) .. "果实", RarityColor(equipped))
-        UI.Button("camp_unequip", 1080, 206, 100, 30, "取下", function()
-            Camp.UnequipFruit(S.data)
-            Save.Write(S.data)
-            UI.SetToast("已取下果实", 1.8)
-        end, { fontSize = 13 })
-    else
-        UI.Text(824, 212, 14, "背包是空的", S.col.dim)
-    end
-
-    for i, rarity in ipairs({ "white", "blue", "purple", "gold" }) do
-        local y = 264 + (i - 1) * 74
-        local n = c.fruits[rarity] or 0
-        UI.Panel(808, y, 388, 64, 10, { 88, 72, 126, 255 }, RarityColor(rarity), 2)
-        UI.Text(824, y + 10, 16, RarityName(rarity) .. "果实 ×" .. n, RarityColor(rarity))
-        UI.Text(824, y + 36, 11, "开局随机获得一个" .. RarityName(rarity) .. "品质 Buff", S.col.dim)
-        UI.Button("camp_equip_" .. rarity, 1080, y + 18, 100, 30, "装背包", function()
-            local ok, msg = Camp.EquipFruit(S.data, rarity)
-            UI.SetToast(msg, 2.4)
-            if ok then Save.Write(S.data) end
-        end, { fontSize = 13, enabled = n > 0 and equipped == nil,
-            fill = { 40, 116, 74, 255 }, stroke = S.col.green })
-    end
-end
-
 -- ---------------------------------------------------------------- 窝
 local function DrawNest(data, c)
     UI.Panel(64, 122, 560, 300, 14, S.col.panel, S.col.cyan, 1)
     UI.Text(84, 138, 20, string.format("窝 Lv.%d", c.nestLevel), S.col.gold)
-    UI.Text(84, 170, 13, string.format("农场地块 %d / 6", Camp.Plots(data)), S.col.cyan)
+    UI.Text(84, 170, 13, "营地养成：门票与建材都在「局外商店」用精粹兑换", S.col.dim)
 
     local nextLv = Camp.NextNest(data)
     if nextLv then
@@ -211,7 +111,7 @@ local function DrawNest(data, c)
     end
 
     UI.Text(84, 320, 12, "建材只能从局外商店买（基础 50 精粹 / 10 个，中级 100 精粹 / 5 个）", S.col.dim)
-    UI.Text(84, 344, 12, "窝等级决定农场地块数：+1/级，上限 6 块", S.col.dim)
+    UI.Text(84, 344, 12, "农场已独立成主界面「农场」入口，营地这里不再重复种地", S.col.dim)
 
     UI.Panel(648, 122, 568, 300, 14, S.col.panel, S.col.cyan, 1)
     UI.Text(668, 138, 20, "局外一览", S.col.gold)
@@ -220,7 +120,6 @@ local function DrawNest(data, c)
         { "累计获得精粹", UI.FormatNumber(data.essenceEarned or 0) },
         { "账号等级", "Lv." .. Economy.AccountLevel(data) },
         { "钥匙 / 间断卡", c.keys .. " 把 / " .. c.streakCards .. " 张" },
-        { "种子", "基础 " .. c.seeds.basic .. " · 稀有 " .. c.seeds.rare },
         { "建材", "基础 " .. c.mats.basic .. " · 中级 " .. c.mats.mid },
     }
     for i, row in ipairs(rows) do
@@ -229,16 +128,6 @@ local function DrawNest(data, c)
         UI.Text(1200, y, 15, row[2], S.col.text, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
     end
 
-    if S.dev then
-        UI.Button("camp_devskip", 668, 386, 220, 30, "开发：跳过所有等待", function()
-            local now = os.time()
-            for _, plot in pairs(c.plots) do
-                if plot then plot.readyAt = now end
-            end
-            Save.Write(S.data)
-            UI.SetToast("已跳过成熟等待", 2.0)
-        end, { fontSize = 12, fill = { 40, 116, 74, 255 }, stroke = S.col.green })
-    end
 end
 
 -- ---------------------------------------------------------------- 主绘制
@@ -270,10 +159,10 @@ function CampUI.Draw()
             stroke = active and S.col.cyan or S.col.line, strokeW = active and 2 or 1 })
     end
 
+    -- 老存档里 campTab 可能还是 2（原「农场」页）：统一夹回商店
+    if (S.campTab or 1) > #TABS then S.campTab = 1 end
     if (S.campTab or 1) == 1 then
         DrawShop(data, c)
-    elseif S.campTab == 2 then
-        DrawFarm(data, c)
     else
         DrawNest(data, c)
     end
