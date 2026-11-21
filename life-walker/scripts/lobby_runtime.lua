@@ -135,11 +135,11 @@ return function(ctx)
             end, { fontSize = 18, accent = { 150, 235, 170 },
                 fill = { 40, 96, 64, 255 }, stroke = { 120, 200, 140 } })
 
-            UI.Button("lobby_online", cx - 180, 322, 360, 54, "联机进入（好友浇水 / 偷菜）", function()
+            UI.Button("lobby_online", cx - 180, 322, 360, 54, "联机进入（公会共斗 / 好友农场）", function()
                 CreateRoom()
             end, { fontSize = 18, fill = { 44, 60, 96, 255 }, stroke = { 120, 170, 230 } })
 
-            UI.Text(cx, 400, 12, "联机需要网络；单机不需要，玩法完全一样。", { 150, 150, 165 },
+            UI.Text(cx, 400, 12, "单机=本地存档，玩法完全一样；公会共斗 / 好友农场需要联机进入（一个人也能开房）", { 150, 150, 165 },
                 NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
 
         else
