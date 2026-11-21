@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-11-21 · 联机落地：公会服务端（新）+ 农场存档分槽（加固）
+
+> 依据 TapTap 制造周报 2026/3/16–3/22 的「存档架构心法」：按域切槽 / 大集合分片（单条 ~13KB）/ 脏标记批量写 / 数值资源独立 / 单槽容错。
+
+### 新增：公会联机（服务端权威）
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/GuildStore.lua` | 双端共用纯逻辑：成员/申请/贡献/等级/团本血量池，以及 `ToSlots/FromSlots` 分槽 |
+| `scripts/network/GuildShared.lua` | 11 个事件名 + 6 个存档槽 key + 编解码 + 单槽字节上限 |
+| `scripts/network/GuildServer.lua` | 服务端权威：create/sync/apply/approve/reject/leave/donate/raid/levelup/search |
+| `scripts/network/GuildClient.lua` | 客户端：同步/操作/离线降级/血量池快照 |
+
+**槽位设计**：`guild_meta`（名称/等级/经验/会长/分片数）· `guild_members_<i>`（每片 ≤40 人）· `guild_raid`（血量池数值）· `guild_log`（环形 30 条）· `guild_applies` · `guild_member_info`（玩家→公会，存在玩家自己 uid 下）。
+写盘顺序：成员/团本/日志/申请先写，**meta 最后写**（meta 是"这份存档有效"的指针）。
+
+**接入**：`server_main.lua` 与 `main.lua` 的服务端分支启动 `GuildServer`；客户端在 `ClientConnected` 事件里初始化 `GuildClient` 并同步。
+**UI**：公会主页新增联机状态（`● 已连服务器 / ○ 离线`）+「同步联机公会」「创建联机公会」；团本页在已连服时优先显示**服务端权威血量池**（否则回退本地 + 排行榜快照）。
+
+### 加固：农场存档按域拆槽
+
+- `FarmStore.ToSlots / FromSlots`：拆成 `farm_meta` / `farm_plots` / `farm_inv` / `farm_social`
+- `FarmServer`：
+  - 读档改 4 槽并行读，**meta 缺失时回退读旧单槽 `farm_doc` 并自动迁移**
+  - 写档逐槽写、单槽失败不影响其它槽，meta 最后写；>11KB 打告警
+  - 高频调用（种植/收获/浇水，无回调路径）改为**标脏 + 每 5 秒批量落盘**；带回调的路径仍然同步写，保证语义不变
+  - 每个槽独立错误处理，坏槽只丢那一块
+
+### 验证
+
+- `dev/DevNet.lua`（新）：**31 项断言全过** —— 分片/坏槽隔离、农场分槽往返、以及用假传输跑完整 客户端→服务端→回包 链路（建会/申请/审批/权限/贡献/团本血量池/上限夹取/退会/离线降级）
+- `dev/DevGuild.lua` / `dev/DevRaidCloud.lua`：**0 fail**（回归）
+- 联机 validate（`--network`）：`COMPLETED`，Lua 错误 0、资源错误 0
+- 服务端脚本自检：`[server] 服务端已就绪` + `[Guild] 服务端已注册 11 条路由`
+
+### 修复
+
+- 上游代码引用 `Fonts/MiSans-Game.ttf` 但仓库里没有该文件 → 生成同名子集副本，并在 `dev/make_font_subset.py` 里同步产出，消除启动期资源报错
+
+### 已知问题
+
+- `validate --network` 的 load 阶段会有一条引擎提示 `Server error occurred before connection (history_errors=1)`，随后自动重连并 `COMPLETED`（init/run/scene 全 PASS）。服务端日志在远端，本地暂时读不到；已记录待平台侧排查。
+
 ## 2026-11-21 · 同步上游 master `10c596b9`（联机底座 + 好友 + 农场联机）
 
 ### 新增（上游）
@@ -163,6 +206,7 @@
 
 | 日期 | Maker 提交 | 内容 |
 |---|---|---|
+| 2026-11-21 | `4fe938b` | 公会联机（服务端权威 + 分槽）+ 农场存档分槽/批量落盘 + `MiSans-Game.ttf` 修复 |
 | 2026-11-21 | `d74b190` | 同步上游 master `10c596b9`（联机底座 / 好友 / 农场联机）+ 工程切多人模式 |
 | 2026-11-20 | `898a2c9` | 补 Maker 自动生成的 `RaidCloud.lua.meta`（资源元数据）|
 | 2026-11-20 | `523f5c0` | 异步联机 A（公会名片上云 + 排行榜详情）+ 公会共斗共享血量池（B）|

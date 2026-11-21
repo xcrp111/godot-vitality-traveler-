@@ -19,6 +19,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_FONT = os.path.join(ROOT, "dev", "fonts", "MiSans-Regular.full.ttf")
 FONT = os.path.join(ROOT, "assets", "Fonts", "MiSans-Regular.ttf")
+GAME_FONT = os.path.join(ROOT, "assets", "Fonts", "MiSans-Game.ttf")
 CHARS_FILE = os.path.join(ROOT, ".tmp", "subset_chars.txt")
 
 # 额外保险字符
@@ -50,7 +51,10 @@ def main() -> int:
     if result.returncode != 0:
         print("字体裁剪失败", file=sys.stderr)
         return result.returncode
-    print("已完成:", FONT, os.path.getsize(FONT), "bytes")
+    import shutil
+shutil.copyfile(FONT, GAME_FONT)
+print("已完成:", FONT, os.path.getsize(FONT), "bytes")
+print("同步副本:", GAME_FONT, os.path.getsize(GAME_FONT), "bytes")
     return 0
 
 

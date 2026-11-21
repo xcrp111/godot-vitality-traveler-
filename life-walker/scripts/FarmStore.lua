@@ -293,4 +293,78 @@ function FarmStore.MatchQuery(doc, query)
     return false
 end
 
+
+-- ---------------------------------------------------------------- 分槽（联机持久化）
+-- 依据周报的存档架构建议：按业务领域切槽，单槽独立读写、独立容错。
+--   farm_meta    名字 / 好友码 / 地块数 / 声望 / 更新时间
+--   farm_plots   每块地的作物状态（会随操作频繁变化，单独一槽）
+--   farm_inv     种子 / 果实
+--   farm_social  好友 / 好友申请 / 事件流
+FarmStore.SLOT = {
+    META   = "farm_meta",
+    PLOTS  = "farm_plots",
+    INV    = "farm_inv",
+    SOCIAL = "farm_social",
+}
+
+--- 拆成 4 个槽
+function FarmStore.ToSlots(doc)
+    doc = FarmStore.Ensure(doc) or FarmStore.NewDoc("", "", 0)
+    return {
+        [FarmStore.SLOT.META] = {
+            uid = doc.uid, name = doc.name, code = doc.code,
+            updatedAt = doc.updatedAt, landCount = doc.landCount, rep = doc.rep,
+        },
+        [FarmStore.SLOT.PLOTS] = doc.plots or {},
+        [FarmStore.SLOT.INV] = { seeds = doc.seeds or {}, fruits = doc.fruits or {} },
+        [FarmStore.SLOT.SOCIAL] = {
+            friends = doc.friends or {},
+            requests = doc.requests or { incoming = {}, outgoing = {} },
+            events = doc.events or {},
+        },
+    }
+end
+
+--- 合回一份文档；任一槽坏了只丢那一块，其余照常（附 issues 供打日志）
+---@return table doc, table issues
+function FarmStore.FromSlots(slots)
+    slots = slots or {}
+    local issues = {}
+    local meta = slots[FarmStore.SLOT.META]
+    if type(meta) ~= "table" then
+        issues[#issues + 1] = "meta 缺失"
+        meta = {}
+    end
+    local doc = FarmStore.NewDoc(meta.uid or "", meta.name or "", meta.updatedAt or 0)
+    doc.code = meta.code
+    doc.landCount = tonumber(meta.landCount) or doc.landCount
+    doc.rep = tonumber(meta.rep) or 0
+
+    local plots = slots[FarmStore.SLOT.PLOTS]
+    if type(plots) == "table" then
+        doc.plots = plots
+    else
+        issues[#issues + 1] = "plots 槽损坏"
+    end
+
+    local inv = slots[FarmStore.SLOT.INV]
+    if type(inv) == "table" then
+        if type(inv.seeds) == "table" then doc.seeds = inv.seeds end
+        if type(inv.fruits) == "table" then doc.fruits = inv.fruits end
+    else
+        issues[#issues + 1] = "inv 槽损坏"
+    end
+
+    local social = slots[FarmStore.SLOT.SOCIAL]
+    if type(social) == "table" then
+        if type(social.friends) == "table" then doc.friends = social.friends end
+        if type(social.requests) == "table" then doc.requests = social.requests end
+        if type(social.events) == "table" then doc.events = social.events end
+    else
+        issues[#issues + 1] = "social 槽损坏"
+    end
+
+    return FarmStore.Ensure(doc) or doc, issues
+end
+
 return FarmStore

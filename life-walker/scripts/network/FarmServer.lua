@@ -28,6 +28,7 @@ local KEY = FarmShared.KEY
 
 local store_ = {}           -- uid -> doc（内存缓存）
 local codeIndex_ = {}       -- 好友码 -> uid（服务端内存索引；正式上量应换成持久索引）
+local dirty_ = {}            -- uid -> true（标脏待批量落盘）
 local SaveDoc               -- 前向声明：LoadDoc 里分配好友码后要写回
 local connUid_ = {}         -- connKey -> uid
 local queue_ = {}           -- uid -> { waiting = 是否正在读云端 }
@@ -58,52 +59,131 @@ local function LoadDoc(uid, cb)
         cb(doc)
         return
     end
-    serverCloud:Get(uid, KEY, {
-        ok = function(values)
-            local raw = values and values[KEY] or nil
-            local doc
-            if type(raw) == "string" then
-                doc = FarmShared.Decode(raw)
-            elseif type(raw) == "table" then
-                doc = raw
-            end
-            doc = FarmStore.Ensure(doc) or FarmStore.NewDoc(uid, "", now())
-            doc.uid = uid
-            if not doc.code or doc.code == "" then
-                doc.code = FarmStore.GenerateCode()
-                SaveDoc(doc)
-            end
-            codeIndex_[doc.code] = uid
-            store_[uid] = doc
-            cb(doc)
-        end,
-        error = function(code, reason)
-            print(string.format("[Farm] 读取文档失败 uid=%s code=%s %s", uid, tostring(code), tostring(reason)))
-            local doc = FarmStore.NewDoc(uid, "", now())
-            store_[uid] = doc
-            cb(doc)
-        end,
-    })
+
+    local slots = {}
+    local pending = 0
+    local finished = false
+
+    local function finalize(raw)
+        if finished then return end
+        finished = true
+        local doc
+        if raw then
+            doc = FarmStore.Ensure(raw) or FarmStore.NewDoc(uid, "", now())
+            print("[Farm] 检测到旧版单槽存档，已拆分为 4 个槽")
+            SaveDoc(doc)
+        else
+            local issues
+            doc, issues = FarmStore.FromSlots(slots)
+            for _, msg in ipairs(issues) do print("[Farm] 载入告警：" .. msg) end
+        end
+        doc.uid = uid
+        if not doc.code or doc.code == "" then
+            doc.code = FarmStore.GenerateCode()
+            SaveDoc(doc)
+        end
+        codeIndex_[doc.code] = uid
+        store_[uid] = doc
+        cb(doc)
+    end
+
+    local function step()
+        pending = pending - 1
+        if pending > 0 then return end
+        if type(slots[FarmStore.SLOT.META]) == "table" then
+            finalize(nil)
+            return
+        end
+        serverCloud:Get(uid, KEY, {
+            ok = function(values)
+                local raw = values and values[KEY] or nil
+                local legacy = nil
+                if type(raw) == "string" then
+                    legacy = FarmShared.Decode(raw)
+                elseif type(raw) == "table" then
+                    legacy = raw
+                end
+                finalize(legacy)
+            end,
+            error = function() finalize(nil) end,
+        })
+    end
+
+    for _, name in pairs(FarmStore.SLOT) do
+        pending = pending + 1
+        serverCloud:Get(uid, name, {
+            ok = function(values)
+                slots[name] = values and values[name] or nil
+                step()
+            end,
+            error = function(code, reason)
+                print(string.format("[Farm] 读槽失败 uid=%s slot=%s %s %s",
+                    tostring(uid), tostring(name), tostring(code), tostring(reason)))
+                slots[name] = nil
+                step()
+            end,
+        })
+    end
 end
 
 --- 写回 serverCloud（同时更新内存缓存）
+local function FlushDoc(doc, cb)
+    doc = FarmStore.Ensure(doc)
+    if not doc then if cb then cb(false) end return end
+    store_[doc.uid] = doc
+    dirty_[doc.uid] = nil
+    if not serverCloud then if cb then cb(true) end return end
+
+    local slots = FarmStore.ToSlots(doc)
+    local names = {}
+    for name in pairs(slots) do names[#names + 1] = name end
+    table.sort(names, function(a, b)
+        if a == FarmStore.SLOT.META then return false end
+        if b == FarmStore.SLOT.META then return true end
+        return a < b
+    end)
+    local pending = #names
+    local okAll = true
+    local function step(ok)
+        if ok == false then okAll = false end
+        pending = pending - 1
+        if pending == 0 and cb then cb(okAll) end
+    end
+    for _, name in ipairs(names) do
+        local payload = FarmShared.Encode(slots[name]) or "{}"
+        if #payload > 11 * 1024 then
+            print(string.format("[Farm] 槽偏大 uid=%s slot=%s %dB",
+                tostring(doc.uid), name, #payload))
+        end
+        serverCloud:Set(doc.uid, name, payload, {
+            ok = function() step(true) end,
+            error = function(code, reason)
+                print(string.format("[Farm] 写槽失败 uid=%s slot=%s %s %s",
+                    tostring(doc.uid), tostring(name), tostring(code), tostring(reason)))
+                step(false)
+            end,
+        })
+    end
+end
+
+--- 批量落盘：把标脏的文档合并写出去（由 FarmServer.Poll 每 5 秒调一次）
+function FlushDirty()
+    for uid in pairs(dirty_) do
+        local doc = store_[uid]
+        if doc then FlushDoc(doc) end
+    end
+end
+
 SaveDoc = function(doc, cb)
     doc = FarmStore.Ensure(doc)
     if not doc then return end
     store_[doc.uid] = doc
-    if not serverCloud then
-        if cb then cb(true) end
+    doc.updatedAt = now()
+    if not cb then
+        dirty_[doc.uid] = true
         return
     end
-    local payload = FarmShared.Encode(doc)
-    serverCloud:Set(doc.uid, KEY, payload, {
-        ok = function() if cb then cb(true) end end,
-        error = function(code, reason)
-            print(string.format("[Farm] 写文档失败 uid=%s code=%s %s",
-                doc.uid, tostring(code), tostring(reason)))
-            if cb then cb(false) end
-        end,
-    })
+    FlushDoc(doc, cb)
 end
 
 -- ---------------------------------------------------------------- 工具
@@ -476,8 +556,9 @@ end
 
 --- 引擎 Update 驱动（服务端每 0.5 秒轮一次）
 function FarmServer.Poll()
+    pollClock_ = (pollClock_ or 0) + 1
+    if pollClock_ % 300 == 0 then pcall(FlushDirty) end
     if not serverCloud then return end
-    pollClock_ = pollClock_ + 1
     if pollClock_ % 30 ~= 0 then return end     -- 约每 0.5 秒
     for _, uid in ipairs(OnlineUids()) do
         PollOne(uid)

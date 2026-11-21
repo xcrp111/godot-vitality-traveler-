@@ -195,6 +195,8 @@ function Start()
         local ok, err = xpcall(function()
             local FarmServer = require "network.FarmServer"
             FarmServer.Start()
+            local GuildServer = require "network.GuildServer"
+            GuildServer.Start()
         end, function(e) return tostring(e) end)
         if not ok then print("[main] SERVER START ERROR: " .. tostring(err)) end
         return
@@ -225,6 +227,7 @@ function Start()
     -- 农场联机：只有在真连上服务器时才初始化（单机模式下完全不碰云变量，避免影响排行榜）
     S.farmNetEnabled = false
     pcall(function() SubscribeToEvent("ClientConnected", "HandleFarmClientConnected") end)
+    pcall(function() SubscribeToEvent("ClientConnected", "HandleGuildClientConnected") end)
 
     local ok, err = xpcall(Boot, function(e)
         local tb = e
@@ -492,6 +495,36 @@ function HandleFarmClientConnected(eventType, eventData)
     if not ok then print("[main] FARM CLIENT CONNECT ERROR: " .. tostring(err)) end
 end
 
+
+--- 公会联机：连上服务器后同步一次（离线时 GuildClient 自动降级为不可用）
+function HandleGuildClientConnected(eventType, eventData)
+    local ok, err = xpcall(function()
+        local GuildClient = require "network.GuildClient"
+        local conn = eventData:GetPtr("Connection", "Connection")
+        if not conn then return end
+        GuildClient.UseConnection(conn)
+        local uid = (GetUserId and GetUserId()) or nil
+        local function syncWith(name)
+            GuildClient.SetIdentity(uid or "", name or "")
+            GuildClient.Sync()
+        end
+        if GetUserNickname and uid then
+            pcall(function()
+                GetUserNickname({
+                    userIds = { uid },
+                    onSuccess = function(list)
+                        syncWith(list and list[1] and list[1].nickname or "")
+                    end,
+                    onError = function() syncWith("") end,
+                })
+            end)
+        else
+            syncWith("")
+        end
+        print("[main] GUILD CLIENT connected, uid=" .. tostring(uid))
+    end, function(e) return tostring(e) end)
+    if not ok then print("[main] GUILD CLIENT CONNECT ERROR: " .. tostring(err)) end
+end
 
 -- ---------------------------------------------------------------- 文字诊断（开发期用）
 -- 联机模式下出现过「所有文字画不出来」的问题，这台机器没法真机调试，

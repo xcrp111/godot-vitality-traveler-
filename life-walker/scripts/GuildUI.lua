@@ -8,6 +8,7 @@ local S = require "State"
 local Guild = require "Guild"
 local Run = require "Run"
 local RaidCloud = require "RaidCloud"
+local GuildClient = require "network.GuildClient"
 
 local GuildUI = {}
 
@@ -118,7 +119,35 @@ local function drawHome()
         commit(ok, msg)
     end, { fontSize = 13, enabled = (g.thanks or 0) > 0 })
 
-    UI.Text(154, 590, 12, "每周一 00:00 刷新：周产出上限 / 周限购商店 / 团本次数与评级", S.col.dim)
+    UI.Text(154, 578, 12, "每周一 00:00 刷新：周产出上限 / 周限购商店 / 团本次数与评级", S.col.dim)
+
+    -- 联机公会（NetCore + GuildServer）
+    UI.Text(698, 540, 12, "联机：" .. GuildClient.StatusText(), S.col.cyan)
+    UI.Button("guild_net_sync", 698, 562, 200, 32, "同步联机公会", function()
+        if not GuildClient.Available() then
+            toast("当前离线：联机公会需要从大厅「联机进入」")
+            return
+        end
+        GuildClient.Sync(function(resp)
+            toast(resp.ok and "公会数据已同步" or (resp.msg or "同步失败"))
+        end)
+    end, { fontSize = 12, enabled = GuildClient.Available() })
+
+    UI.Button("guild_net_create", 910, 562, 220, 32, "创建联机公会", function()
+        if not GuildClient.Available() then
+            toast("当前离线：请从大厅「联机进入」后再创建")
+            return
+        end
+        if GuildClient.guild then
+            toast("你已经有联机公会了")
+            return
+        end
+        local name = (GuildClient.nickname or "") ~= "" and (GuildClient.nickname .. "的公会") or "行者公会"
+        if #name > 36 then name = string.sub(name, 1, 36) end
+        GuildClient.Create(name, GuildClient.nickname or "", function(resp)
+            toast(resp.ok and ("已创建：" .. name) or (resp.msg or "创建失败"))
+        end)
+    end, { fontSize = 12, enabled = GuildClient.Available() })
 
     -- 右：每日社交动作
     UI.Panel(674, 168, 476, 452, 14, S.col.panel, S.col.line, 1)
@@ -302,7 +331,19 @@ local function drawRaid()
 
     -- 异步共斗：先把本地输出补传，再按 TTL 拉一次共享血量池
     RaidCloud.Sync(S.data)
-    local pool = RaidCloud.Pool(S.data)
+    -- 联机公会：服务端权威血量池优先；离线/未进会时退回本地 + 排行榜快照
+    local netPool = GuildClient.RaidPool()
+    local pool
+    if netPool then
+        pool = {
+            available = true, server = true,
+            bossMax = netPool.bossMax, dealt = netPool.dealt, remaining = netPool.remain,
+            ratio = netPool.ratio, participants = math.max(1, netPool.participants),
+            mine = netPool.myDamage, week = netPool.week, top = netPool.top,
+        }
+    else
+        pool = RaidCloud.Pool(S.data)
+    end
 
     UI.Panel(130, 168, 520, 452, 14, S.col.panel, S.col.line, 1)
     UI.Text(154, 184, 20, "公会团本 · " .. bossName, S.col.orange)
@@ -324,7 +365,9 @@ local function drawRaid()
         pool.available and { 46, 34, 34, 255 } or { 32, 30, 40, 255 },
         pool.available and { 150, 90, 80, 255 } or S.col.line, 1)
     if pool.available then
-        UI.Text(168, 308, 13, "公会共享血量池 · 剩余 " .. remainPct .. "%", S.col.red)
+        UI.Text(168, 308, 13,
+            "公会共享血量池" .. (pool.server and "（服务端）" or "") .. " · 剩余 " .. remainPct .. "%",
+            S.col.red)
         UI.Bar(168, 330, 300, 10, math.max(0, 1 - pool.ratio), S.col.red,
             { 60, 34, 34, 255 }, { 140, 80, 78, 255 })
         UI.Text(476, 326, 12, "已打掉 " .. dealtPct .. "%", S.col.gold)
