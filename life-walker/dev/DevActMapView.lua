@@ -249,10 +249,10 @@ local function DrawCards()
             { 18 + math.floor(rc[1] * 0.05), 15 + math.floor(rc[2] * 0.05), 25 + math.floor(rc[3] * 0.05), 255 },
             RGBA(rc, 60), 1)
         local cx, cy = winX + winW / 2, winY + winH / 2 + 2
-        DrawSigil(cx, cy, 40, card, rc)
+        DrawSigil(cx, cy, 36, card, rc)
         local glyph = FirstChar(card.modName)
         if glyph ~= "" then
-            UI.Text(cx, cy, 40, glyph, RGBA(rc, 205), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            UI.Text(cx, cy, 36, glyph, RGBA(rc, 205), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         end
 
         -- 牌顶色带：卡片身份的第一眼信号（实体卡的色条/烫边）
@@ -260,7 +260,7 @@ local function DrawCards()
 
         -- 风险徽标浮在牌面右上角：实心亮底 + 深色字，拉远也能读
         local badgeW, badgeH = 92, 24
-        local badgeX, badgeY = winX + winW - badgeW - 8, winY + 8
+        local badgeX, badgeY = winX + winW - badgeW - 8, winY + 12
         UI.Panel(badgeX, badgeY, badgeW, badgeH, 12, rc, { 24, 20, 32, 200 }, 1)
         -- B1：档名是按本组相对位置微调的卡打一个小点（数字仍是绝对强度）。
         -- 两个坑：① 放徽标外侧会被牌面纹章的同心环吞掉（实测根本看不见）；
@@ -420,7 +420,9 @@ function HandleRender()
     local act = ActMap.ActOfLevel(View.level)
     UI.Text(48, 26, 26, "第 " .. View.level .. " 关", S.col.text)
     UI.Text(190, 32, 15, (act and ("第 " .. act.id .. " 幕 · " .. act.name) or ""), S.col.dim)
-    UI.Text(48, 60, 14, "层卡三选一 · 点卡片切换下方节点图（这是 dev 预览，不进正式流程）", S.col.dim)
+    -- 副标题是全屏对比度最低的一行，但它也是唯一告诉人「可以点卡片」的一句，提亮一档
+    UI.Text(48, 60, 14, "层卡三选一 · 点卡片切换下方节点图（这是 dev 预览，不进正式流程）",
+        { 168, 160, 190, 255 })
 
     DrawCards()
 
@@ -431,7 +433,8 @@ function HandleRender()
     UI.Text(gx, gy + View.layer.rows * (cell + gap) + 2, 12,
         "4×4 节点图 · 金框 = 机遇房 / 死胡同", S.col.dim)
 
-    DrawSideInfo(gx + gw + 32, 376, 620)
+    -- 说明区右移、加宽到与三张卡的右边界对齐（1005 vs 卡片 1008），把右侧那片空白吃掉
+    DrawSideInfo(gx + gw + 48, 376, 650)
 
     UI.Text(Config.DESIGN_W - 48, 34, 11, "DevActMapView · 数据来自 ActMap.RollCards / GenerateLayer",
         { 110, 103, 130, 255 }, NVG_ALIGN_RIGHT)
