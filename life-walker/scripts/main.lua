@@ -228,6 +228,7 @@ function Start()
     S.farmNetEnabled = false
     pcall(function() SubscribeToEvent("ClientConnected", "HandleFarmClientConnected") end)
     pcall(function() SubscribeToEvent("ClientConnected", "HandleGuildClientConnected") end)
+    pcall(function() SubscribeToEvent("TextInput", "HandleTextInput") end)
 
     local ok, err = xpcall(Boot, function(e)
         local tb = e
@@ -758,7 +759,34 @@ end
 
 ---@param eventType string
 ---@param eventData KeyDownEventData
+--- 通用文本输入（公会 ID / 公会名）：S.guildInput = { active, value, mode, maxLen }
+function HandleTextInput(eventType, eventData)
+    local gi = S.guildInput
+    if not gi or not gi.active then return end
+    local ok, text = pcall(function() return eventData:GetString("Text") end)
+    if not ok or not text or text == "" then return end
+    for ch in text:gmatch(".") do
+        if #gi.value < (gi.maxLen or 24) and ch:match("[%w%-_]") then
+            gi.value = gi.value .. ch
+        end
+    end
+end
+
 function HandleKeyDown(eventType, eventData)
+    -- 输入框接管键盘
+    local gi = S.guildInput
+    if gi and gi.active then
+        local k = eventData["Key"]:GetInt()
+        if k == KEY_BACKSPACE then
+            gi.value = gi.value:sub(1, -2)
+        elseif k == KEY_RETURN or k == KEY_ESCAPE then
+            gi.active = false
+            local onDone = gi.onDone
+            gi.onDone = nil
+            if onDone then onDone(k == KEY_RETURN and gi.value or nil) end
+        end
+        return
+    end
     if Menu.OverlayActive() then return end
     local key = eventData["Key"]:GetInt()
     if key == KEY_W or key == KEY_UP then S.keys.up = true end

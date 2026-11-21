@@ -122,76 +122,83 @@ local function drawHome()
     UI.Text(154, 578, 12, "每周一 00:00 刷新：周产出上限 / 周限购商店 / 团本次数与评级", S.col.dim)
 
     -- 联机公会（NetCore + GuildServer）
-    UI.Text(698, 540, 12, "联机：" .. GuildClient.StatusText(), S.col.cyan)
-    UI.Button("guild_net_sync", 698, 562, 200, 32, "同步联机公会", function()
-        if not GuildClient.Available() then
-            toast("当前离线：联机公会需要从大厅「联机进入」")
+    UI.Text(698, 536, 12, "联机：" .. GuildClient.StatusText(), S.col.cyan)
+    if GuildClient.guild then
+        UI.Text(698, 552, 11, "公会 ID：" .. tostring(GuildClient.guild.id)
+            .. "（发给队友即可申请加入）", S.col.dim)
+    else
+        UI.Text(698, 552, 11, "联机公会要在大厅「联机进入」后创建；离线时下面是本地模拟公会", S.col.dim)
+    end
+
+    local online = GuildClient.Available()
+    local inGuild = GuildClient.guild ~= nil
+
+    UI.Button("guild_net_sync", 698, 568, 112, 30, "同步", function()
+        if not online then
+            toast("当前离线：请从大厅「联机进入」")
             return
         end
         GuildClient.Sync(function(resp)
             toast(resp.ok and "公会数据已同步" or (resp.msg or "同步失败"))
         end)
-    end, { fontSize = 12, enabled = GuildClient.Available() })
+    end, { fontSize = 12, enabled = online })
 
-    UI.Button("guild_net_create", 910, 562, 220, 32, "创建联机公会", function()
-        if not GuildClient.Available() then
+    UI.Button("guild_net_create", 816, 568, 112, 30, "创建公会", function()
+        if not online then
             toast("当前离线：请从大厅「联机进入」后再创建")
             return
         end
-        if GuildClient.guild then
-            toast("你已经有联机公会了")
+        if inGuild then
+            toast("你已经在「" .. tostring(GuildClient.guild.name) .. "」里了")
             return
         end
-        local name = (GuildClient.nickname or "") ~= "" and (GuildClient.nickname .. "的公会") or "行者公会"
-        if #name > 36 then name = string.sub(name, 1, 36) end
-        GuildClient.Create(name, GuildClient.nickname or "", function(resp)
-            toast(resp.ok and ("已创建：" .. name) or (resp.msg or "创建失败"))
-        end)
-    end, { fontSize = 12, enabled = GuildClient.Available() })
-
-    -- 右：每日社交动作
-    UI.Panel(674, 168, 476, 452, 14, S.col.panel, S.col.line, 1)
-    UI.Text(698, 186, 20, "今日社交（每周一 00:00 刷新周产出）", S.col.cyan)
-
-    UI.Button("guild_sign", 698, 216, 424, 40,
-        g.sign and "今日已签到" or "签到并捐赠材料  +20", function()
-            local ok, msg = Guild.Sign(S.data)
-            commit(ok, msg)
-        end, { fontSize = 15, enabled = not g.sign,
-               fill = { 40, 62, 48, 255 }, stroke = { 86, 140, 100, 255 } })
-
-    UI.Text(698, 268, 14, "灵魂摆渡（今日 " .. g.rescue .. "/3） 每次 +80", S.col.dim)
-    local list = Guild.RescueList(S.data)
-    for i, m in ipairs(list) do
-        if i <= 3 then
-            local y = 290 + (i - 1) * 44
-            local used = S.data.guild.liked["rescue_" .. m.idx]
-            local cls = Config.Classes[m.class]
-            UI.Panel(698, y, 424, 38, 10, S.col.panel2, S.col.line, 1)
-            UI.Text(712, y + 10, 14, m.name .. "（" .. (cls and cls.name or "?") .. "）",
-                used and S.col.dim or S.col.text)
-            UI.Button("guild_rescue_" .. i, 1010, y + 5, 100, 28,
-                used and "已救援" or "+80 救援", function()
-                    local ok, msg = Guild.Rescue(S.data, m.idx)
-                    commit(ok, msg)
-                end, { fontSize = 12, enabled = (not used) and g.rescue < 3 })
+        local nick = GuildClient.nickname or ""
+        local name = (nick ~= "" and (nick .. "的公会")) or "行者公会"
+        if utf8 and utf8.len then
+            while (utf8.len(name) or 0) > 12 do name = name:sub(1, -4) end
         end
-    end
+        GuildClient.Create(name, nick, function(resp)
+            toast(resp.ok and ("已创建「" .. name .. "」") or (resp.msg or "创建失败"))
+        end)
+    end, { fontSize = 12, enabled = online and not inGuild })
 
-    UI.Text(698, 428, 14, "悬赏拓印（今日 " .. g.bounty .. "/2） 每次 +50", S.col.dim)
-    local bl = Guild.BountyList(S.data)
-    for i, b in ipairs(bl) do
-        local y = 450 + (i - 1) * 44
-        local used = S.data.guild.liked["bounty_" .. i]
-        UI.Panel(698, y, 424, 38, 10, S.col.panel2, S.col.line, 1)
-        UI.Text(712, y + 10, 14, b.name .. " 求购「" .. b.buff .. "」（" .. b.rarity .. "）",
-            used and S.col.dim or S.col.text)
-        UI.Button("guild_bounty_" .. i, 1010, y + 5, 100, 28,
-            used and "已寄出" or "+50 寄出", function()
-                local ok, msg = Guild.SendBounty(S.data, i)
-                commit(ok, msg)
-            end, { fontSize = 12, enabled = (not used) and g.bounty < 2 })
-    end
+    UI.Button("guild_net_join", 934, 568, 112, 30, "申请加入", function()
+        if not online then
+            toast("当前离线：请从大厅「联机进入」后再申请")
+            return
+        end
+        if inGuild then
+            toast("你已经在一个公会里了，先退出才能申请")
+            return
+        end
+        S.guildInput = {
+            active = true, value = "", maxLen = 40,
+            title = "申请加入公会",
+            hint = "输入会长给你的公会 ID（形如 123456-1730000000）",
+            onDone = function(value)
+                if not value or value == "" then return end
+                GuildClient.Apply(value, GuildClient.nickname or "", function(resp)
+                    toast(resp.ok and "申请已提交，等会长审批" or (resp.msg or "申请失败"))
+                end)
+            end,
+        }
+    end, { fontSize = 12, enabled = online and not inGuild })
+
+    UI.Button("guild_net_leave", 1052, 568, 92, 30,
+        (online and inGuild) and "退出公会" or "重置本地公会", function()
+        if online and inGuild then
+            GuildClient.Leave(GuildClient.nickname or "", function(resp)
+                toast(resp.ok and "已退出公会" or (resp.msg or "退出失败"))
+            end)
+            return
+        end
+        -- 离线：本地模拟公会重置成初始状态
+        S.data.guild = nil
+        Guild.Ensure(S.data)
+        Save.Write(S.data)
+        toast("已重置本地模拟公会（贡献币 / 等级 / 科技全部清空）")
+    end, { fontSize = 11, enabled = (online and inGuild) or (not online) })
+
 end
 
 -- ---------------------------------------------------------------- 商店
@@ -468,10 +475,36 @@ end
 -- ---------------------------------------------------------------- 互助（战报）
 local function drawSocial()
     local g = Guild.Roll(S.data)
-    UI.Text(130, 176, 15, "公会战报 · 点赞每次 +5 贡献币（今日 " .. g.likes .. "/5）", S.col.dim)
+    local offset = 0
+
+    -- 联机会长/管理员：审批入会申请
+    local gnet = GuildClient.guild
+    if GuildClient.CanManage() and gnet and #(gnet.applies or {}) > 0 then
+        UI.Text(130, 172, 15, "入会申请（同意后对方即可进会）", S.col.orange)
+        for i, a in ipairs(gnet.applies) do
+            if i > 3 then break end
+            local y = 196 + (i - 1) * 44
+            UI.Panel(130, y, 1000, 38, 10, S.col.panel2, S.col.line, 1)
+            UI.Text(150, y + 10, 14, tostring(a.name or "行者") .. "  ·  ID " .. tostring(a.uid), S.col.text)
+            UI.Button("guild_approve_" .. i, 930, y + 5, 90, 28, "同意", function()
+                GuildClient.Approve(a.uid, function(resp)
+                    toast(resp.ok and ("已同意 " .. tostring(a.name)) or (resp.msg or "操作失败"))
+                end)
+            end, { fontSize = 12, fill = { 42, 62, 46, 255 }, stroke = { 86, 140, 100, 255 } })
+            UI.Button("guild_reject_" .. i, 1026, y + 5, 90, 28, "拒绝", function()
+                GuildClient.Reject(a.uid, function(resp)
+                    toast(resp.ok and "已拒绝" or (resp.msg or "操作失败"))
+                end)
+            end, { fontSize = 12, fill = { 56, 40, 40, 255 }, stroke = { 120, 76, 76, 255 } })
+            offset = offset + 44
+        end
+        offset = offset + 8
+    end
+
+    UI.Text(130, 176 + offset, 15, "公会战报 · 点赞每次 +5 贡献币（今日 " .. g.likes .. "/5）", S.col.dim)
     local feed = Guild.Feed(S.data)
     for i, post in ipairs(feed) do
-        local y = 204 + (i - 1) * 84
+        local y = 204 + offset + (i - 1) * 84
         UI.Panel(130, y, 1000, 74, 12, S.col.panel, S.col.line, 1)
         UI.Text(152, y + 10, 14, post.author .. " · " .. post.title, S.col.cyan)
         UI.TextBox(152, y + 32, 700, 12, post.text, S.col.text)
@@ -501,6 +534,28 @@ function GuildUI.Draw()
     elseif tab == 3 then drawTech()
     elseif tab == 4 then drawRaid()
     else drawSocial() end
+
+    -- 文本输入框（申请加入公会用；Enter 提交 / Esc 取消由 main.lua 处理）
+    local gi = S.guildInput
+    if gi and gi.active then
+        nvgBeginPath(S.ctx)
+        nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
+        nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 210))
+        nvgFill(S.ctx)
+        UI.Panel(340, 276, 600, 168, 14, { 30, 34, 30, 252 }, S.col.line, 1)
+        UI.Text(364, 296, 18, gi.title or "输入", S.col.text)
+        UI.Text(364, 324, 12, gi.hint or "", S.col.dim)
+        UI.Panel(364, 348, 552, 40, 8, { 22, 24, 22, 255 }, S.col.cyan, 1)
+        local shown = (gi.value ~= "" and gi.value) or "（在这里输入）"
+        UI.Text(378, 358, 16, shown, gi.value ~= "" and S.col.text or S.col.dim)
+        UI.Text(364, 398, 11, "Enter 提交 · Esc 取消 · 只接受字母 / 数字 / - / _", S.col.dim)
+        UI.Button("guild_input_ok", 920, 396, 96, 28, "提交", function()
+            gi.active = false
+            local cb = gi.onDone
+            gi.onDone = nil
+            if cb then cb(gi.value) end
+        end, { fontSize = 12 })
+    end
 end
 
 return GuildUI

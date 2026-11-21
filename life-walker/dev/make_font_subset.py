@@ -52,9 +52,9 @@ def main() -> int:
         print("字体裁剪失败", file=sys.stderr)
         return result.returncode
     import shutil
-shutil.copyfile(FONT, GAME_FONT)
-print("已完成:", FONT, os.path.getsize(FONT), "bytes")
-print("同步副本:", GAME_FONT, os.path.getsize(GAME_FONT), "bytes")
+    shutil.copyfile(FONT, GAME_FONT)
+    print("已完成:", FONT, os.path.getsize(FONT), "bytes")
+    print("同步副本:", GAME_FONT, os.path.getsize(GAME_FONT), "bytes")
     return 0
 
 
