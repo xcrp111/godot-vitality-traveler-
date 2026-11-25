@@ -216,6 +216,36 @@ local function TestCards()
         (maxFixRatio - 1) * 100))
     check("低风险卡占比合理（>=30%）", safeCount / math.max(1, totalCards) >= 0.30,
         safeCount .. "/" .. totalCards)
+
+    -- 无尽等效关卡诊断（只打印，不断言）：无尽第 N 层 = 主线第 N+9 关。
+    -- 用途：将来如果层卡也要进无尽，先看高关卡会不会退化成「三张全是轻松」。
+    local infMin, infMax, infSame, infRolls = 1e9, -1e9, 0, 0
+    local bestLevel, bestRisk = 0, -1e9
+    local labelCount = {}
+    for lv = 21, 60, 3 do
+        for _ = 1, 3 do
+            local cards = ActMap.RollCards(lv)
+            infRolls = infRolls + 1
+            local lo, hi = 1e9, -1e9
+            local same = true
+            for i, c in ipairs(cards) do
+                if c.risk < lo then lo = c.risk end
+                if c.risk > hi then hi = c.risk end
+                if i > 1 and c.riskLabel ~= cards[1].riskLabel then same = false end
+                labelCount[c.riskLabel] = (labelCount[c.riskLabel] or 0) + 1
+            end
+            if same then infSame = infSame + 1 end
+            if lo < infMin then infMin = lo end
+            if hi > infMax then infMax = hi end
+            if hi > bestRisk then bestRisk = hi; bestLevel = lv end
+        end
+    end
+    local parts = {}
+    for _, name in ipairs({ "轻松", "常规", "吃紧", "险恶" }) do
+        parts[#parts + 1] = name .. "=" .. tostring(labelCount[name] or 0)
+    end
+    print(string.format("[Act] 无尽等效关卡（21–60，各 3 次）：risk 区间 %+.2f ~ %+.2f；三张同档 %d/%d；档位分布 %s；最乐观的是第 %d 关，最高 risk 才 %+.2f",
+        infMin, infMax, infSame, infRolls, table.concat(parts, " "), bestLevel, bestRisk))
 end
 
 -- ---------------------------------------------------------------- ③ 局内节点图
