@@ -49,6 +49,69 @@ function GuildClient.SetIdentity(uid, nickname)
     GuildClient.nickname = nickname
 end
 
+-- ---------------------------------------------------------------- 云变量轮询传输
+-- 远程事件在当前环境不通（客户端发得出、服务端收不到），与农场一致改用云变量：
+-- 客户端把请求写进自己的 guild_req，服务端轮询处理后写回 guild_resp。
+GuildClient.REQ_KEY = "guild_req"
+GuildClient.RESP_KEY = "guild_resp"
+GuildClient.lastRespSeq = 0
+GuildClient.cloudMode = false
+
+local function cloudWrite(key, value)
+    if not (clientCloud and clientCloud.Set) then return false end
+    local ok = pcall(function() clientCloud:Set(key, value) end)
+    return ok
+end
+
+local function cloudRead(key, cb)
+    if not (clientCloud and clientCloud.Get) then cb(nil) return end
+    pcall(function()
+        clientCloud:Get(key, {
+            ok = function(values)
+                local raw = values and values[key] or nil
+                local data = nil
+                if type(raw) == "string" then data = GuildShared.Decode(raw)
+                elseif type(raw) == "table" then data = raw end
+                cb(data)
+            end,
+            error = function() cb(nil) end,
+        })
+    end)
+end
+
+function GuildClient.EnableCloudTransport()
+    GuildClient.cloudMode = true
+    GuildClient.online = true
+    GuildClient.status = "syncing"
+    NetCore.SetTransport({
+        send = function(eventName, payload)
+            GuildClient.seq = (GuildClient.seq or 0) + 1
+            local req = {
+                seq = GuildClient.seq,
+                event = eventName,
+                payload = payload or {},
+                at = os.time(),
+            }
+            if not cloudWrite(GuildClient.REQ_KEY, GuildShared.Encode(req)) then
+                GuildClient.lastError = "clientCloud 写入失败"
+            end
+        end,
+    })
+end
+
+--- 每帧调用：拉服务端回包（内部限频 0.5s）
+function GuildClient.Poll(now)
+    if not GuildClient.cloudMode then return end
+    if (now or 0) - (GuildClient._lastPoll or 0) < 0.5 then return end
+    GuildClient._lastPoll = now or 0
+    cloudRead(GuildClient.RESP_KEY, function(resp)
+        if type(resp) ~= "table" or not resp.seq then return end
+        if resp.seq <= (GuildClient.lastRespSeq or 0) then return end
+        GuildClient.lastRespSeq = resp.seq
+        NetCore.ClientDispatch(resp.event or "", resp.payload or {})
+    end)
+end
+
 function GuildClient.Available()
     return GuildClient.online and NetCore.online
 end

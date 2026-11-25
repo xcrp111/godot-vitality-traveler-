@@ -29,6 +29,8 @@ function FarmServerOnUpdate()
     local okPoll, err = pcall(function()
         local FarmServer = require "network.FarmServer"
         FarmServer.Poll()
+        local GuildServer = require "network.GuildServer"
+        GuildServer.Poll()
     end)
     if not okPoll then print("[server] poll 出错: " .. tostring(err)) end
 end

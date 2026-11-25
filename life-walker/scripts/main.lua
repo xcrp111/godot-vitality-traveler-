@@ -309,6 +309,9 @@ function HandleUpdate(eventType, eventData)
             pcall(function()
                 require("network.FarmClient").Poll(S.time or 0)
             end)
+            pcall(function()
+                require("network.GuildClient").Poll(S.time or 0)
+            end)
         end
 
         -- 联机同步重试：按时间（每秒一次，最长 60 秒），每次都记日志方便排查
@@ -331,6 +334,15 @@ function HandleUpdate(eventType, eventData)
                             print("[FarmNet] 检测到服务器连接，已启用云通道")
                         else
                             FarmClient.Sync("")
+                        end
+                        -- 公会同样走云通道（远程事件在这套服务器上不通）
+                        local GuildClient = require "network.GuildClient"
+                        if not GuildClient.cloudMode then
+                            GuildClient.EnableCloudTransport()
+                            GuildClient.Sync()
+                            print("[GuildNet] 已启用云通道并请求同步")
+                        elseif not GuildClient.synced and (S.farmNetTries % 5) == 0 then
+                            GuildClient.Sync()
                         end
                     end
                 end
@@ -503,7 +515,7 @@ function HandleGuildClientConnected(eventType, eventData)
         local GuildClient = require "network.GuildClient"
         local conn = eventData:GetPtr("Connection", "Connection")
         if not conn then return end
-        GuildClient.UseConnection(conn)
+        GuildClient.EnableCloudTransport()
         local uid = (GetUserId and GetUserId()) or nil
         local function syncWith(name)
             GuildClient.SetIdentity(uid or "", name or "")

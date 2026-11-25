@@ -528,6 +528,8 @@ local function OnlineUids()
     return out
 end
 
+FarmServer.OnlineUids = OnlineUids
+
 --- 处理一个玩家的请求：把 farm_req 里最新的序号跑一遍，结果写进 farm_resp
 local function PollOne(uid)
     if not serverCloud then return end

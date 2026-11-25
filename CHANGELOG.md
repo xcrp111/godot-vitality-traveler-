@@ -83,6 +83,17 @@
 
 **验证**：`preview validate --network` 由 load **FAIL** 变为 **load / init / run / scene 全 PASS**，Lua 错误 0、资源错误 0。
 
+### 修复：公会也改用云变量轮询通道（远程事件在这套服务器上不通）
+
+上游 `FarmClient` 里已经写明：**远程事件在当前环境不通（客户端发得出去、服务端收不到）**，所以农场早就改成了「客户端写自己的 `farm_req`，服务端轮询处理并写回 `farm_resp`」。
+
+我们的公会客户端一开始仍走 `NetCore.Request → connection:SendRemoteEvent`，等于发到黑洞。现已对齐农场做法：
+
+- `GuildClient.EnableCloudTransport()`：请求写进本人 `guild_req`（含 seq/event/payload）
+- `GuildClient.Poll(now)`：每 0.5 秒读 `guild_resp`，按 seq 配对回包（`main.lua` 每帧调用）
+- `GuildServer.Poll()`：服务端每 0.5 秒扫在线玩家（复用 `FarmServer.OnlineUids()`）的 `guild_req`，处理完写回 `guild_resp`（`server_main.lua` 每帧调用）
+- 连上服务器后直接用云通道，不再依赖远程事件
+
 ### 已知问题
 
 - `validate --network` 的 load 阶段会有一条引擎提示 `Server error occurred before connection (history_errors=1)`，随后自动重连并 `COMPLETED`（init/run/scene 全 PASS）。服务端日志在远端，本地暂时读不到；已记录待平台侧排查。
@@ -245,6 +256,7 @@
 
 | 日期 | Maker 提交 | 内容 |
 |---|---|---|
+| 2026-11-21 | `4837433` | 公会改用云变量轮询通道（guild_req / guild_resp），与农场一致 |
 | 2026-11-21 | `0c4d000` | 修复服务端入口（entry@client / entry@server）+ 公会事件注册 bug + 服务端启动诊断 |
 | 2026-11-21 | `c075f93` | 启用自建大厅（单机开始 / 联机进入），入口文案更新 |
 | 2026-11-21 | `1e288c8` | 公会创建/加入/退出的明确入口 + 入会审批 UI + 公会 ID 展示 |

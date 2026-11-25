@@ -469,6 +469,61 @@ function GuildServer.Start()
     print("[Guild] 服务端已注册 " .. tostring(#GuildServer.Routes()) .. " 条路由")
 end
 
+-- ---------------------------------------------------------------- 云变量轮询通道
+-- 远程事件在当前环境不通：客户端把请求写进自己的 guild_req，服务端轮询处理并写回 guild_resp
+GuildServer.REQ_KEY = "guild_req"
+GuildServer.RESP_KEY = "guild_resp"
+local reqSeq = {}
+local pollClock = 0
+
+local function onlineUids()
+    local out = {}
+    local ok, farm = pcall(require, "network.FarmServer")
+    if ok and farm and farm.OnlineUids then
+        local list = farm.OnlineUids()
+        for _, uid in ipairs(list) do out[#out + 1] = tostring(uid) end
+    end
+    if #out == 0 and SERVER_PLAYER_AUTH_INFOS then
+        for uid in pairs(SERVER_PLAYER_AUTH_INFOS) do out[#out + 1] = tostring(uid) end
+    end
+    return out
+end
+
+local function pollOne(uid)
+    if not serverCloud then return end
+    serverCloud:Get(uid, GuildServer.REQ_KEY, {
+        ok = function(values)
+            local raw = values and values[GuildServer.REQ_KEY] or nil
+            local req = nil
+            if type(raw) == "string" then req = NetCore.Decode(raw)
+            elseif type(raw) == "table" then req = raw end
+            if type(req) ~= "table" or not req.seq then return end
+            if (reqSeq[uid] or 0) >= req.seq then return end
+            reqSeq[uid] = req.seq
+            NetCore.ServerDispatch(uid, req.event, req.payload or {}, function(resp)
+                resp.seq = req.seq
+                resp.event = GuildServer.RESP_KEY
+                serverCloud:Set(uid, GuildServer.RESP_KEY, NetCore.Encode({
+                    seq = req.seq,
+                    event = req.event,
+                    payload = resp,
+                }))
+            end)
+        end,
+        error = function() end,
+    })
+end
+
+--- 服务端每帧调用（内部限频，约 0.5 秒）
+function GuildServer.Poll()
+    if not serverCloud then return end
+    pollClock = pollClock + 1
+    if pollClock % 30 ~= 0 then return end
+    for _, uid in ipairs(onlineUids()) do
+        pcall(pollOne, uid)
+    end
+end
+
 function GuildServer.Routes()
     local list = {}
     for _, name in pairs(GuildShared.EVENTS) do list[#list + 1] = name end
