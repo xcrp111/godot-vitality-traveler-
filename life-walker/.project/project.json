@@ -19,5 +19,7 @@
     "icon": "",
     "screenshots": [],
     "promotional_image": ""
-  }
+  },
+  "entry@server": "server_main.lua",
+  "entry@client": "main.lua"
 }

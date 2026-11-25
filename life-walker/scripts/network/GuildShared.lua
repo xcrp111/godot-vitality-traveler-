@@ -50,9 +50,19 @@ function GuildShared.SizeOf(value)
     return s and #s or 0
 end
 
---- 双端注册远程事件（服务端走 NetCore.ServerStart，客户端走 network:RegisterRemoteEvent）
+--- 注册远程事件：自己逐个注册，不依赖 NetCore.ServerStart
+--- （NetCore.ServerStart 有一次性的 serverStarted_ 守卫，Farm 先调用后会把公会事件挡掉）
 function GuildShared.RegisterEvents()
-    NetCore.ServerStart(GuildShared.EVENTS)
+    if not network then
+        print("[Guild] 没有 network，跳过远程事件注册")
+        return
+    end
+    local n = 0
+    for _, name in pairs(GuildShared.EVENTS) do
+        local ok, err = pcall(function() network:RegisterRemoteEvent(name) end)
+        if ok then n = n + 1 else print("[Guild] 注册事件失败 " .. tostring(name) .. ": " .. tostring(err)) end
+    end
+    print("[Guild] 远程事件已注册 " .. n .. " 个")
 end
 
 return GuildShared

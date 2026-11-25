@@ -191,15 +191,27 @@ end
 -- ---------------------------------------------------------------- 路由
 local function replyGuild(reply, g, uid, extra)
     local snap = Snapshot(g, uid)
-    local resp = { ok = snap ~= nil, guild = snap }
+    local resp = { ok = snap ~= nil, guild = snap, serverBoot = GuildServer.bootAt or 0 }
     if extra then for k, v in pairs(extra) do resp[k] = v end end
     reply(resp)
+end
+
+GuildServer.bootAt = nil
+
+--- 安全注册：单条路由出错不影响其它路由和服务端启动
+local function route(event, handler)
+    local ok, err = pcall(NetCore.ServerRoute, event, handler)
+    if not ok then
+        print("[Guild] 注册路由失败 " .. tostring(event) .. ": " .. tostring(err))
+    end
 end
 
 function GuildServer.Start()
     if GuildServer.ready then return end
     GuildServer.ready = true
-    GuildShared.RegisterEvents()
+    GuildServer.bootAt = os.time()
+    local okReg, errReg = pcall(GuildShared.RegisterEvents)
+    if not okReg then print("[Guild] 事件注册失败: " .. tostring(errReg)) end
 
     local E = GuildShared.EVENTS
 

@@ -60,6 +60,29 @@
 - 大厅副标题更新为「单机=本地存档，玩法完全一样；公会共斗 / 好友农场需要联机进入（一个人也能开房）」
 - 回退方法：删掉 `lobby_runtime` 这一行即恢复平台默认大厅（引擎在配置缺失时自动回退）
 
+### 修复：服务端没有回包（根因 = 服务端入口未配置）
+
+**现象**：好友/农场界面提示「服务端没有回包：可能服务端脚本没启动或事件没注册」，客户端反复同步但服务端零响应。
+
+**根因**：`.project/project.json` 只有 `entry: main.lua`，构建 server manifest 时也用了 `main.lua`。服务端是 headless 进程，加载 `main.lua` 时会 `require` UI / SceneUI / FarmArt / Combat 等渲染模块，加载期直接崩 → 服务端根本没起来。
+
+**修法**（平台要求客户端/服务端入口成对出现）：
+```json
+// .project/project.json
+"entry": "main.lua",
+"entry@client": "main.lua",
+"entry@server": "server_main.lua"
+```
+- 只配 `entry@server` 会报「入口配置缺失：已设置服务端入口，但缺少客户端入口」
+- `server_main.lua` 只加载 `network.FarmServer` + `network.GuildServer`，不碰任何渲染模块
+- 构建产物确认：运行模式=多人游戏，最大玩家 4，**客户端入口 main.lua / 服务端入口 server_main.lua**
+
+**顺带修掉一个事件注册 bug**：`GuildShared.RegisterEvents` 原来走 `NetCore.ServerStart`，而后者有一次性的 `serverStarted_` 守卫——Farm 先调用后，公会的 11 个事件会被整段跳过。改为自己逐个 `network:RegisterRemoteEvent`（与 `FarmShared` 一致）。
+
+**新增诊断**：公会服务端在每个回包里带 `serverBoot`；游戏内公会页会显示「服务端 HH:MM:SS 已启动」。能看到这行 = 服务端活着并已回包。
+
+**验证**：`preview validate --network` 由 load **FAIL** 变为 **load / init / run / scene 全 PASS**，Lua 错误 0、资源错误 0。
+
 ### 已知问题
 
 - `validate --network` 的 load 阶段会有一条引擎提示 `Server error occurred before connection (history_errors=1)`，随后自动重连并 `COMPLETED`（init/run/scene 全 PASS）。服务端日志在远端，本地暂时读不到；已记录待平台侧排查。
@@ -222,6 +245,7 @@
 
 | 日期 | Maker 提交 | 内容 |
 |---|---|---|
+| 2026-11-21 | `0c4d000` | 修复服务端入口（entry@client / entry@server）+ 公会事件注册 bug + 服务端启动诊断 |
 | 2026-11-21 | `c075f93` | 启用自建大厅（单机开始 / 联机进入），入口文案更新 |
 | 2026-11-21 | `1e288c8` | 公会创建/加入/退出的明确入口 + 入会审批 UI + 公会 ID 展示 |
 | 2026-11-21 | `4fe938b` | 公会联机（服务端权威 + 分槽）+ 农场存档分槽/批量落盘 + `MiSans-Game.ttf` 修复 |

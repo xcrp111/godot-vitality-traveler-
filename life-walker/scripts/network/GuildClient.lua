@@ -14,6 +14,7 @@ GuildClient.guild = nil          -- 服务端快照（nil = 没有公会）
 GuildClient.lastError = nil
 GuildClient.lastSyncAt = nil
 GuildClient.nickname = nil
+GuildClient.serverBoot = nil     -- 服务端启动时间（能收到回包就说明服务端活着）
 GuildClient.status = "idle"      -- idle / syncing / ready / error / offline
 GuildClient.search = nil         -- 最近一次搜索结果
 GuildClient.busy = false         -- 有请求在飞
@@ -74,6 +75,7 @@ local function call(event, body, cb)
     NetCore.Request(event, body or {}, function(resp)
         GuildClient.busy = false
         resp = resp or {}
+        if resp.serverBoot then GuildClient.serverBoot = resp.serverBoot end
         if resp.guild ~= nil then
             GuildClient.guild = resp.guild
             GuildClient.synced = true

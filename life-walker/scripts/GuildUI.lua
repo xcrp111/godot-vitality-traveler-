@@ -122,7 +122,11 @@ local function drawHome()
     UI.Text(154, 578, 12, "每周一 00:00 刷新：周产出上限 / 周限购商店 / 团本次数与评级", S.col.dim)
 
     -- 联机公会（NetCore + GuildServer）
-    UI.Text(698, 536, 12, "联机：" .. GuildClient.StatusText(), S.col.cyan)
+    local bootTag = ""
+    if GuildClient.serverBoot and GuildClient.serverBoot > 0 then
+        bootTag = "　·　服务端 " .. os.date("%H:%M:%S", GuildClient.serverBoot) .. " 已启动"
+    end
+    UI.Text(698, 536, 12, "联机：" .. GuildClient.StatusText() .. bootTag, S.col.cyan)
     if GuildClient.guild then
         UI.Text(698, 552, 11, "公会 ID：" .. tostring(GuildClient.guild.id)
             .. "（发给队友即可申请加入）", S.col.dim)
