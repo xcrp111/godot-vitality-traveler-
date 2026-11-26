@@ -222,7 +222,9 @@ local function TestCards()
     local infMin, infMax, infSame, infRolls = 1e9, -1e9, 0, 0
     local bestLevel, bestRisk = 0, -1e9
     local labelCount = {}
+    local perLevel = {}
     for lv = 21, 60, 3 do
+        local lvLo = 1e9
         for _ = 1, 3 do
             local cards = ActMap.RollCards(lv)
             infRolls = infRolls + 1
@@ -236,9 +238,12 @@ local function TestCards()
             end
             if same then infSame = infSame + 1 end
             if lo < infMin then infMin = lo end
+            if lo < lvLo then lvLo = lo end
             if hi > infMax then infMax = hi end
             if hi > bestRisk then bestRisk = hi; bestLevel = lv end
         end
+        -- 每关取「三张卡里最低的 risk」，代表这一关玩家能选到的最难一张有多难
+        perLevel[#perLevel + 1] = string.format("%d:%+.2f", lv, lvLo)
     end
     local parts = {}
     for _, name in ipairs({ "轻松", "常规", "吃紧", "险恶" }) do
@@ -246,6 +251,7 @@ local function TestCards()
     end
     print(string.format("[Act] 无尽等效关卡（21–60，各 3 次）：risk 区间 %+.2f ~ %+.2f；三张同档 %d/%d；档位分布 %s；最乐观的是第 %d 关，最高 risk 才 %+.2f",
         infMin, infMax, infSame, infRolls, table.concat(parts, " "), bestLevel, bestRisk))
+    print("[Act] 逐关最低 risk（三张里最难的）：" .. table.concat(perLevel, " "))
 end
 
 -- ---------------------------------------------------------------- ③ 局内节点图
