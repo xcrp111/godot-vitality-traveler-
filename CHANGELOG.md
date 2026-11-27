@@ -94,6 +94,14 @@
 - `GuildServer.Poll()`：服务端每 0.5 秒扫在线玩家（复用 `FarmServer.OnlineUids()`）的 `guild_req`，处理完写回 `guild_resp`（`server_main.lua` 每帧调用）
 - 连上服务器后直接用云通道，不再依赖远程事件
 
+### 版本 1.0.1：商店 / 上架信息补齐（Maker 控制台侧修改，已同步）
+
+- 版本号 **1.0.0 → 1.0.1**
+- 上架信息：标题「生命行者测试」、分类 **rpg**、简介「内境出现，生命行者拯救」、试玩说明「第一次制作游戏，开发测试」
+- 上传了**图标 / 3 张截图 / 宣传图**（`game_material/`，按 .gitignore 不入库，仅存在平台）
+- 接入了**实机演示视频**（平台托管 URL）
+- `entry@client: main.lua` / `entry@server: server_main.lua` 保持不变（服务端入口仍然生效）
+
 ### 已知问题
 
 - `validate --network` 的 load 阶段会有一条引擎提示 `Server error occurred before connection (history_errors=1)`，随后自动重连并 `COMPLETED`（init/run/scene 全 PASS）。服务端日志在远端，本地暂时读不到；已记录待平台侧排查。
@@ -256,6 +264,7 @@
 
 | 日期 | Maker 提交 | 内容 |
 |---|---|---|
+| 2026-11-27 | `d97e6d9` | 版本 1.0.1：上架信息（标题/分类/简介/截图/图标/实机视频） |
 | 2026-11-21 | `4837433` | 公会改用云变量轮询通道（guild_req / guild_resp），与农场一致 |
 | 2026-11-21 | `0c4d000` | 修复服务端入口（entry@client / entry@server）+ 公会事件注册 bug + 服务端启动诊断 |
 | 2026-11-21 | `c075f93` | 启用自建大厅（单机开始 / 联机进入），入口文案更新 |

@@ -5,21 +5,75 @@
     "id": "2098681036"
   },
   "entry": "main.lua",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "taptap_publish": {
-    "title": "",
-    "description": "",
-    "category": "",
+    "title": "生命行者测试",
+    "description": "内境出现  ，生命行者拯救",
+    "category": "rpg",
     "screen_orientation": "landscape",
     "collection_type": "sce",
-    "trial_note": "",
-    "app_platforms": "1,2"
+    "trial_note": "第一次制作游戏，开发测试",
+    "app_platforms": "1,2",
+    "developer_id": 507371,
+    "gameplay_demo_video_source": "https://tapcode-sce.spark.xd.com/videos/506ad177-18e7-4897-b6da-28a16e2c1342/1795618714990-uploaded_edcf50f8.mp4",
+    "gameplay_demo_video_id": 0
   },
   "assets": {
-    "icon": "",
-    "screenshots": [],
-    "promotional_image": ""
+    "icon": "./game_material/ICON_2026-11-25T14-59-57_01.png",
+    "screenshots": [
+      "./game_material/SCREENSHOT_2026-11-25T14-59-57_01.png",
+      "./game_material/SCREENSHOT_2026-11-25T14-59-57_02.png",
+      "./game_material/SCREENSHOT_2026-11-25T14-59-57_03.png"
+    ],
+    "promotional_image": "./game_material/PROMO_2026-11-25T14-59-57_01.jpg",
+    "source_screenshots": [
+      "_uploads/5698ef6cf8980edb47368aa5c4a45f6489b12bce9c741b43258688a7ed3198cb.png"
+    ],
+    "icon_url": "https://img-tc.tapimg.com/market/images/Frjw1o5pTwiLfToDEUfRhdlL573L.png",
+    "screenshot_urls": [
+      "https://img-tc.tapimg.com/market/images/FpOGtq_tjs0NvJccodgpRE6bpOG9.png",
+      "https://img-tc.tapimg.com/market/images/FsEzAYAPVcKMI45R9F0vKh_v7pHr.png",
+      "https://img-tc.tapimg.com/market/images/FgtiFWbR1GtSDy5qhEyFK1GP2e9x.png"
+    ],
+    "promotional_image_url": "https://img-tc.tapimg.com/market/images/FnES81DNGiGLuO2HW3w7KK0KxQmb.jpg",
+    "cover_horizontal": "./game_material/COVER_HORIZONTAL_2026-11-25T15-00-47_01.png",
+    "cover_horizontal_url": "https://img-tc.tapimg.com/market/images/FteCj-L_i9Quewy-rmXJcgqBU6Nj.png",
+    "cover_vertical": "./game_material/COVER_VERTICAL_2026-11-25T15-01-21_01.png",
+    "cover_vertical_url": "https://img-tc.tapimg.com/market/images/FhcIOV1uDhKdYiA7qE20p57HXHTO.png"
   },
   "entry@server": "server_main.lua",
-  "entry@client": "main.lua"
+  "entry@client": "main.lua",
+  "metadata": {
+    "updated_at": "2026-11-27T08:17:03.921Z"
+  },
+  "dc_publish_sync": {
+    "synced": false,
+    "dcVersion": null,
+    "dcStatus": "INIT",
+    "baseFields": {},
+    "pending": {
+      "title": "生命行者测试",
+      "description": "内境出现  ，生命行者拯救",
+      "category": "rpg",
+      "trial_note": "第一次制作游戏，开发测试",
+      "icon_url": "https://img-tc.tapimg.com/market/images/Frjw1o5pTwiLfToDEUfRhdlL573L.png",
+      "banner_url": "https://img-tc.tapimg.com/market/images/FnES81DNGiGLuO2HW3w7KK0KxQmb.jpg",
+      "cover_horizontal_url": "https://img-tc.tapimg.com/market/images/FteCj-L_i9Quewy-rmXJcgqBU6Nj.png",
+      "cover_vertical_url": "https://img-tc.tapimg.com/market/images/FhcIOV1uDhKdYiA7qE20p57HXHTO.png",
+      "screenshot_urls": [
+        "https://img-tc.tapimg.com/market/images/FpOGtq_tjs0NvJccodgpRE6bpOG9.png",
+        "https://img-tc.tapimg.com/market/images/FsEzAYAPVcKMI45R9F0vKh_v7pHr.png",
+        "https://img-tc.tapimg.com/market/images/FgtiFWbR1GtSDy5qhEyFK1GP2e9x.png"
+      ]
+    }
+  },
+  "test_qrcode": {
+    "url": "",
+    "generated_at": "",
+    "pending_upload": {
+      "project_id": "m_dwlf",
+      "game_version": "1.0.1",
+      "uploaded_at": "2026-11-27T08:11:56.991Z"
+    }
+  }
 }
