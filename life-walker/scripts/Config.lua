@@ -250,9 +250,15 @@ Config.RoomCost = { light = 0.6, standard = 1.0, mixed = 1.4, elite = 2.2, doubl
 -- 第 20 关目标 1.75 根本够不到，归一永远是「差一截」，三张卡就全被判成「轻松」。
 -- 加上 mixed → elite 之后，归一才真能把强度拉到目标值上。
 -- 仍然不会凭空造双精英：double 只由模板给出，归一阶梯不升到 double。
+--
+-- 2026-11-28：目标强度在 30 关封顶（1.15 + 0.03×30 = 2.05）。
+-- 原因：无尽模式第 N 层 = 主线第 N+9 关，到第 60 层目标会涨到 2.95，
+-- 已经贴着模板上限（双精英 3.0），归一阶梯没空间往上走，实测 21–60 关
+-- 有 56% 的卡是「轻松」、险恶 0 张，层卡会退化成「都是选路线」。
+-- 注意：主线只到第 20 关，封顶只影响无尽等效关卡，不改主线手感。
 function Config.MapTargetCost(level)
     level = math.max(1, math.min(60, math.floor(level or 1)))
-    return 1.15 + 0.03 * level
+    return 1.15 + 0.03 * math.min(level, 30)
 end
 
 local COMBAT_SET = { light = true, standard = true, mixed = true, elite = true, double = true }
