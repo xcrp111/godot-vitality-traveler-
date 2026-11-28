@@ -22,13 +22,16 @@ local ROWS = {
         idle = 1, walk = 2, hurt = 3, death = 4, attack = 5, victory = 12,
         skill = { [1] = 6, [2] = 7, [3] = 8, [4] = 9, [5] = 10, [6] = 11 },
     },
+    -- 注意：原图集第 5/6/8 行每帧画了「本体 + 残影」两个小人，动起来像多个人，
+    -- 这里换成单人帧的行（7/10/11）；平A 尤其明显，所以 attack 也改到第 7 行
     spearman = {
-        idle = 1, walk = 2, hurt = 3, death = 4, attack = 5, victory = 12,
-        skill = { [1] = 6, [2] = 7, [3] = 8, [4] = 9, [5] = 10, [6] = 11 },
+        idle = 1, walk = 2, hurt = 3, death = 4, attack = 7, victory = 12,
+        skill = { [1] = 10, [2] = 7, [3] = 11, [4] = 9, [5] = 10, [6] = 11 },
     },
+    -- 游侠同理：原第 8/10 行是双人残影，穿魂狙击/箭影连射换到单人帧（6/9）
     ranger = {
         idle = 1, walk = 2, hurt = 3, death = 4, attack = 5, victory = 12,
-        skill = { [1] = 6, [2] = 7, [3] = 8, [4] = 9, [5] = 10, [6] = 11 },
+        skill = { [1] = 6, [2] = 7, [3] = 6, [4] = 9, [5] = 9, [6] = 11 },
     },
     -- 法师：换用迭代素材包（mage_assets_62_sheets），行号见 dev/make_mage_sheets.js
     mage = {

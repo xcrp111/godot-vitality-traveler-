@@ -10,6 +10,7 @@ local Run = require "Run"
 local Combat = require "Combat"
 local Screens = require "Screens"
 local Audio = require "Audio"
+local Sfx = require "Sfx"
 local KbLayout = require "KbLayout"
 local PetUI = require "PetUI"
 local TitleUI = require "TitleUI"
@@ -222,6 +223,10 @@ function Start()
     SubscribeToEvent("KeyDown", "HandleKeyDown")
     SubscribeToEvent("KeyUp", "HandleKeyUp")
 
+    -- 昵称登记：接系统文本输入（手机端走软键盘输入法）
+    pcall(function() require("NameEntry") end)
+    pcall(function() SubscribeToEvent("TextInput", "NameEntryOnText") end)
+
     -- 农场联机：只有在真连上服务器时才初始化（单机模式下完全不碰云变量，避免影响排行榜）
     S.farmNetEnabled = false
     pcall(function() SubscribeToEvent("ClientConnected", "HandleFarmClientConnected") end)
@@ -244,6 +249,7 @@ end
 
 function Stop()
     Audio.Shutdown()
+    Sfx.Shutdown()
     if S.ctx then
         nvgDelete(S.ctx)
         S.ctx = nil
@@ -281,6 +287,9 @@ function HandleUpdate(eventType, eventData)
     local okUp, errUp = xpcall(function()
         UI.UpdateToast(dt)
         Audio.Update(dt)
+        Sfx.Update(dt)
+        -- 离开战斗时停掉暴风雪 / 静电场这类循环音效，避免回到菜单还在响
+        if S.screen ~= "combat" then Sfx.StopAllLoops() end
         TitleUI.Update(dt)
         SceneUI.Update(dt)
         -- 窗口尺寸变化：重新计算设计画布；战斗中的虚拟按键也要重建
@@ -337,6 +346,8 @@ function HandleUpdate(eventType, eventData)
 
         -- 健康弹层（久坐提醒 / 冥想）：计时并接管输入
         Menu.UpdateOverlays(dt)
+        pcall(function() require("Story").Update(dt) end)
+        pcall(function() require("NameEntry").Update(dt) end)
         if Menu.OverlayActive() then
             S.input.x = 0
             S.input.y = 0
@@ -373,6 +384,7 @@ local function DrawFrame()
             -- 场景是主界面；任意子面板打开时改画面板（面板内部自己 dispatch）
             local panelOpen = S.panelMode or S.bag or S.pet or S.camp or S.guild or S.settings
                 or S.compendium or S.healthTasks or S.endlessPanel or S.test or S.skillPicker
+                or S.classDetail
             if panelOpen then
                 if S.panelMode and not (S.bag or S.pet or S.camp or S.guild or S.settings or S.compendium) then
                     -- 主界面子面板：场景压暗当背景，只画对应模块
@@ -387,7 +399,7 @@ local function DrawFrame()
                     SceneUI.DrawPanelBack()
                     -- 叠加层（选技能 / 图鉴 / 设置等）画在子面板之上，关掉后回到原子面板
                     if S.skillPicker or S.compendium or S.settings or S.healthTasks
-                        or S.endlessPanel or S.test then
+                        or S.endlessPanel or S.test or S.classDetail then
                         Menu.Draw()
                     end
                 else
@@ -543,6 +555,29 @@ end
 
 --- 字体在 Boot 阶段可能建不出来（联机时资源/GL 还没完全就绪），
 --- 放到渲染阶段重试：这是真正有 GL 上下文、能建字体图集的时机
+-- 玩家昵称是运行时输入的，字集无法预知：给主字体挂一份常用汉字 fallback
+local function AttachNickFallback()
+    if not S.font or S.font == -1 or S.nickFallback then return end
+    if os.clock() - (S.nickTryAt or -99) < 0.5 then return end
+    S.nickTryAt = os.clock()
+    local ok, id = pcall(function()
+        return nvgCreateFont(S.ctx, "nick_fallback", "Fonts/MiSans-Nickname.ttf")
+    end)
+    if ok and type(id) == "number" and id ~= -1 then
+        pcall(function() nvgAddFallbackFontId(S.ctx, S.font, id) end)
+        S.nickFallback = id
+        print("[main] nickname fallback attached id=" .. tostring(id))
+    end
+    -- 再兜一层：引擎自带的完整字体（设备上有，本地 CLI 可能没有）
+    local ok2, id2 = pcall(function()
+        return nvgCreateFont(S.ctx, "engine_fallback", "Fonts/MiSans-Regular.ttf")
+    end)
+    if ok2 and type(id2) == "number" and id2 ~= -1 then
+        pcall(function() nvgAddFallbackFontId(S.ctx, S.font, id2) end)
+        print("[main] engine fallback attached id=" .. tostring(id2))
+    end
+end
+
 local function TryLoadFont()
     if S.font and S.font ~= -1 then return true end
     if os.clock() - (S.fontLastTry or -99) < 0.5 then return false end
@@ -568,6 +603,7 @@ end
 function HandleRender(eventType, eventData)
     if not S.ctx then return end
     if not S.font or S.font == -1 then TryLoadFont() end
+    AttachNickFallback()
     nvgBeginFrame(S.ctx, graphics:GetWidth(), graphics:GetHeight(), S.dpr)
 
     S.regions = {}
@@ -726,8 +762,24 @@ end
 ---@param eventType string
 ---@param eventData KeyDownEventData
 function HandleKeyDown(eventType, eventData)
-    if Menu.OverlayActive() then return end
     local key = eventData["Key"]:GetInt()
+    -- 昵称登记：退格删除 / 回车确认
+    local okNE, NameEntry = pcall(require, "NameEntry")
+    if okNE and NameEntry and NameEntry.IsOpen() then
+        if key == KEY_BACKSPACE then
+            NameEntry.Backspace()
+        elseif key == KEY_RETURN or key == KEY_ENTER then
+            NameEntry.Confirm()
+        end
+        return
+    end
+    -- 剧情：空格 / 回车 翻页
+    local okStory, Story = pcall(require, "Story")
+    if okStory and Story and Story.IsOpen() then
+        if key == KEY_SPACE or key == KEY_RETURN or key == KEY_ENTER then Story.Advance() end
+        return
+    end
+    if Menu.OverlayActive() then return end
     if key == KEY_W or key == KEY_UP then S.keys.up = true end
     if key == KEY_S or key == KEY_DOWN then S.keys.down = true end
     if key == KEY_A or key == KEY_LEFT then S.keys.left = true end
@@ -810,6 +862,8 @@ if S.farm and (S.farmTab or 1) == 1 then
             S.test = false
         elseif S.compendium then
             S.compendium = false
+        elseif S.classDetail then
+            S.classDetail = false
         elseif S.skillPicker then
             S.skillPicker = false
         elseif S.panelMode then

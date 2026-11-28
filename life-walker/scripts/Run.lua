@@ -6,6 +6,7 @@ local Guild = require "Guild"
 local Farm = require "Farm"
 local UI = require "UI"
 local S = require "State"
+local Sfx = require "Sfx"
 
 -- 释放摇杆输入（原来是 VirtualControls.Clear 负责，现在摇杆是自绘的）
 local function ReleaseInput()
@@ -315,6 +316,8 @@ function Run.Start(level, bypassGate)
     S.run = run
     S.screen = "map"
     S.combat = nil
+    Sfx.Play("spawn")
+    pcall(function() require("Story").MaybeShowLevel(level, S.data) end)
     print("[Run] start level " .. level .. ", class level " .. classLevel)
 end
 
@@ -963,6 +966,7 @@ function Run.ChooseReward(index)
         return
     end
     Run.GrantBuff(S.run.player, buff)
+    Sfx.Play("upgrade")
     S.reward = false
     Run.FinishRoom()
 end
@@ -975,6 +979,7 @@ function Run.ApplyReplace(index)
     if not run.player.buffs[index] then return end
     local old = Run.RemoveBuffAt(run.player, index)
     Run.GrantBuff(run.player, reward.pending)
+    Sfx.Play("upgrade")
     local source = reward.source
     S.reward = false
     if source == "shop" then

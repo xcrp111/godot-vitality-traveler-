@@ -9,6 +9,8 @@ local Save = require "Save"
 local Guild = require "Guild"
 local CharArt = require "CharArt"
 local EffectArt = require "EffectArt"
+local Sfx = require "Sfx"
+local SwordFx = require "SwordFx"
 
 ---@class Enemy
 ---@field id string
@@ -183,8 +185,23 @@ local function IntentMax(p)
 end
 
 local function AddIntent(p, n)
+    local before = p.intent
     p.intent = math.min(IntentMax(p), p.intent + math.floor(n))
     p.intentTimer = 5.0
+    local cs = S.combat
+    if not cs or p.intent <= before then return end
+    SwordFx.Spawn(cs, "intent_gain", p.x, p.y - 30, { scale = 0.7, gap = 0.18 })
+    if math.floor(n) >= 2 then
+        SwordFx.Spawn(cs, "intent_double", p.x, p.y - 30, { gap = 0.3 })
+    end
+    local ratio = p.intent / math.max(1, IntentMax(p))
+    if ratio >= 1 then
+        SwordFx.Spawn(cs, "intent_burst3", p.x, p.y - 30, { gap = 0.5 })
+    elseif ratio >= 0.8 then
+        SwordFx.Spawn(cs, "intent_burst2", p.x, p.y - 30, { gap = 0.5 })
+    elseif ratio >= 0.5 then
+        SwordFx.Spawn(cs, "intent_burst1", p.x, p.y - 30, { gap = 0.5 })
+    end
 end
 
 -- 职业与资源（剑客=剑意，枪客=枪势；统一存在 p.intent 里）
@@ -404,11 +421,31 @@ local function RectsOverlap(a, b)
 end
 
 -- ---------------------------------------------------------------- 物理负面 / 连携
+-- 轻量特效：不依赖后面才定义的 SpawnFx，并且同一特效有最小间隔（多目标时不刷屏）
+local fxLast_ = {}
+local function SpawnFxLite(cs, id, x, y, opts)
+    if not cs or not EffectArt.Def(id) then return end
+    opts = opts or {}
+    local now = cs.time or 0
+    local gap = opts.gap or 0.12
+    if now - (fxLast_[id] or -999) < gap then return end
+    fxLast_[id] = now
+    cs.fx = cs.fx or {}
+    cs.fx[#cs.fx + 1] = {
+        id = id, x = x, y = y, t = 0,
+        dur = opts.life or EffectArt.Duration(id),
+        delay = 0, rot = opts.rot, scale = opts.scale, alpha = opts.alpha,
+    }
+end
+
 local function AddCrack(cs, e, n)
     if F(cs.player, "chainSymbiosis") > 0 then return end -- 原生挫裂被封印
     local before = e.crack or 0
     e.crack = math.min(CrackCap(cs), before + n)
     e.crackTimer = 4.0
+    if before > 0 and e.crack > before then
+        SwordFx.Spawn(cs, "crack_refresh", e.x, e.y, { scale = 0.7, gap = 0.25 })
+    end
     if e.crack > before then
         -- 挫裂：碎片粒子 + 飘字 + 橙色冲击环 + 目标短暂高亮，触发看得见
         AddParticles(cs, e.x, e.y, { 255, 170, 90 }, 4)
@@ -416,6 +453,12 @@ local function AddCrack(cs, e, n)
             "挫裂 " .. e.crack, { 255, 178, 96 }, 15)
         AddRing(cs, e.x, e.y, (e.radius or 14) + 16, { 255, 170, 90 }, 0.22, 3)
         e.crackFlash = 0.18
+        SwordFx.Spawn(cs, "crack", e.x, e.y, { scale = 0.7 })
+        if e.crack >= CrackCap(cs) then
+            SwordFx.Spawn(cs, "crack_cap", e.x, e.y, { scale = 0.9, gap = 0.4 })
+        elseif n >= 2 then
+            SwordFx.Spawn(cs, "crack_spread", e.x, e.y, { scale = 0.8, gap = 0.3 })
+        end
     end
 end
 
@@ -428,7 +471,13 @@ local function AddStagger(cs, e, n)
     else
         e.staggerTimer = F(p, "staggerShort") > 0 and 2.0 or 4.0
     end
-    if e.stagger > before then AddParticles(cs, e.x, e.y, { 130, 215, 255 }, 2) end
+    if e.stagger > before then
+        AddParticles(cs, e.x, e.y, { 130, 215, 255 }, 2)
+        SwordFx.Spawn(cs, "stagger", e.x, e.y, { scale = 0.7 })
+        if e.stagger >= DebuffCap(p, "stagger") then
+            SwordFx.Spawn(cs, "stagger_cap", e.x, e.y, { scale = 0.85, gap = 0.4 })
+        end
+    end
 end
 
 local function AddHunt(cs, e, n)
@@ -436,7 +485,19 @@ local function AddHunt(cs, e, n)
     local before = e.hunt or 0
     e.hunt = math.min(DebuffCap(p, "hunt"), before + n)
     e.huntTimer = 6.0 * (1 - math.min(0.5, F(p, "huntDurMul")))
-    if e.hunt > before then AddParticles(cs, e.x, e.y, { 195, 150, 255 }, 2) end
+    if before > 0 and e.hunt > before then
+        SwordFx.Spawn(cs, "hunt_refresh", e.x, e.y, { scale = 0.7, gap = 0.3 })
+    end
+    if e.hunt > before then
+        AddParticles(cs, e.x, e.y, { 195, 150, 255 }, 2)
+        SwordFx.Spawn(cs, "hunt", e.x, e.y, { scale = 0.7 })
+        if e.hunt >= 2 then
+            SwordFx.Spawn(cs, "hunt_mark", e.x, e.y, { scale = 0.8, gap = 0.4 })
+        end
+        if (e.crack or 0) > 0 and (e.stagger or 0) > 0 and e.hunt >= 1 then
+            SwordFx.Spawn(cs, "debuff_all", e.x, e.y, { scale = 0.8, gap = 0.5 })
+        end
+    end
 end
 
 -- ---------------------------------------------------------------- 元素与状态
@@ -572,6 +633,9 @@ end
 local function HealPlayer(p, amount)
     if (p.necrosisTimer or 0) > 0 then amount = amount * 0.5 end
     p.hp = math.min(p.maxHp, p.hp + amount)
+    if amount > 0 then
+        SwordFx.Spawn(S.combat, "heal", p.x, p.y - 18, { scale = 0.7, gap = 0.25 })
+    end
     return amount
 end
 
@@ -635,6 +699,7 @@ local function SpawnProj(cs, o)
         combo = o.combo, crit = o.crit,
         aoe = o.aoe, aoePct = o.aoePct,
         color = o.color or { 235, 245, 255 },
+        len = o.len,
         fx = o.fx, fxImpact = o.fxImpact, fxScale = o.fxScale,
         splash = o.splash, splashPct = o.splashPct,
         lifesteal = o.lifesteal,
@@ -770,6 +835,24 @@ local function TryCombo(cs, e, pairKind)
         for id, v in pairs(p.cooldowns) do
             if v > 0 then p.cooldowns[id] = math.max(0, v - 1.0) end
         end
+    end
+
+    if kind == "粉碎" then
+        SwordFx.SpawnAll(cs, "combo_crush", e.x, e.y, { scale = 0.9 })
+    elseif kind == "震荡" then
+        SwordFx.Spawn(cs, "combo_shock_source", p.x, p.y, { scale = 0.8 })
+        SwordFx.SpawnAll(cs, "combo_shock", e.x, e.y, { scale = 0.9 })
+        SwordFx.Spawn(cs, "combo_shock_wave", e.x, e.y, { scale = 0.9 })
+        if F(p, "spreadMul") > 0 then
+            SwordFx.Spawn(cs, "combo_shock_slow", e.x, e.y, { scale = 0.9 })
+        end
+    else
+        SwordFx.Spawn(cs, "combo_hunt", e.x, e.y, { scale = 0.85 })
+        SwordFx.Spawn(cs, "combo_hunt_hold", e.x, e.y, { scale = 0.85, gap = 0.3 })
+        SwordFx.Spawn(cs, "combo_hunt_pair", e.x, e.y, { gap = 0.2 })
+    end
+    if pairKind == nil and F(p, "misalign") > 0 then
+        SwordFx.Spawn(cs, "combo_misalign", e.x, e.y, { scale = 0.85 })
     end
 
     Combat.HitEnemy(cs, e, dmg, false, true, false, "combo")
@@ -1330,6 +1413,10 @@ function Combat.Start(run, roomType, step)
     Combat.CreateControls(cs)
     Combat.SpawnWave(cs, cs.waves[1])
     cs.waveIndex = 1
+    -- 剑客出场聚光（剑客素材包）
+    if not IsMage() and not IsSpear() and not IsRanger() then
+        SwordFx.Spawn(cs, "spawn", p.x, p.y, { scale = 1.0, gap = 0 })
+    end
     return cs
 end
 
@@ -1948,9 +2035,16 @@ function Combat.HitEnemy(cs, e, amount, isSkill, physical, noCrit, src, forceCri
     end
 
     e.hp = e.hp - dmg
-    -- 命中停顿 + 朝命中方向的震屏（同一帧内多段命中只触发一次）
-    if (cs.hitstop or 0) <= 0 and src ~= "combo" and src ~= "bleed" then
-        cs.hitstop = math.min(0.09, 0.045 + (isSkill and 0.015 or 0) + (crit and 0.02 or 0))
+    -- 法师普攻命中：只给法师配这个音，别把剑客的攻击也变成法杖声
+    if not isSkill and (src == "basic" or src == nil) and IsMage() then Sfx.Play("basic_hit") end
+    if not isSkill and (src == "basic" or src == nil) then
+        SwordFx.Spawn(cs, "basic_hit", e.x, e.y, { scale = 0.65, gap = 0.1 })
+        if F(p, "oni") > 0 and p.intent >= IntentMax(p) then
+            SwordFx.Spawn(cs, "extra_hit", e.x, e.y, { scale = 0.8, gap = 0.15 })
+        end
+    end
+    -- 命中反馈：只保留朝命中方向的震屏（顿帧已按需求移除，不再冻结时间）
+    if src ~= "combo" and src ~= "bleed" then
         local dx, dy = e.x - p.x, e.y - p.y
         local d = math.max(1, math.sqrt(dx * dx + dy * dy))
         cs.shakeDirX = dx / d * 3.2
@@ -1997,6 +2091,7 @@ function Combat.HitEnemy(cs, e, amount, isSkill, physical, noCrit, src, forceCri
         e.bleedDps = p.atk * bleed
         e.bleedTimer = 3.0
         e.bleedTick = e.bleedTick or 0.5
+        SwordFx.Spawn(cs, "bleed", e.x, e.y, { scale = 0.7, gap = 0.4 })
     end
 
     -- 物理负面补挂（武链共生）
@@ -2077,6 +2172,7 @@ function Combat.KillEnemy(cs, e)
             if v > 0 then p.cooldowns[id] = math.max(0, v - killCdr) end
         end
         AddText(cs, e.x, e.y - e.radius - 54, "收割", S.col.gold, 16)
+        SwordFx.Spawn(cs, "kill_reset", p.x, p.y, { scale = 0.8, gap = 0.2 })
     end
     local killIntent = F(p, "killIntent")
     if killIntent > 0 then AddIntent(p, killIntent) end
@@ -2108,6 +2204,8 @@ function Combat.KillEnemy(cs, e)
         cs.storedDebuffs = math.min(9, stored)
         cs.storedHits = 5
         AddText(cs, e.x, e.y - e.radius - 90, "代偿 " .. cs.storedDebuffs, S.col.purple, 16)
+        SwordFx.Spawn(cs, "compensate_store", e.x, e.y, { scale = 0.85, gap = 0.2 })
+        SwordFx.Spawn(cs, "compensate_extract", e.x, e.y, { scale = 0.85, gap = 0.2 })
     end
 
     -- 凤凰余烬：火系击杀自动放一次火球
@@ -2206,6 +2304,9 @@ function Combat.DamagePlayer(cs, amount)
         AddRing(cs, p.x, p.y, 76, { 150, 235, 255 }, 0.34, 7)
         AddRing(cs, p.x, p.y, 52, { 235, 250, 255 }, 0.2, 4)
         AddParticles(cs, p.x, p.y, S.col.cyan, 16)
+        SwordFx.SpawnAll(cs, "guard_contact", p.x, p.y, { rot = cs.facing, scale = 0.9 })
+        SwordFx.Spawn(cs, "guard_aoe", p.x, p.y, { scale = 0.9, gap = 0.4 })
+        SwordFx.Spawn(cs, "deflect", p.x, p.y, { rot = cs.facing, scale = 0.9, gap = 0.2 })
 
         -- 弹反剑气：正面 170 范围横扫，附带伤害
         local riposte = 0.9 * (1 + F(p, "parryRiposte"))
@@ -2216,6 +2317,11 @@ function Combat.DamagePlayer(cs, amount)
         local refund = 0.8 + F(p, "parryCdr")
         for oid, v in pairs(p.cooldowns) do
             if oid ~= 5 and v > 0 then p.cooldowns[oid] = math.max(0, v - refund) end
+        end
+        SwordFx.Spawn(cs, "mana_return", p.x, p.y - 20, { scale = 0.7, gap = 0.2 })
+        SwordFx.Spawn(cs, "freed", p.x, p.y, { scale = 0.8, gap = 0.3 })
+        if (cs.parryCombo or 0) >= 2 then
+            SwordFx.Spawn(cs, "guard_second", p.x, p.y, { scale = 0.9, gap = 0.2 })
         end
 
         local heal = F(p, "parryHeal")
@@ -2230,6 +2336,7 @@ function Combat.DamagePlayer(cs, amount)
         if F(p, "parryBlinkCharge") > 0 then
             p.freeCharges = p.freeCharges or {}
             p.freeCharges[6] = (p.freeCharges[6] or 0) + 1
+            SwordFx.Spawn(cs, "free_charge", p.x, p.y, { scale = 0.8, gap = 0.3 })
         end
         if F(p, "parryLifesteal") > 0 then cs.parryLifestealTimer = 3.0 end
         if F(p, "parryDmgBuff") > 0 then cs.parryDmgTimer = 4.0 end
@@ -2251,6 +2358,7 @@ function Combat.DamagePlayer(cs, amount)
     end
     if p.dodge > 0 and math.random() < p.dodge then
         AddText(cs, p.x, p.y - 40, "闪避", S.col.green)
+        SwordFx.Spawn(cs, "dodge", p.x, p.y, { scale = 0.85, gap = 0.2 })
         return
     end
 
@@ -2284,6 +2392,21 @@ function Combat.DamagePlayer(cs, amount)
                 S.col.cyan, 17)
             AddParticles(cs, p.x, p.y, S.col.cyan, 6)
             cs.shieldFlash = 0.22
+            SwordFx.Spawn(cs, "shield_hit", p.x, p.y, { scale = 0.8, gap = 0.15 })
+            if p.shield <= 0.5 then
+                SwordFx.Spawn(cs, "shield_break", p.x, p.y, { scale = 0.9, gap = 0.3 })
+            end
+        end
+    end
+    -- 狂剑士低血：进入 / 离开狂暴视觉
+    if F(cs.player, "berserk") > 0 then
+        local ratio = cs.player.hp / math.max(1, cs.player.maxHp)
+        if ratio < 0.35 and not cs.rageFxOn then
+            cs.rageFxOn = true
+            SwordFx.Spawn(cs, "rage_on", cs.player.x, cs.player.y, { scale = 0.95, gap = 0 })
+        elseif ratio > 0.6 and cs.rageFxOn then
+            cs.rageFxOn = false
+            SwordFx.Spawn(cs, "rage_end", cs.player.x, cs.player.y, { scale = 0.9, gap = 0 })
         end
     end
     -- 护盾吸收 / 减伤会留下 1e-16 级小数残值，血量显示成 0 却永远不死：直接抹平
@@ -2291,6 +2414,7 @@ function Combat.DamagePlayer(cs, amount)
     if dmg > 0 then
         p.hp = p.hp - dmg
         CharArt.Play(cs, "hurt", { dur = 0.35 })
+        Sfx.Play("player_hit")
         cs.playerHitFlash = 0.18
         DmgText(cs, p.x, p.y - 46, string.format("-%d", math.floor(dmg)), S.col.red, 18)
         cs.shake = math.max(cs.shake, 5)
@@ -2303,6 +2427,8 @@ function Combat.DamagePlayer(cs, amount)
             p.shield = math.min(p.maxShield * 1.5, p.shield + gain)
             AddText(cs, p.x, p.y - 82, string.format("+%d 护盾", math.floor(gain)),
                 S.col.cyan, 16)
+            SwordFx.Spawn(cs, "armor_shield", p.x, p.y, { scale = 0.8, gap = 0.3 })
+            SwordFx.Spawn(cs, "shield_restore", p.x, p.y, { scale = 0.75, gap = 0.3 })
         end
         if F(p, "thorns") > 0 then
             Combat.ReflectThorns(cs, before)
@@ -2326,15 +2452,18 @@ function Combat.DamagePlayer(cs, amount)
             p.reviveUsed = true
             p.hp = p.maxHp * (p.revivePct or 0.3)
             p.shield = 0
+            SwordFx.Spawn(cs, "revive", p.x, p.y, { scale = 1.0, gap = 0 })
             S.toast.text = string.format("复活：以 %d%% 生命站起",
                 math.floor((p.revivePct or 0.3) * 100))
             S.toast.t = 2.0
         elseif cs.guildRaid then
             p.hp = 0
+            Sfx.Play("player_death")
             Combat.FinishRaid(cs, false)
             return
         else
             p.hp = 0
+            Sfx.Play("player_death")
             S.input.x = 0
             S.input.y = 0
             S.screen = "gameover"
@@ -2362,6 +2491,7 @@ function Combat.ReflectThorns(cs, takenDmg)
         end
     end
     if hit then
+        SwordFx.Spawn(cs, "reflect", p.x, p.y, { scale = 0.9, gap = 0.2 })
         AddText(cs, p.x, p.y - 60, "反击", S.col.orange, 16)
         AddRing(cs, p.x, p.y, 78, { 255, 170, 110 }, 0.3, 6)
         AddParticles(cs, p.x, p.y, S.col.orange, 6)
@@ -2454,6 +2584,8 @@ end
 -- 剑影复刻：按刚释放的技能复刻攻击方式与范围
 local function ReplayPhantomSkill(cs, ph)
     cs.phantomHits = (cs.phantomHits or 0) + 1
+    SwordFx.Spawn(cs, "phantom_hunt", ph.x, ph.y, { scale = 0.75, gap = 0.3 })
+    SwordFx.Spawn(cs, "phantom_stagger", ph.x, ph.y, { scale = 0.75, gap = 0.3 })
     local factor = ph.coef
     local x, y, facing = ph.x, ph.y, ph.facing
     local col = ph.color or { 180, 225, 255 }
@@ -2512,6 +2644,11 @@ local function SwordWave(cs, coef, crackOnHit)
         coef = coef, crack = crackOnHit and 1 or 0, hit = {}, trail = 0,
     }
     cs.waveCount = (cs.waveCount or 0) + 1
+    SwordFx.Spawn(cs, "windblade", p.x, p.y, { rot = cs.facing, scale = 1.0, gap = 0.15 })
+    SwordFx.Spawn(cs, "sk_stab_fly", p.x, p.y, { rot = cs.facing, scale = 0.9, gap = 0.2 })
+    SwordFx.Spawn(cs, "area_edge", p.x, p.y, { rot = cs.facing, scale = 0.9, gap = 0.3 })
+    SwordFx.Spawn(cs, "oni_area", p.x + math.cos(cs.facing) * 40,
+        p.y + math.sin(cs.facing) * 40, { rot = cs.facing, scale = 0.9, gap = 0.4 })
     cs.attackFlash = 0.16
     AddParticles(cs, p.x + math.cos(cs.facing) * 30, p.y + math.sin(cs.facing) * 30, S.col.cyan, 8)
 end
@@ -2529,9 +2666,14 @@ local function ApplyStoredDebuffs(cs, e)
         else AddHunt(cs, e, 1) end
         cs.storedDebuffs = cs.storedDebuffs - 1
     end
+    SwordFx.Spawn(cs, "compensate_fly", e.x, e.y, { scale = 0.8, gap = 0.15 })
+    SwordFx.Spawn(cs, "compensate_move", e.x, e.y, { scale = 0.8, gap = 0.15 })
     cs.storedHits = cs.storedHits - 1
     cs.comboWeakTimer = 4.0
-    if cs.storedHits <= 0 then cs.storedDebuffs = 0 end
+    if cs.storedHits <= 0 then
+        cs.storedDebuffs = 0
+        SwordFx.Spawn(cs, "compensate_clear", cs.player.x, cs.player.y, { scale = 0.8, gap = 0.3 })
+    end
 end
 
 local BasicAttackNow
@@ -2557,6 +2699,7 @@ function BasicAttackNow(cs)
     if F(p, "oni") > 0 and p.intent >= IntentMax(p) then
         SwordWave(cs, 3.4, true)
         p.intent = 0
+        SwordFx.Spawn(cs, "intent_fade", p.x, p.y, { scale = 0.85, gap = 0.2 })
         p.intentTimer = 0
         cs.attackFlash = 0.16
         return
@@ -2587,12 +2730,17 @@ function BasicAttackNow(cs)
     if cs.swordHeartTimer > 0 then gain = gain + 1 end
     AddIntent(p, gain)
     AddSlash(cs, p.x, p.y, cs.facing, range, arc, { 232, 244, 255 }, 5)
+    SwordFx.Spawn(cs, "basic_trail", p.x, p.y, { rot = cs.facing, scale = 0.8, gap = 0.12 })
+    if cs.swordHeartTimer > 0 then
+        SwordFx.Spawn(cs, "sk_guard_edge", p.x, p.y, { rot = cs.facing, scale = 0.8, gap = 0.3 })
+    end
     cs.nextBasicIntent = 0
     cs.attackFlash = 0.12
 
     if p.intent >= IntentMax(p) then
         Combat.SwordBurst(cs)
         p.intent = 0
+        SwordFx.Spawn(cs, "intent_fade", p.x, p.y, { scale = 0.85, gap = 0.2 })
     end
 end
 
@@ -2682,6 +2830,7 @@ function Combat.SpearBasicAttack(cs)
         end
         if empowered and seg == 2 then
             p.hp = math.min(p.maxHp, p.hp + dmg * 0.25)
+            SwordFx.Spawn(cs, "drain", p.x, p.y - 20, { scale = 0.7, gap = 0.3 })
             AddText(cs, p.x, p.y - 70, "+" .. math.floor(dmg * 0.25), S.col.green, 14)
         end
 
@@ -2800,6 +2949,7 @@ end
 
 function Combat.MageBasicAttack(cs)
     local p = cs.player
+    Sfx.Play("basic_cast")
     local class = Config.Class()
     local range = class.basicRange * (1 + p.rangePct)
     local target = NearestEnemy(cs, p.x, p.y, range * 1.3)
@@ -2916,11 +3066,18 @@ function Combat.RangerCastSkill(slot)
                 r = 9, life = 1.2, dmg = p.atk * coef * (1 + p.skillPct),
                 isSkill = true, pierce = 6, kind = "arrow",
                 hunt = 2, crit = false, color = { 255, 230, 150 },
+                len = 46,   -- 狙击箭明显更长，一眼能看出是「大箭」
                 combo = "追猎", boom = F(p, "snipeBoom"),
             })
             AddTelegraph(cs, { kind = "corridor", x = castX, y = castY, facing = facing,
                 len = 860, width = 34, color = { 255, 230, 150 }, life = 0.3 })
             AddParticles(cs, castX, castY, { 255, 230, 150 }, 10)
+            -- 出膛闪光 + 沿弹道铺一串光点，强化「一箭穿过去」的观感
+            AddRing(cs, castX, castY, 42, { 255, 240, 190 }, 0.22, 4)
+            for d = 60, 420, 60 do
+                AddTrail(cs, castX + math.cos(facing) * d, castY + math.sin(facing) * d,
+                    { 255, 235, 170 }, 9)
+            end
             cs.shake = math.max(cs.shake, 5)
         end
         if charge <= 0.01 then
@@ -2965,6 +3122,7 @@ function Combat.RangerCastSkill(slot)
                 vx = math.cos(ang) * 900, vy = math.sin(ang) * 900,
                 r = 6, life = 1.0, dmg = p.atk * coef * (1 + p.skillPct),
                 isSkill = true, kind = "arrow", hunt = 1,
+                len = 22,
                 color = { 190, 245, 200 }, combo = "追猎",
                 execute = F(p, "volleyComboChance"),
             })
@@ -2975,6 +3133,9 @@ function Combat.RangerCastSkill(slot)
         AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = cs.facing,
             range = 900, arc = halfArc * 2,
             color = { 190, 245, 200 }, life = 0.42 })
+        -- 连射：起手扇形火花，和单体攻击区分
+        AddParticles(cs, p.x, p.y, { 170, 240, 200 }, 12)
+        AddRing(cs, p.x, p.y, 40, { 170, 240, 200 }, 0.2, 3)
         cs.attackFlash = 0.12
     elseif id == 6 then
         local target = nil
@@ -3074,6 +3235,7 @@ function Combat.MageCastSkill(slot)
     end
     if F(p, "elemOverload") > 0 and math.random() < 0.2 then
         p.cooldowns[id] = 0
+        SwordFx.Spawn(cs, "cd_reset", p.x, p.y, { scale = 0.85, gap = 0.3 })
         cs.overloadTimer = 1.0
     end
     if F(p, "chaos") > 0 and math.random() < 0.2 then cs.chaosTimer = 1.0 end
@@ -3096,30 +3258,23 @@ function Combat.MageCastSkill(slot)
     local skillMul = 1 + p.skillPct + F(p, "m" .. id .. "Pct")
 
     if id == 1 then
-        if F(p, "dragonBreath") > 0 then
-            local radius = 160
-            for _, e in ipairs(ArcTargets(cs, p.x, p.y, facing, radius, math.rad(120))) do
-                Combat.HitEnemy(cs, e, p.atk * 2.0 * skillMul * elemMul, true, true, false, "skill")
-                ApplyElementHit(cs, e, "fire", id)
-            end
-            AddSlash(cs, p.x, p.y, facing, radius, math.rad(120), { 255, 150, 90 }, 7)
-            AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = facing,
-                range = radius, arc = math.rad(120), color = { 255, 150, 90 }, life = 0.45 })
-        else
-            SpawnProj(cs, {
-                x = p.x, y = p.y,
-                vx = math.cos(facing) * 700, vy = math.sin(facing) * 700,
-                r = 12, life = 1.2, dmg = p.atk * 2.0 * skillMul * elemMul,
-                isSkill = true, kind = "fire", element = "fire", skill = id,
-                color = { 255, 150, 90 },
-                fx = "fire_proj", fxImpact = "fire_impact", fxImpactRot = true, fxScale = 0.55,
-            })
-            AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = facing,
-                len = 760, width = 40, color = { 255, 150, 90 }, life = 0.4 })
-        end
+        Sfx.Play("fireball_cast")
+        SpawnProj(cs, {
+            x = p.x, y = p.y,
+            vx = math.cos(facing) * 700, vy = math.sin(facing) * 700,
+            r = 12, life = 1.2, dmg = p.atk * 2.0 * skillMul * elemMul,
+            isSkill = true, kind = "fire", element = "fire", skill = id,
+            color = { 255, 150, 90 },
+            fx = "fire_proj", fxImpact = "fire_impact", fxImpactRot = true, fxScale = 0.55,
+        })
+        AddTelegraph(cs, { kind = "corridor", x = p.x, y = p.y, facing = facing,
+            len = 760, width = 40, color = { 255, 150, 90 }, life = 0.4 })
     elseif id == 2 then
-        local radius = 128
-        SpawnFx(cs, "frost", p.x, p.y, { rot = facing, scale = 0.95 })
+        local radius = 240
+        Sfx.Play("frost_cast")
+        SpawnFx(cs, "frost", p.x, p.y, { rot = facing, scale = 2.3 })
+        AddRing(cs, p.x, p.y, radius, { 150, 220, 255 }, 0.34, 4)
+        Sfx.Play("frost_burst")
         local arc = math.rad(60) + F(p, "freezeArc")
         local targets
         if F(p, "iceNova") > 0 then
@@ -3134,7 +3289,7 @@ function Combat.MageCastSkill(slot)
                 range = radius, arc = arc, color = { 150, 220, 255 }, life = 0.42 })
         end
         for _, e in ipairs(targets) do
-            local amount = p.atk * 0.8 * skillMul * elemMul
+            local amount = p.atk * 1.0 * skillMul * elemMul
             if F(p, "absoluteZero") > 0 and (e.freezeTimer or 0) > 0 then
                 amount = amount + p.atk
             end
@@ -3144,11 +3299,16 @@ function Combat.MageCastSkill(slot)
     elseif id == 3 then
         local e = target
         if e then
+            Sfx.Play("thunder_cast")
             local bonus = 1
             if (e.burnTimer or 0) > 0 or (e.freezeTimer or 0) > 0 then bonus = 1.5 end
             if F(p, "thunderCrit") > 0 then bonus = bonus + (F(p, "thunderCrit") - 1.5) end
             AddBolt(cs, e.x, e.y - 210, e.x, e.y, { 255, 240, 150 }, 0.22)
             SpawnFx(cs, "thunder", e.x, e.y, { scale = 0.9 })
+            Sfx.Play("thunder_hit")
+            if (e.burnTimer or 0) > 0 or (e.freezeTimer or 0) > 0 then
+                Sfx.Play("thunder_crit")
+            end
             AddTelegraph(cs, { kind = "line", x = p.x, y = p.y, x2 = e.x, y2 = e.y,
                 color = { 255, 235, 140 }, life = 0.28 })
             Combat.HitEnemy(cs, e, p.atk * 2.5 * bonus * skillMul * elemMul, true, true, false, "skill")
@@ -3156,10 +3316,11 @@ function Combat.MageCastSkill(slot)
             AddSlash(cs, p.x, p.y, facing, 420, math.rad(8), { 255, 235, 140 }, 6)
         end
     elseif id == 4 then
+        Sfx.Play("ice_cast")
         SpawnProj(cs, {
             x = p.x, y = p.y,
             vx = math.cos(facing) * 820, vy = math.sin(facing) * 820,
-            r = 9, life = 1.1, dmg = p.atk * 1.2 * skillMul * elemMul,
+            r = 9, life = 1.1, dmg = p.atk * 1.4 * skillMul * elemMul,
             isSkill = true, kind = "ice", element = "ice", skill = id,
             slow = 0.5 + F(p, "slowBonus"), color = { 150, 220, 255 },
             fx = "ice_proj", fxImpact = "ice_impact", fxImpactRot = true, fxScale = 0.55,
@@ -3170,6 +3331,7 @@ function Combat.MageCastSkill(slot)
         local first = target
         if not first and #cs.enemies > 0 then first = cs.enemies[1] end
         if first then
+            Sfx.Play("chain_cast")
             local chain = 3 + math.floor(F(p, "boltChain"))
             local range = 96 + F(p, "boltRange") * 32
             local done = {}
@@ -3189,6 +3351,7 @@ function Combat.MageCastSkill(slot)
                 -- 连锁闪电特效：从上一个被电到的目标指向当前目标
                 SpawnFx(cs, "chain", current.x, current.y,
                     { rot = math.atan(current.y - fxFromY, current.x - fxFromX) })
+                Sfx.Play("chain_link")
                 fxFromX, fxFromY = current.x, current.y
                 if F(p, "boltKillCdr") > 0 then
                     for oid, v in pairs(p.cooldowns) do
@@ -3219,25 +3382,45 @@ function Combat.MageCastSkill(slot)
             end
         end
     elseif id == 6 then
-        local targets = ArcTargets(cs, p.x, p.y, facing, 120, math.rad(140))
-        for _, e in ipairs(targets) do
-            local amount = p.atk * 1.5 * skillMul * elemMul
-            if (e.burnTimer or 0) > 0 then
-                amount = amount * (1 + 0.5 + F(p, "burnBonus"))
+        if F(p, "dragonBreath") > 0 then
+            -- 龙息（烈焰冲击的强化形态）：2 秒持续火焰喷射，窄扇形、总量略高但秒伤更低
+            local radius = 300
+            local arc = math.rad(85)
+            MageField(cs, {
+                x = p.x, y = p.y, r = radius, facing = facing, arc = arc,
+                t = 0, life = 2.0, tick = 0, breath = true,
+                dmg = 0.24, mul = skillMul * elemMul,
+                element = "fire", skill = id, follow = true,
+            })
+            Sfx.Play("flame_burst")
+            AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = facing,
+                range = radius, arc = arc, color = { 255, 150, 90 }, life = 0.45 })
+        else
+            Sfx.Play("flame_cast")
+            local targets = ArcTargets(cs, p.x, p.y, facing, 220, math.rad(140))
+            for _, e in ipairs(targets) do
+                local amount = p.atk * 1.5 * skillMul * elemMul
+                if (e.burnTimer or 0) > 0 then
+                    amount = amount * (1 + 0.5 + F(p, "burnBonus"))
+                end
+                Combat.HitEnemy(cs, e, amount, true, true, false, "skill")
+                ApplyElementHit(cs, e, "fire", id)
             end
-            Combat.HitEnemy(cs, e, amount, true, true, false, "skill")
-            ApplyElementHit(cs, e, "fire", id)
+            AddSlash(cs, p.x, p.y, facing, 220, math.rad(140), { 255, 150, 90 }, 7)
+            SpawnFx(cs, "flame", p.x, p.y, { rot = facing, scale = 2.1 })
+            Sfx.Play("flame_burst")
+            AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = facing,
+                range = 220, arc = math.rad(140), color = { 255, 150, 90 }, life = 0.42 })
         end
-        AddSlash(cs, p.x, p.y, facing, 120, math.rad(140), { 255, 150, 90 }, 7)
-        SpawnFx(cs, "flame", p.x, p.y, { rot = facing, scale = 0.95 })
-        AddTelegraph(cs, { kind = "sector", x = p.x, y = p.y, facing = facing,
-            range = 120, arc = math.rad(140), color = { 255, 150, 90 }, life = 0.42 })
     elseif id == 7 then
-        local fieldR = 96 * (1 + F(p, "staticRadius"))
+        local fieldR = 160 * (1 + F(p, "staticRadius"))
+        Sfx.Play("static_cast")
         MageField(cs, {
             x = p.x, y = p.y, r = fieldR,
-            t = 0, life = 5, tick = 0, dmg = 0.2, slow = 0.2,
+            t = 0, life = 5, tick = 0, dmg = 0.25, slow = 0.2,
             element = "bolt", skill = id, fx = "static",
+            follow = true,       -- 力场跟着法师走（原来固定在地上，敌人一跑就空）
+            sfxLoop = Sfx.StartLoop("static"),
         })
         AddTelegraph(cs, { kind = "circle", x = p.x, y = p.y, r = fieldR,
             color = { 255, 235, 140 }, life = 0.55 })
@@ -3245,6 +3428,9 @@ function Combat.MageCastSkill(slot)
         local cx, cy = p.x + math.cos(facing) * 200, p.y + math.sin(facing) * 200
         if cs.aimPoint then cx, cy = cs.aimPoint.x, cs.aimPoint.y
         elseif target then cx, cy = target.x, target.y end
+        Sfx.Play("meteor_cast")
+        Sfx.Play("meteor_fall")
+        Sfx.PlayAfter("meteor_hit", 0.22)
         AddBolt(cs, cx, cy - 240, cx, cy, { 255, 170, 100 }, 0.26)
         -- 落下的陨石 + 落地冲击（冲击稍微延后，和陨石落点对上）
         SpawnFx(cs, "meteor", cx, cy - 150, { rot = math.pi / 2, scale = 0.75, life = 0.32 })
@@ -3258,14 +3444,20 @@ function Combat.MageCastSkill(slot)
             color = { 255, 140, 80 }, life = 0.45 })
         cs.shake = math.max(cs.shake, 8)
     elseif id == 9 then
+        Sfx.Play("blizzard_cast")
+        -- 暴风雪可以指定落点：拖到哪就下在哪，点按默认砸最近敌人
+        local cx, cy = p.x + math.cos(facing) * 200, p.y + math.sin(facing) * 200
+        if cs.aimPoint then cx, cy = cs.aimPoint.x, cs.aimPoint.y
+        elseif target then cx, cy = target.x, target.y end
         MageField(cs, {
-            x = p.x, y = p.y, r = 128,
+            x = cx, y = cy, r = 128,
             t = 0, life = 4 + F(p, "blizzardDur"), tick = 0, dmg = 0.3,
             slow = 0.3 + F(p, "blizzardSlow"), element = "ice", skill = id, fx = "blizzard",
             eternal = F(p, "eternalWinter") > 0,
             iceBonus = F(p, "blizzardIce"),
+            sfxLoop = Sfx.StartLoop("blizzard"),
         })
-        AddTelegraph(cs, { kind = "circle", x = p.x, y = p.y, r = 128,
+        AddTelegraph(cs, { kind = "circle", x = cx, y = cy, r = 128,
             color = { 150, 220, 255 }, life = 0.55 })
     end
 
@@ -3425,6 +3617,8 @@ SpawnAfterimage = function(cs, phantom, illusion, skillId)
             t = 0.7, total = 0.7, color = { 150, 220, 255 }, kind = "phantom",
             skill = skillId, coef = phantom, follow = follow,
         }
+        SwordFx.Spawn(cs, "phantom_spawn", p.x, p.y, { scale = 0.85, gap = 0.2 })
+        SwordFx.Spawn(cs, "phantom_fade", p.x, p.y, { scale = 0.85, gap = 0.2, life = 0.35 })
         cs.phantoms[#cs.phantoms + 1] = ph
         cs.phantomCount = (cs.phantomCount or 0) + 1
         cs.pendingHits[#cs.pendingHits + 1] = { t = 0.35, fn = function()
@@ -3460,6 +3654,12 @@ local function StartDash(cs, coef, speed, t, src, dir)
         t = t, dirx = dirx, diry = diry,
         speed = speed, coef = coef, hit = {}, src = src, iframe = true,
     }
+    local cs2 = S.combat
+    if cs2 then
+        SwordFx.Spawn(cs2, "sk_dash", cs2.player.x, cs2.player.y, { rot = ang, scale = 1.0, gap = 0.2 })
+        SwordFx.Spawn(cs2, "sk_dash_after", cs2.player.x, cs2.player.y, { scale = 0.9, gap = 0.2 })
+        SwordFx.Spawn(cs2, "invul", cs2.player.x, cs2.player.y, { scale = 0.8, gap = 0.4 })
+    end
 end
 
 -- 枪客突进：不是无敌，而是减伤（部分专属可以改成无敌）
@@ -3525,6 +3725,7 @@ function CastSkillNow(slot)
         if cost > 0 then
             p.hp = p.hp - cost
             AddText(cs, p.x, p.y - 52, string.format("-%d", math.floor(cost)), { 255, 120, 120, 255 }, 16)
+            SwordFx.Spawn(cs, "hp_cost", p.x, p.y, { scale = 0.8, gap = 0.3 })
         end
     end
 
@@ -3557,7 +3758,12 @@ function CastSkillNow(slot)
                     src = "skill",
                 })
                 if n > 0 then cs.tripleSegments = (cs.tripleSegments or 0) + 1 end
-                if isLast then cs.shake = math.max(cs.shake, 4) end
+                if isLast then
+                    cs.shake = math.max(cs.shake, 4)
+                    SwordFx.Spawn(cs, "knockback", p.x, p.y, { rot = cs.facing, scale = 0.9, gap = 0.2 })
+                else
+                    SwordFx.Spawn(cs, "sk_stab_stack", cs.player.x, cs.player.y, { scale = 0.8, gap = 0.2 })
+                end
             end }
         end
 
@@ -3605,6 +3811,9 @@ function CastSkillNow(slot)
             staggerChance = F(p, "staggerChance"),
             src = "skill",
         })
+        if hits > 0 then
+            SwordFx.Spawn(cs, "sk_spin_hit", p.x, p.y, { scale = 1.0, gap = 0.15 })
+        end
         -- 剑舞流转：命中直接叠满挫裂，并缩短格挡冷却
         if F(p, "danceFlow") > 0 then
             for _, e in ipairs(ArcTargets(cs, p.x, p.y, cs.facing, spinRange, math.pi * 2)) do
@@ -3637,6 +3846,8 @@ function CastSkillNow(slot)
         p.parryLeft = 99
         cs.parryFlash = 0.3
         AddText(cs, p.x, p.y - 48, "格挡姿态", S.col.cyan, 18)
+        SwordFx.Spawn(cs, "control_immune", p.x, p.y, { scale = 0.85, gap = 0.3 })
+        SwordFx.Spawn(cs, "guard_hold", p.x, p.y, { scale = 0.9, gap = 0.3 })
         AddRing(cs, p.x, p.y, 66, { 150, 235, 255 }, 0.26, 5)
     elseif id == 6 then
         -- 瞬影连斩：第一段短促、中间停一下、第二段更亮更重，两段区分得开
@@ -3659,6 +3870,41 @@ function CastSkillNow(slot)
                 AddRing(cs, p.x, p.y, 62, { 205, 180, 255 }, 0.2, 5)
                 cs.shake = math.max(cs.shake, 4)
             end }
+        end
+        SwordFx.Spawn(cs, "sk_blink_after", p.x, p.y, { scale = 0.9, gap = 0.2 })
+    end
+
+    SwordFx.Spawn(cs, "cast_ready", p.x, p.y, { scale = 0.8, gap = 0.2 })
+    -- 剑客技能特效（swordswoman 素材包）：按技能 id 在施法瞬间放一段序列帧
+    local swFx = ({ [1] = "sw_stab", [2] = "sw_dash", [3] = "sw_guardaura",
+        [4] = "sw_spin", [6] = "sw_shadow" })[id]
+    if swFx then
+        SpawnFx(cs, swFx, p.x, p.y, {
+            rot = cs.facing,
+            scale = swFx == "sw_guardaura" and 0.9 or 1.0,
+            life = swFx == "sw_guardaura" and 1.2 or nil,
+        })
+    end
+    -- 剑客素材包的技能细分特效
+    if id == 1 then
+        SwordFx.Spawn(cs, "sk_stab_spawn", p.x, p.y, { rot = cs.facing, scale = 0.9, gap = 0.1 })
+    elseif id == 3 then
+        SwordFx.SpawnAll(cs, "sk_guard_start", p.x, p.y, { scale = 0.9 })
+    elseif id == 4 then
+        SwordFx.Spawn(cs, "sk_spin_orbit", p.x, p.y, { scale = 1.0, gap = 0.2 })
+        if (p.charges and (p.charges[4] or 0) > 0) then
+            SwordFx.Spawn(cs, "sk_spin_orbit2", p.x, p.y, { scale = 1.1, gap = 0.2 })
+        end
+        local allReady = true
+        for _, v in pairs(p.cooldowns) do if v > 0 then allReady = false end end
+        if allReady then
+            SwordFx.Spawn(cs, "skills_ready", p.x, p.y, { scale = 0.8, gap = 0.8 })
+        end
+    elseif id == 6 then
+        SwordFx.Spawn(cs, "sk_blink_trail", p.x, p.y, { rot = cs.facing, scale = 0.9, gap = 0.1 })
+        local tg = NearestEnemy(cs, p.x, p.y, 420)
+        if tg then
+            SwordFx.Spawn(cs, "sk_blink_hit", tg.x, tg.y, { scale = 0.9, gap = 0.1 })
         end
     end
 end
@@ -3764,6 +4010,9 @@ function Combat.SpearCastSkill(slot)
         cs.spearBuffHits = 3 + math.floor(F(p, "buffHits"))
         AddText(cs, p.x, p.y - 50, "三段枪式", S.col.orange, 17)
         AddRing(cs, p.x, p.y, 60, { 255, 200, 130 }, 0.3, 4)
+        -- 三段枪式是增益：加一圈外环 + 上挑火花，和普攻明显区分
+        AddRing(cs, p.x, p.y, 96, { 255, 225, 170 }, 0.42, 3)
+        AddParticles(cs, p.x, p.y - 6, { 255, 220, 150 }, 14)
         AddTelegraph(cs, { kind = "circle", x = p.x, y = p.y, r = 60,
             color = { 255, 205, 140 }, life = 0.4 })
     elseif id == 2 then
@@ -3782,6 +4031,8 @@ function Combat.SpearCastSkill(slot)
         cs.guardReflect = F(p, "guardReflect")
         AddText(cs, p.x, p.y - 50, "铁枪固守", S.col.orange, 17)
         AddRing(cs, p.x, p.y, 70, { 255, 205, 140 }, 0.3, 5)
+        AddRing(cs, p.x, p.y, 108, { 255, 230, 180 }, 0.5, 3)
+        AddParticles(cs, p.x, p.y, { 255, 225, 170 }, 16)
         AddTelegraph(cs, { kind = "circle", x = p.x, y = p.y, r = 90,
             color = { 255, 205, 140 }, life = 0.45 })
     elseif id == 4 then
@@ -3901,14 +4152,6 @@ end
 function Combat.Update(dt)
     local cs = S.combat
     if not cs then return end
-    -- 命中停顿（hitstop）：命中瞬间整场冻住 40~90ms，打击感主要靠这个
-    if (cs.hitstop or 0) > 0 then
-        cs.hitstop = math.max(0, cs.hitstop - dt)
-        if cs.shake > 0 then cs.shake = math.max(0, cs.shake - dt * 30) end
-        cs.shakeDirX = (cs.shakeDirX or 0) * 0.80
-        cs.shakeDirY = (cs.shakeDirY or 0) * 0.80
-        return
-    end
 
     -- 慢放：只影响战斗内的时间，界面 / 弹层不受影响
     local k = S.timeScale or 1
@@ -3917,6 +4160,9 @@ function Combat.Update(dt)
     -- 长按瞄准：计时；技能不再可用时自动取消
     if cs.aim then
         cs.aim.t = cs.aim.t + dt
+        if cs.aim.t > 0.25 then
+            SwordFx.Spawn(cs, "charge", p.x, p.y, { scale = 0.8, gap = 0.35 })
+        end
         if not Combat.SkillReady(cs, cs.aim.id) then cs.aim = nil end
     end
     -- 手动瞄准后的朝向锁定计时（覆盖技能的延迟结算）
@@ -3939,6 +4185,8 @@ function Combat.Update(dt)
     if cs.swordHeartTimer > 0 then cs.swordHeartTimer = cs.swordHeartTimer - dt end
     if stanceBefore > 0 and cs.swordHeartTimer <= 0 then
         -- 剑心护体结束：震波反击
+        SwordFx.Spawn(cs, "sk_guard_end", cs.player.x, cs.player.y, { scale = 0.9, gap = 0.2 })
+        SwordFx.Spawn(cs, "guard_break", cs.player.x, cs.player.y, { scale = 1.0, gap = 0.2 })
         local shock = F(cs.player, "stanceShock")
         if shock > 0 then
             local p = cs.player
@@ -4115,6 +4363,7 @@ function Combat.UpdatePlayer(cs, dt)
             end
             if e and not already and Dist(p.x, p.y, e.x, e.y) < e.radius + 34 then
                 d.hit[#d.hit + 1] = e
+                SwordFx.Spawn(cs, "sk_dash_hit", e.x, e.y, { scale = 0.9, gap = 0.1 })
                 local idx = #d.hit
                 if d.spear then
                     local extra = (idx > 1) and F(p, "dashPierce") or 0
@@ -4215,11 +4464,18 @@ function Combat.UpdatePlayer(cs, dt)
                 for _, h in ipairs(w.hit) do if h == e then already = true end end
                 if not already and Dist(w.x, w.y, e.x, e.y) < e.radius + w.r * 0.5 then
                     w.hit[#w.hit + 1] = e
+                    SwordFx.Spawn(cs, "sk_stab_hit", e.x, e.y, { scale = 0.9, gap = 0.08 })
+                    if #w.hit >= 2 then
+                        SwordFx.Spawn(cs, "pierce", e.x, e.y, { scale = 0.8, gap = 0.2 })
+                    end
                     Combat.HitEnemy(cs, e, p.atk * w.coef * (1 + p.skillPct), true, true, false, "skill")
                     if w.crack > 0 then AddCrack(cs, e, w.crack) end
                 end
             end
-            if w.life <= 0 or PointInWalls(cs, w.x, w.y) then table.remove(cs.windWaves, i) end
+            if w.life <= 0 or PointInWalls(cs, w.x, w.y) then
+                SwordFx.Spawn(cs, "sk_stab_end", w.x, w.y, { scale = 0.8, gap = 0.1 })
+                table.remove(cs.windWaves, i)
+            end
         end
     end
 
@@ -4309,6 +4565,9 @@ function Combat.UpdatePlayer(cs, dt)
     -- 玩家异常状态
     if (p.infectTimer or 0) > 0 then
         p.infectTimer = p.infectTimer - dt
+        if p.infectTimer <= 0 then
+            SwordFx.Spawn(cs, "freed", p.x, p.y, { scale = 0.75, gap = 0.4 })
+        end
         p.infectTick = (p.infectTick or 0) - dt
         if p.infectTick <= 0 then
             p.infectTick = 0.5
@@ -4451,6 +4710,10 @@ function Combat.UpdatePlayer(cs, dt)
                     SpawnFx(cs, pr.fxImpact, pr.x, pr.y,
                         { rot = pr.fxImpactRot and math.atan(pr.vy, pr.vx) or nil })
                 end
+                if pr.isSkill then
+                    if pr.kind == "fire" then Sfx.Play("fireball_hit")
+                    elseif pr.kind == "ice" then Sfx.Play("ice_hit") end
+                end
                 table.remove(cs.projs, i)
             end
         end
@@ -4461,8 +4724,21 @@ function Combat.UpdatePlayer(cs, dt)
         for i = #cs.mageFields, 1, -1 do
             local f = cs.mageFields[i]
             f.t = f.t + dt
+            -- 跟随型力场（静电力场 / 龙息）：位置每帧同步到玩家脚下
+            if f.follow then f.x, f.y = p.x, p.y end
+            if f.breath then f.facing = cs.facing end
             f.tick = (f.tick or 0) - dt
-            if f.tick <= 0 then
+            if f.breath then
+                -- 龙息：扇形持续喷射，每 0.15 秒结算一批，跟着法师转向
+                if f.tick <= 0 then
+                    f.tick = 0.15
+                    for _, e in ipairs(ArcTargets(cs, f.x, f.y, f.facing, f.r, f.arc)) do
+                        Combat.HitEnemy(cs, e, p.atk * (f.dmg or 0.35) * (f.mul or 1)
+                            * (1 + p.skillPct), true, true, false, "skill")
+                        ApplyElementHit(cs, e, "fire", f.skill)
+                    end
+                end
+            elseif f.tick <= 0 then
                 f.tick = 0.5
                 for _, e in ipairs(cs.enemies) do
                     if Dist(f.x, f.y, e.x, e.y) < f.r + e.radius then
@@ -4483,7 +4759,10 @@ function Combat.UpdatePlayer(cs, dt)
                     end
                 end
             end
-            if f.t >= f.life then table.remove(cs.mageFields, i) end
+            if f.t >= f.life then
+                if f.sfxLoop then f.sfxLoop:Stop() end
+                table.remove(cs.mageFields, i)
+            end
         end
     end
 
@@ -4497,6 +4776,7 @@ function Combat.UpdatePlayer(cs, dt)
                 if Dist(tr.x, tr.y, e.x, e.y) < tr.r + e.radius then
                     SlowEnemy(e, 2, tr.slow)
                     e.rootTimer = math.max(e.rootTimer or 0, tr.root or 1.2)   -- 夹住：短时间不能移动
+                    SwordFx.Spawn(cs, "lock", e.x, e.y, { scale = 0.7, gap = 0.3 })
                     AddHunt(cs, e, tr.hunt)
                     if F(p, "trapHuntAoe") > 0 then
                         for _, o in ipairs(cs.enemies) do
@@ -4671,16 +4951,28 @@ function Combat.UpdateEnemies(cs, dt)
             end
             if e.crackTimer > 0 then
                 e.crackTimer = e.crackTimer - dt
-                if e.crackTimer <= 0 then e.crack = 0 end
+                if e.crackTimer <= 0 then
+                    e.crack = 0
+                    SwordFx.Spawn(cs, "crack_decay", e.x, e.y, { scale = 0.7, gap = 0.4 })
+                    SwordFx.Spawn(cs, "crack_clear", e.x, e.y, { scale = 0.7, gap = 0.4 })
+                end
             end
         end
         if e.staggerTimer and e.staggerTimer > 0 then
             e.staggerTimer = e.staggerTimer - dt
-            if e.staggerTimer <= 0 then e.stagger = 0 end
+            if e.staggerTimer <= 0 then
+                e.stagger = 0
+                SwordFx.Spawn(cs, "stagger_clear", e.x, e.y, { scale = 0.7, gap = 0.4 })
+            end
         end
         if e.huntTimer and e.huntTimer > 0 then
             e.huntTimer = e.huntTimer - dt
-            if e.huntTimer <= 0 then e.hunt = 0 end
+            if e.huntTimer <= 0 then
+                e.hunt = 0
+                SwordFx.Spawn(cs, "hunt_decay", e.x, e.y, { scale = 0.7, gap = 0.4 })
+                SwordFx.Spawn(cs, "hunt_clear", e.x, e.y, { scale = 0.7, gap = 0.4 })
+                SwordFx.Spawn(cs, "combo_hunt_end", e.x, e.y, { scale = 0.8, gap = 0.4 })
+            end
         end
         if e.slowTimer > 0 then
             e.slowTimer = e.slowTimer - dt
@@ -4698,6 +4990,16 @@ function Combat.UpdateEnemies(cs, dt)
         end
 
         local d = Dist(e.x, e.y, p.x, p.y)
+        -- 视线检测（带缓存）：被墙挡住时先绕位，不隔墙输出。
+        -- 之前射手会对着墙开炮、近战会贴着墙"隔空挥拳"，看起来就是发呆。
+        local los = e.losOK
+        if (cs.time or 0) - (e.losAt or -999) > 0.12 then
+            los = LineClear(cs, e.x, e.y, p.x, p.y,
+                math.max(6, math.min(12, (e.radius or 14) * 0.7)))
+            e.losOK = los
+            e.losAt = cs.time or 0
+        end
+        if los == nil then los = true end
         local spd = e.speed
         if (e.rootTimer or 0) > 0 then spd = 0 end   -- 被夹子束缚
         if e.enraged then spd = spd * 1.3 end
@@ -4709,14 +5011,19 @@ function Combat.UpdateEnemies(cs, dt)
         local bossCharging = e.behavior == "boss" and e.chargeState ~= nil
 
         if e.behavior == "shooter" then
-            if d > 320 then
+            if not los then
+                -- 视线被挡：先绕到能看见玩家的位置（走 A*），不在墙后空放
+                EnemyMoveToward(cs, e, p.x, p.y, spd, dt)
+                -- 露头就能打：别让绕位的几秒全耗在冷却上
+                e.shootCd = math.min(e.shootCd, 0.3)
+            elseif d > 320 then
                 EnemyMoveToward(cs, e, p.x, p.y, spd, dt)
             elseif d < 190 and d > 1 then
                 -- 后退点：把玩家位置关于自己镜像，等于「往远离玩家的方向走」
                 EnemyMoveToward(cs, e, e.x - (p.x - e.x), e.y - (p.y - e.y), spd, dt)
             end
             e.shootCd = e.shootCd - dt
-            if e.shootCd <= 0 and d < 560 then
+            if e.shootCd <= 0 and d < 560 and los then
                 e.shootCd = 2.2
                 local a = math.atan(p.y - e.y, p.x - e.x)
                 cs.bullets[#cs.bullets + 1] = {
@@ -4726,11 +5033,12 @@ function Combat.UpdateEnemies(cs, dt)
                 }
             end
         elseif not bossCharging then
-            if d > e.radius + p.radius + 2 then
+            -- 近战：隔着墙不算"到位"，继续绕路；只有看得见玩家才挥击
+            if d > e.radius + p.radius + 2 or not los then
                 EnemyMoveToward(cs, e, p.x, p.y, spd, dt)
             end
             e.attackCd = e.attackCd - dt
-            if d <= e.radius + p.radius + 6 and e.attackCd <= 0 then
+            if d <= e.radius + p.radius + 6 and e.attackCd <= 0 and los then
                 e.attackCd = 0.9
                 Combat.DamagePlayer(cs, e.atk)
                 ApplyEnemyDebuff(cs, e)
@@ -4857,7 +5165,7 @@ function Combat.UpdateEnemies(cs, dt)
                 end
 
                 e.bossSkillCd = e.bossSkillCd - dt
-                if e.bossSkillCd <= 0 then
+                if e.bossSkillCd <= 0 and los then
                     e.bossSkillCd = 4.2
                     local baseAngle = math.atan(p.y - e.y, p.x - e.x)
                     for k = -2, 2 do
@@ -5374,6 +5682,24 @@ local function DrawPlayer(cs)
     nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 90))
     nvgFill(S.ctx)
     local drew = CharArt.DrawPlayer(cs)
+    -- 朝向指示：角色图只有左右朝向，朝上/下时容易和技能范围对不上，用脚下箭头补足
+    do
+        local fa = math.cos(cs.facing or 0)
+        local col = { 210, 235, 255, 190 }
+        if Config.Class().id == "mage" then col = { 200, 170, 255, 190 } end
+        local cx, cy = p.x, p.y + (p.radius or 14) + 12
+        local ang = cs.facing or 0
+        local ax, ay = cx + math.cos(ang) * 18, cy + math.sin(ang) * 18
+        local bx, by = cx + math.cos(ang + 2.5) * 10, cy + math.sin(ang + 2.5) * 10
+        local dx2, dy2 = cx + math.cos(ang - 2.5) * 10, cy + math.sin(ang - 2.5) * 10
+        nvgBeginPath(S.ctx)
+        nvgMoveTo(S.ctx, ax, ay)
+        nvgLineTo(S.ctx, bx, by)
+        nvgLineTo(S.ctx, dx2, dy2)
+        nvgClosePath(S.ctx)
+        nvgFillColor(S.ctx, nvgRGBA(col[1], col[2], col[3], col[4]))
+        nvgFill(S.ctx)
+    end
     if not drew then
         nvgBeginPath(S.ctx)
         nvgCircle(S.ctx, p.x, p.y, r)
@@ -5870,21 +6196,34 @@ local function DrawRangedFx(cs)
         elseif f.element == "ice" then c = { 150, 220, 255 } end
         local k = math.min(1, f.t / f.life)
         local a = math.floor(110 * (1 - k))
-        if f.fx then
-            -- 范围类特效按半径缩放，循环播放，贴着地面圈
-            EffectArt.Draw(f.fx, cs.time, f.x, f.y, { scale = f.r / 70 })
+        if f.breath then
+            -- 龙息：扇形火幕 + 火焰序列帧跟着朝向走
+            local facing = f.facing or 0
+            local half = (f.arc or 0) / 2
+            DrawSector(f.x, f.y, f.r, facing, half,
+                nvgRGBA(255, 145, 70, math.floor(a * 0.30)), nil)
+            DrawArcBand(f.x, f.y, f.r - 4, f.r, facing - half, facing + half,
+                nil, { 255, 175, 100, a }, 2)
+            EffectArt.Draw("flame", cs.time * 2, f.x, f.y,
+                { rot = facing, scale = 1.5, alpha = 0.85 })
+        else
+            if f.fx then
+                -- 范围类特效按半径缩放，循环播放，贴着地面圈
+                EffectArt.Draw(f.fx, cs.time, f.x, f.y, { scale = f.r / 70 })
+            end
+            UI.Circle(f.x, f.y, f.r, { c[1], c[2], c[3], math.floor(a * 0.18) },
+                { c[1], c[2], c[3], a }, 2)
         end
-        UI.Circle(f.x, f.y, f.r, { c[1], c[2], c[3], math.floor(a * 0.18) },
-            { c[1], c[2], c[3], a }, 2)
     end
     for _, pr in ipairs(cs.projs or {}) do
         local c = pr.color
         local ang = math.atan(pr.vy, pr.vx)
         if pr.kind == "arrow" then
-            local x1 = pr.x - math.cos(ang) * 16
-            local y1 = pr.y - math.sin(ang) * 16
-            local x2 = pr.x + math.cos(ang) * 16
-            local y2 = pr.y + math.sin(ang) * 16
+            local alen = pr.len or 16
+            local x1 = pr.x - math.cos(ang) * alen
+            local y1 = pr.y - math.sin(ang) * alen
+            local x2 = pr.x + math.cos(ang) * alen
+            local y2 = pr.y + math.sin(ang) * alen
             UI.Line(x1, y1, x2, y2, { c[1], c[2], c[3], 240 }, 3)
             UI.Circle(x2, y2, 3, { 255, 255, 255, 230 })
         elseif pr.fx and EffectArt.Draw(pr.fx, cs.time, pr.x, pr.y, { rot = ang }) then

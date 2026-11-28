@@ -147,8 +147,40 @@ function DevPanel.Draw()
         S.confirmReset = true
     end, { 66, 40, 44, 255 })
 
+    -- 底部第三格：音效自检（排查手机上没声音）
+    local Sfx = require "Sfx"
+    Btn("dev_sfxdiag", colX + (colW + 123) * 2, bottomY, colW, 38, "音效自检", function()
+        local out = Sfx.Diag()
+        UI.SetToast(out, 4.0)
+    end, { 44, 52, 80, 255 })
+    -- 音频通路排查：分别在「卡农那条已知能出声的路径」里放 WAV 和 OGG
+    local Audio = require "Audio"
+    Btn("dev_wavtest", colX, bottomY - 46, 120, 38, "试听A: WAV", function()
+        local ok = Audio.PlayTemp("audio/mage/states/D04_freeze_break.wav", 0.9, 1.0)
+        UI.SetToast(ok and "正在播 A（WAV 音效）—— 听到请告诉我" or "A 播放失败", 3.0)
+    end, { 44, 60, 80, 255 })
+    Btn("dev_oggtest", colX + 130, bottomY - 46, 120, 38, "试听B: OGG", function()
+        local ok = Audio.PlayTemp("audio/mage/music/M04_boss.ogg", 0.35, 2.0)
+        UI.SetToast(ok and "正在播 B（OGG 音乐片段）—— 听到请告诉我" or "B 播放失败", 3.0)
+    end, { 60, 52, 84, 255 })
+
+    -- 剧情 / 昵称
+    Btn("dev_storyreset", colX + 260, bottomY - 46, 200, 38, "重置剧情进度（可重看）", function()
+        S.data.storySeen = {}
+        Save.Write(S.data)
+        UI.SetToast("剧情进度已重置：第 1~6 关各对应一段剧情", 3.0)
+    end, { 52, 46, 70, 255 })
+    Btn("dev_name", colX + 470, bottomY - 46, 160, 38, "改昵称", function()
+        local NameEntry = require "NameEntry"
+        NameEntry.Open(function(name)
+            S.data.playerName = name
+            Save.Write(S.data)
+            UI.SetToast("昵称已改为 " .. name, 2.2)
+        end)
+    end, { 44, 52, 80, 255 })
+
     -- 底部说明：入口 + 已有的测试面板
-    UI.Text(colX + (colW + 123) * 2, bottomY + 6, 12,
+    UI.Text(colX + (colW + 123) * 2, bottomY + 46, 11,
         "「测试战斗面板」自选强化/技能/怪物直接进战斗；「测试关卡」走正常选关流程。", S.col.dim)
 end
 

@@ -39,8 +39,12 @@
 ---@field dayOffset integer
 ---@field skillPoints integer
 ---@field streakRewardIndex integer
+---@field storySeen table<string, boolean>
+---@field playerName string
 ---@field musicOn boolean
 ---@field musicVolume number
+---@field sfxOn boolean
+---@field sfxVolume number
 ---@field loadouts table<string, integer[]>
 ---@field layout any
 ---@field joyMode string
@@ -108,6 +112,9 @@
 ---@field dev boolean
 ---@field selectedLevel integer
 ---@field skillPicker any
+---@field classDetail any
+---@field classDetailView any
+---@field classDetailSkill any
 ---@field compendium boolean
 ---@field compendiumTab integer
 ---@field codexPage integer
@@ -193,6 +200,8 @@ local S = {
         streakRewardIndex = 0,
         musicOn = true,
         musicVolume = 0.32,
+        sfxOn = true,
+        sfxVolume = 0.8,
         joyMode = "float",
         joyFollow = true,
         aimMode = "button",

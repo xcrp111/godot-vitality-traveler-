@@ -2,6 +2,7 @@
 -- NanoVG 绘制与点击区域工具。所有界面坐标基于 1280x720 设计画布。
 
 local S = require "State"
+local Sfx = require "Sfx"
 
 local UI = {}
 
@@ -218,6 +219,7 @@ function UI.PointerUp(dx, dy)
         end
     end
     if r and r.id == p.id and r.enabled then
+        Sfx.Play("ui_click")
         if r.onClick then r.onClick() end
     end
     return true
@@ -279,12 +281,32 @@ end
 
 function UI.DrawToast()
     if S.toast.t <= 0 or S.toast.text == "" then return end
-    local w = 520
-    local x = (S.designW - w) / 2
-    local y = S.designH - 150
-    UI.Panel(x, y, w, 56, 12, { 20, 18, 28, 235 }, S.col.line, 1)
-    UI.Text(S.designW / 2, y + 28, 20, S.toast.text, S.col.text,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local size, padX, padY = 19, 26, 12
+    nvgFontFaceId(S.ctx, S.font)
+    nvgFontSize(S.ctx, size)
+    -- 量一下文字实际宽度：固定 520 宽的框遇到长提示会溢出、压到别的按钮上
+    local okW, measured = pcall(function() return nvgTextBounds(S.ctx, 0, 0, S.toast.text, nil) end)
+    local textW = (okW and tonumber(measured)) or 500
+    local maxBox = math.min(S.designW - 100, 980)
+    local boxW = math.max(300, math.min(textW + padX * 2, maxBox))
+    local inner = boxW - padX * 2
+    local lines = math.max(1, math.ceil(textW / inner))
+    local lineH = size + 9
+    local boxH = lines * lineH + padY * 2
+    -- 放在顶部中央：底部是技能键 / 面板按钮区，提示压在那里会挡操作
+    local x = (S.designW - boxW) / 2
+    local y = 78
+    UI.Panel(x, y, boxW, boxH, 12, { 20, 18, 28, 240 }, S.col.line, 1)
+    if lines <= 1 then
+        UI.Text(S.designW / 2, y + boxH / 2, size, S.toast.text, S.col.text,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    else
+        nvgFontFaceId(S.ctx, S.font)
+        nvgFontSize(S.ctx, size)
+        nvgTextAlign(S.ctx, math.floor(NVG_ALIGN_CENTER + NVG_ALIGN_TOP))
+        nvgFillColor(S.ctx, C(S.col.text))
+        nvgTextBox(S.ctx, x + padX, y + padY, inner, S.toast.text, nil)
+    end
 end
 
 function UI.UpdateToast(dt)

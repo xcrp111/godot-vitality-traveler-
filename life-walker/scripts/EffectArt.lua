@@ -35,7 +35,25 @@ EffectArt.Defs = {
     burn        = { file = "image/fx/S01_burn_loop.png",               fps = 10, loop = true,  scale = 0.5 },
     freeze      = { file = "image/fx/S03_freeze_loop.png",             fps = 10, loop = true,  scale = 0.55 },
     slow        = { file = "image/fx/S05_slow_loop.png",               fps = 8,  loop = true,  scale = 0.55 },
+
+    -- 剑客（swordswoman 素材包）
+    sw_stab     = { file = "image/fx/sw_stab.png",      fps = 18, loop = false, scale = 1.0 },
+    sw_dash     = { file = "image/fx/sw_dash.png",      fps = 20, loop = false, scale = 0.9 },
+    sw_guardaura= { file = "image/fx/sw_guardaura.png", fps = 10, loop = true,  scale = 0.9 },
+    sw_spin     = { file = "image/fx/sw_spin.png",      fps = 18, loop = false, scale = 1.1 },
+    sw_shadow   = { file = "image/fx/sw_shadow.png",    fps = 20, loop = false, scale = 0.9 },
+    sw_parry    = { file = "image/fx/sw_parry.png",     fps = 22, loop = false, scale = 0.8 },
 }
+
+-- 剑客素材包的全部特效（由 dev/make_sword_fx_all.js 生成的表，启动时并进来）
+do
+    local ok, SwordFx = pcall(require, "SwordFxDefs")
+    if ok and type(SwordFx) == "table" then
+        for id, def in pairs(SwordFx) do
+            if EffectArt.Defs[id] == nil then EffectArt.Defs[id] = def end
+        end
+    end
+end
 
 local failed = {}
 

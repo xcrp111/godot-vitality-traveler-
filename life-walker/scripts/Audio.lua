@@ -28,6 +28,10 @@ local mainGainLevel = nil
 
 -- 延迟到启动若干秒后再初始化：Start() 里做重活容易触发手机端首帧看门狗，
 -- 之前音频就是在启动阶段创建 Scene/SoundSource，被怀疑为崩溃来源。
+local temp_ = {}   -- 临时音源（排查/试听）
+local pool_ = {}      -- 固定音源池：复用，避免每次播放都创建节点导致延迟
+local poolIdx_ = 0
+local POOL_SIZE = 12
 local initDelay = 1.5
 local initAttempts = 0
 local failed = false
@@ -146,6 +150,13 @@ function Audio.IsMeditating()
     return meditateOn
 end
 
+--- 音乐是否真的在播（自检用）
+function Audio.IsPlaying()
+    if not (source_ and sound_) then return false end
+    local ok, p = pcall(function() return source_:IsPlaying() end)
+    return ok and p or false
+end
+
 function Audio.Update(dt)
     if not scene_ and not failed and Wanted() then
         initDelay = initDelay - dt
@@ -196,6 +207,70 @@ function Audio.Update(dt)
             end)
         end
     end
+
+    -- 临时音源（排查/试听用）：到时间就移除节点
+    if #temp_ > 0 then
+        for i = #temp_, 1, -1 do
+            local item = temp_[i]
+            item.t = item.t - (dt or 0)
+            if item.t <= 0 then
+                pcall(function() item.node:Remove() end)
+                table.remove(temp_, i)
+            end
+        end
+    end
+end
+
+--- 在「已经能出声」的音乐场景里播一个临时音（排查用）
+---@param path string 资源根下的完整路径
+---@param gain? number
+---@param seconds? number 播多久后移除
+---@return boolean
+local function EnsurePool()
+    if #pool_ > 0 or not scene_ then return end
+    for i = 1, POOL_SIZE do
+        local ok, src = pcall(function()
+            local node = scene_:CreateChild("SfxPool" .. i)
+            local s = node:CreateComponent("SoundSource")
+            s.soundType = SOUND_MUSIC
+            return s
+        end)
+        if ok and src then pool_[#pool_ + 1] = src end
+    end
+end
+
+--- 取一个当前没在播的音源（都忙就轮流覆盖最早的那个）
+local function FreeSource()
+    EnsurePool()
+    if #pool_ == 0 then return nil end
+    for i = 1, #pool_ do
+        local ok, playing = pcall(function() return pool_[i]:IsPlaying() end)
+        if not ok or not playing then return pool_[i] end
+    end
+    poolIdx_ = math.floor(poolIdx_ % #pool_) + 1
+    return pool_[poolIdx_]
+end
+
+--- 在「已经能出声」的音乐场景里播一个音效（复用音源池，低延迟）
+---@param path string 资源根下的完整路径
+---@param gain? number
+---@param seconds? number 兼容旧参数，池化后不需要（保留签名）
+---@return boolean
+function Audio.PlayTemp(path, gain, seconds)
+    if not scene_ then InitNow() end
+    if not scene_ then return false end
+    local done = false
+    pcall(function()
+        local sound = GetCache():GetResource("Sound", path)
+        if not sound then return end
+        local src = FreeSource()
+        if not src then return end
+        src.gain = math.max(0, math.min(1, gain or 0.6))
+        -- 频率传 0：引擎按素材采样率播放（和卡农完全同一条路径）
+        src:Play(sound, 0, src.gain)
+        done = true
+    end)
+    return done
 end
 
 function Audio.Shutdown()
@@ -206,6 +281,9 @@ function Audio.Shutdown()
         pcall(function() medSource_:Stop() end)
     end
     scene_ = nil
+    temp_ = {}
+    pool_ = {}
+    poolIdx_ = 0
     source_ = nil
     sound_ = nil
     medSource_ = nil

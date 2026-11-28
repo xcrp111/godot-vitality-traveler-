@@ -32,8 +32,12 @@ local function Defaults()
         dayOffset = 0,          -- 开发用：虚拟推进的天数
         skillPoints = 0,        -- 技能点（v1 先积累，技能升级后续开放）
         streakRewardIndex = 0,  -- 已领取到第几档连续奖励
+        storySeen = {},         -- 已看过的剧情节点（关卡号 → true）
+        playerName = "",        -- 玩家昵称（首次进入时登记，剧情里会用）
         musicOn = true,         -- 背景音乐开关
         musicVolume = 0.32,     -- 背景音乐音量 0~1
+        sfxOn = true,           -- 战斗/界面音效开关
+        sfxVolume = 0.8,        -- 战斗/界面音效音量 0~1
         layout = nil,           -- 按键布局（由 Save.Layout 补齐默认值）
         joyMode = "float",      -- 摇杆模式：fixed 固定位置 / float 按下即定位
         joyFollow = true,       -- 拖尾跟随：手指拖出圈时基座跟着走
@@ -251,9 +255,14 @@ local function MergeDefaults(data)
         data.levels[data.class] = math.max(1, data.level)
         data.level = nil
     end
+    if type(data.storySeen) ~= "table" then data.storySeen = {} end
+    if type(data.playerName) ~= "string" then data.playerName = "" end
     if type(data.musicOn) ~= "boolean" then data.musicOn = true end
     if type(data.musicVolume) ~= "number" then data.musicVolume = 0.32 end
     data.musicVolume = math.max(0, math.min(1, data.musicVolume))
+    if type(data.sfxOn) ~= "boolean" then data.sfxOn = true end
+    if type(data.sfxVolume) ~= "number" then data.sfxVolume = 0.8 end
+    data.sfxVolume = math.max(0, math.min(1, data.sfxVolume))
     EnsureMaps(data)
     -- 升级改成直接从总池扣之后，旧存档里"已投入职业"的经验并回总池，避免丢经验
     local refund = 0

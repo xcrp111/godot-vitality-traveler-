@@ -6,10 +6,10 @@
   "name": "生命行者",
   "author": {
     "name": "生命行者",
-    "id": "1b4a3096-b2cb-4981-a5b8-8b5b1eee8913"
+    "id": "1063480020"
   },
   "entry": "main.lua",
-  "version": "1.0.69",
+  "version": "1.0.119",
   "taptap_publish": {
     "title": "生命行者",
     "category": "action",
@@ -19,11 +19,18 @@
     "developer_id": 507371
   },
   "test_qrcode": {
-    "url": "https://tapcode-sce.spark.xd.com/qrcode/m_52rf_1793890587369.png",
-    "generated_at": "2026-11-05T14:56:27.490Z"
+    "url": "https://img-tc.tapimg.com/market/images/FqxJVZP6H3n1ZskSCeSokbzuycKJ.png",
+    "generated_at": "2026-11-26T15:05:06.157Z",
+    "pending_upload": null,
+    "preview_url": "https://www.taptap.cn/qrcode/miniapp?id=tapmc12tea8wmdpl3t&type=develop&version_id=602830",
+    "mode": "develop",
+    "game_version": "1.0.118",
+    "map_version": "119",
+    "version_id": "602830",
+    "miniapp_id": "tapmc12tea8wmdpl3t"
   },
   "metadata": {
-    "updated_at": "2026-11-05T14:56:27.490Z"
+    "updated_at": "2026-11-26T15:05:06.157Z"
   },
   "assets": {
     "icon_url": "https://img.tapimg.com/market/images/ef4719159691d7db73760cadfc67eac4.png"
@@ -48,5 +55,7 @@
       "icon_url": "https://img.tapimg.com/market/images/ef4719159691d7db73760cadfc67eac4.png"
     },
     "baseGameplayDemoVideoId": 0
-  }
+  },
+  "entry@client": "main.lua",
+  "entry@server": "server_main.lua"
 }

@@ -83,7 +83,8 @@ function Start()
     check("火球弹道带序列帧", proj and proj.fx == "fire_proj", proj and proj.fx)
     check("火球带命中特效配置", proj and proj.fxImpact == "fire_impact",
         proj and proj.fxImpact)
-    for _ = 1, 30 do Combat.Update(1 / 60) end
+    -- 去掉顿帧后命中更早，跑太久特效已经播完，这里只推进一小段
+    for _ = 1, 10 do Combat.Update(1 / 60) end
     check("命中后生成火球爆炸特效", CountFx(cs, "fire_impact") >= 1, CountFx(cs, "fire_impact"))
     for _ = 1, 90 do Combat.Update(1 / 60) end
     check("命中特效会自己消失", CountFx(cs, "fire_impact") == 0, CountFx(cs, "fire_impact"))

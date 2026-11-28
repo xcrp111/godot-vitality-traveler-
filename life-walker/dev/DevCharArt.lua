@@ -104,7 +104,7 @@ function Start()
         cs.anim and cs.anim.fps)
     S.input.x, S.input.y = 0, 0
 
-    -- hitstop：命中会冻结一段时间，且期间 cs.time 不再推进
+    -- 命中反馈：不冻结时间（顿帧已移除），但要有方向性震屏
     cs = NewCombat("swordsman", { 1, 2, 3 })
     Combat.SpawnWave(cs, { minion = 1 })
     local en = cs.enemies[1]
@@ -112,13 +112,12 @@ function Start()
     en.hp, en.maxHp = 9999, 9999
     cs.hitstop = 0
     Combat.HitEnemy(cs, en, 10, false, true, false, "basic")
-    check("命中触发 hitstop", (cs.hitstop or 0) > 0, cs.hitstop)
+    check("命中不再冻帧", (cs.hitstop or 0) == 0, cs.hitstop)
     check("命中带方向性震屏", (cs.shakeDirX or 0) ~= 0 or (cs.shakeDirY or 0) ~= 0,
         tostring(cs.shakeDirX) .. "," .. tostring(cs.shakeDirY))
     local t0 = cs.time
     Combat.Update(1 / 60)
-    check("hitstop 期间时间冻结", math.abs(cs.time - t0) < 1e-6, cs.time - t0)
-    check("hitstop 计时在走", (cs.hitstop or 0) < 0.09, cs.hitstop)
+    check("时间照常推进", cs.time > t0, cs.time - t0)
 
     print(string.format("[Char] done, failures = %d", fails))
 end

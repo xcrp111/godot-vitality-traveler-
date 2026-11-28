@@ -204,6 +204,7 @@ local function defaultGuild()
         keys = 0,
         cosmetic = {},
         raid = { week = "", done = false, grade = "", percent = 0, coins = 0 },
+        raidCloud = { week = 0, dmg = 0 },   -- 公会共斗：本周已上报的输出
     }
 end
 
@@ -231,6 +232,7 @@ function Guild.Ensure(data)
     if type(g.cosmetic) ~= "table" then g.cosmetic = {} end
     if type(g.liked) ~= "table" then g.liked = {} end
     if type(g.raid) ~= "table" then g.raid = def.raid end
+    if type(g.raidCloud) ~= "table" then g.raidCloud = { week = 0, dmg = 0 } end
     return g
 end
 
@@ -256,6 +258,7 @@ function Guild.Roll(data)
         g.shop.week = week
         g.shop.bought = {}
         g.raid = { week = week, done = false, grade = "", percent = 0, coins = 0 }
+        g.raidCloud = { week = 0, dmg = 0 }
     end
     return g
 end

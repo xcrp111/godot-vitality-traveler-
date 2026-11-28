@@ -172,6 +172,23 @@ function Pet.SlotPrice(data)
     return PetData.SlotPrices[owned - PetData.BaseSlots + 1]
 end
 
+--- 调整排队顺序（只在 waiting 之间交换，已开始孵化的不动）
+---@return boolean
+function Pet.MoveEgg(data, index, dir)
+    local p = Pet.Ensure(data)
+    local egg = p.eggs[index]
+    if not egg or egg.state ~= "waiting" then return false end
+    local j = index + dir
+    while p.eggs[j] do
+        if p.eggs[j].state == "waiting" then break end
+        j = j + dir
+    end
+    local other = p.eggs[j]
+    if not other or other.state ~= "waiting" then return false end
+    p.eggs[index], p.eggs[j] = p.eggs[j], p.eggs[index]
+    return true
+end
+
 --- 有空槽就把排队的蛋放进去孵（按入仓顺序）
 ---@return integer 本次开始孵化的数量
 function Pet.AutoIncubate(data)

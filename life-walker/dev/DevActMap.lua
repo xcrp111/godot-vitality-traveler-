@@ -346,6 +346,8 @@ local function TestBudget()
                 for _, opt in ipairs(def.options) do
                     -- 代价可以是「花资源」，也可以是「把本层变难」（stepRisk）
                     if opt.cost then hasCost = true end
+                    -- 新版「押钱袋」把代价写在 rollId 的牌桌结果里
+                    if opt.rollId then hasCost = true end
                     if opt.gain and opt.gain.stepRisk then hasCost = true end
                 end
                 check("不期而遇至少一个选项带代价（" .. def.id .. "）", hasCost)

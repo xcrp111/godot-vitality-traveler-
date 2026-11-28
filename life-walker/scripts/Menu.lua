@@ -7,6 +7,7 @@ local S = require "State"
 local Run = require "Run"
 local Combat = require "Combat"
 local Audio = require "Audio"
+local Sfx = require "Sfx"
 local KbLayout = require "KbLayout"
 local Guild = require "Guild"
 local GuildUI = require "GuildUI"
@@ -18,6 +19,7 @@ local PetUI = require "PetUI"
 local FarmUI = require "FarmUI"
 local RankUI = require "RankUI"
 local FarmWalk = require "FarmWalk"
+local CharArt = require "CharArt"
 local Farm = require "Farm"
 local Cloud = require "Cloud"
 local PetData = require "PetData"
@@ -827,12 +829,24 @@ function Menu.DrawTestLab()
         local active = S.testSkills[sk.id] == true
         TestToggle("ts_" .. sk.id, x, y, 124, 30,
             (active and "[x] " or "") .. sk.short, active, function()
+                S.testSkillOrder = S.testSkillOrder or {}
                 if active then
                     S.testSkills[sk.id] = nil
-                elseif selectedSkills < 3 then
-                    S.testSkills[sk.id] = true
+                    for k = #S.testSkillOrder, 1, -1 do
+                        if S.testSkillOrder[k] == sk.id then table.remove(S.testSkillOrder, k) end
+                    end
                 else
-                    UI.SetToast("最多携带 3 个技能", 1.6)
+                    -- 满 3 个时顶掉最早选的，保证每一次点击都有反馈
+                    while selectedSkills >= 3 do
+                        local oldest = table.remove(S.testSkillOrder, 1)
+                        if not oldest then break end
+                        S.testSkills[oldest] = nil
+                        selectedSkills = selectedSkills - 1
+                    end
+                    S.testSkills[sk.id] = true
+                    S.testSkillOrder[#S.testSkillOrder + 1] = sk.id
+                    selectedSkills = selectedSkills + 1
+                    UI.SetToast("已选中" .. sk.name .. string.format("（%d/3）", selectedSkills), 1.2)
                 end
             end, 13)
     end
@@ -846,6 +860,7 @@ function Menu.DrawTestLab()
         S.testBuffs = {}
         S.testGeneral = {}
         S.testSkills = {}
+        S.testSkillOrder = {}
         S.testMonsterCount = {
             germ = 0, spore = 0, worm = 0, mycel = 0, plague = 0,
             abscess = 0, golem = 0, colossus = 0,
@@ -1030,6 +1045,28 @@ function Menu.DrawSettings()
                 Save.Write(data)
             end, true)
         end
+        r = r + 1
+        SetRow(y0 + (r - 1) * rowH, "音效", "技能 / 命中 / 界面点击")
+        SetToggle(y0 + (r - 1) * rowH, "set_sfx", data.sfxOn ~= false, function(v)
+            Sfx.SetEnabled(v)
+            Save.Write(data)
+        end, "开启", "关闭")
+        r = r + 1
+        local sfxVol = data.sfxVolume or 0.8
+        SetRow(y0 + (r - 1) * rowH, "音效音量", string.format("当前 %d%%",
+            math.floor(sfxVol * 100 + 0.5)))
+        for i = 1, 6 do
+            local x = 896 + (i - 1) * 24
+            local on = i <= math.floor(sfxVol * 6 + 0.5)
+            UI.Panel(x, y0 + (r - 1) * rowH, 20, 36, 5,
+                on and { 48, 96, 110, 255 } or { 36, 32, 48, 255 },
+                on and S.col.cyan or S.col.line, 1)
+            local lv = i
+            UI.Region("sfxvol_seg_" .. i, x, y0 + (r - 1) * rowH, 20, 36, function()
+                Sfx.SetVolume(lv / 6)
+                Save.Write(data)
+            end, true)
+        end
     elseif tab == "control" then
         local r = 1
         SetRow(y0 + (r - 1) * rowH, "摇杆模式", "浮动 = 按在哪里就在哪里出现")
@@ -1200,6 +1237,10 @@ function Menu.Draw()
         Menu.DrawTestLab()
         return
     end
+    if S.classDetail then
+        Menu.DrawClassDetail()
+        return
+    end
     if S.skillPicker then
         Menu.DrawSkillPicker()
         return
@@ -1257,6 +1298,8 @@ function Menu.Draw()
                 FixLoadout()
                 S.testBuffs = {}
                 S.testSkills = {}
+                S.testSkillOrder = {}
+        S.testSkillOrder = {}
                 S.testDetail = nil
                 S.selectedLevel = math.min(Save.MaxPlayable(data), math.max(1, S.selectedLevel))
                 UI.SetToast("已切换到 " .. c.name, 2.0)
@@ -1540,12 +1583,28 @@ end
 
 -- 弹层是否占据输入
 function Menu.OverlayActive()
+    local okN, NameEntry = pcall(require, "NameEntry")
+    if okN and NameEntry and NameEntry.IsOpen() then return true end
+    local ok, Story = pcall(require, "Story")
+    if ok and Story and Story.IsOpen() then return true end
     return S.restPrompt ~= nil or S.meditate ~= nil
 end
 
 function Menu.UpdateOverlays(dt)
     local d = S.data
     if not d then return end
+    -- 首次进入：还没有昵称就先登记
+    if (type(d.playerName) ~= "string" or d.playerName == "")
+        and S.screen == "menu" and not S.panelMode then
+        local okN, NameEntry = pcall(require, "NameEntry")
+        if okN and NameEntry and not NameEntry.IsOpen() then
+            NameEntry.Open(function(name)
+                d.playerName = name
+                pcall(Save.Write, d)
+                UI.SetToast("欢迎，" .. name, 2.4)
+            end)
+        end
+    end
     -- 跨天检查：游戏一直开着挂到第二天时，之前只有「点一下喝水/领步数」才会触发
     -- RollDay，健康任务和每日数据会一直显示昨天的状态。这里每秒检查一次。
     healthDayTimer = healthDayTimer - dt
@@ -1600,6 +1659,17 @@ end
 
 -- 返回 true = 这次输入被弹层吃掉了（外面不要再处理）
 function Menu.OverlayPointer(phase, dx, dy)
+    local okN, NameEntry = pcall(require, "NameEntry")
+    if okN and NameEntry and NameEntry.IsOpen() then
+        return NameEntry.Pointer(phase, dx, dy)
+    end
+    local okS, Story = pcall(require, "Story")
+    if okS and Story and Story.IsOpen() then
+        if phase == "down" then
+            if Story.HitSkip(dx, dy) then Story.Skip() else Story.Advance() end
+        end
+        return true
+    end
     if S.restPrompt then
         if phase ~= "down" then return true end
         local okBtn = { x = REST_PANEL.x + 60, y = REST_PANEL.y + 210, w = 220, h = 56 }
@@ -1642,6 +1712,16 @@ end
 function Menu.DrawOverlays()
     local d = S.data
     if not d then return end
+    local okN, NameEntry = pcall(require, "NameEntry")
+    if okN and NameEntry and NameEntry.IsOpen() then
+        NameEntry.Draw()
+        return
+    end
+    local okS, Story = pcall(require, "Story")
+    if okS and Story and Story.IsOpen() then
+        Story.Draw()
+        return
+    end
     if S.restPrompt then
         local p = REST_PANEL
         local left = math.max(0, Config.Health.restPromptDur - (S.restPrompt.t or 0))
@@ -1893,6 +1973,8 @@ function Menu.DrawCharacter()
                 FixLoadout()
                 S.testBuffs = {}
                 S.testSkills = {}
+                S.testSkillOrder = {}
+        S.testSkillOrder = {}
                 S.testDetail = nil
                 UI.SetToast("已切换到 " .. c.name, 1.8)
             end, { fontSize = 14,
@@ -1901,6 +1983,13 @@ function Menu.DrawCharacter()
             bx = bx + 100
         end
     end
+
+    -- 数值详情入口：形象 + 完整数值面板
+    UI.Button("panel_class_detail", x + 432, y + 62, 216, 34, "查看角色数值 / 形象", function()
+        S.classDetail = true
+        S.classDetailView = Save.ActiveClass(data)
+        S.classDetailSkill = 1
+    end, { fontSize = 13, accent = S.col.gold })
 
     local classLevel = Save.ClassLevel(data)
     local cost = Save.NextCost(data)
@@ -1970,6 +2059,159 @@ function Menu.DrawCharacter()
     end
 
     UI.Text(x + 32, y + 446, 12, "升级消耗的是「精粹」（来自每日运动结算），金币只用于局内商店。", S.col.dim)
+end
+
+-- ---------------------------------------------------------------- 角色数值 / 形象
+-- 选角色时的详细面板：左边看形象，右边看真实数值（不含局内强化）
+local function ClipText(text, maxChars)
+    local n = utf8.len(text) or 0
+    if n <= maxChars then return text end
+    local cut = utf8.offset(text, maxChars + 1)
+    return text:sub(1, cut - 1) .. "…"
+end
+
+local function StatCard(x, y, w, h, label, value, color)
+    UI.Panel(x, y, w, h, 10, { 34, 30, 46, 255 }, S.col.line, 1)
+    UI.Text(x + 14, y + 7, 11, label, S.col.dim)
+    UI.Text(x + 14, y + 25, 21, value, color or S.col.text)
+end
+
+local function DrawPortrait(cid, cx, feetY, k)
+    local row = CharArt.RowOf(cid, "idle")
+    local fps = (CharArt.ACTIONS.idle or {}).fps or 8
+    local frame = math.floor((S.time or 0) * fps) % 8 + 1
+    -- 脚底投影
+    nvgBeginPath(S.ctx)
+    nvgEllipse(S.ctx, cx, feetY + 2, 52 * k / 2.3, 10 * k / 2.3)
+    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 70))
+    nvgFill(S.ctx)
+    nvgSave(S.ctx)
+    nvgTranslate(S.ctx, cx, feetY)
+    nvgScale(S.ctx, k, k)
+    nvgTranslate(S.ctx, -cx, -feetY)
+    CharArt.Draw(cid, row, frame, cx, feetY, false, 1, 1)
+    nvgRestore(S.ctx)
+end
+
+function Menu.DrawClassDetail()
+    local data = S.data
+    local viewId = S.classDetailView or Save.ActiveClass(data)
+    if not Config.Classes[viewId] then viewId = Save.ActiveClass(data) end
+    local c = Config.Classes[viewId]
+    local activeClass = Config.PlayerClass
+    -- 临时切到正在查看的职业算数值，算完切回来（不改存档）
+    Config.SetClass(viewId)
+    local lv = math.max(1, tonumber(data.levels and data.levels[viewId]) or 1)
+    local hp1, sh1, atk1 = Config.ClassStats(1)
+    local hp, sh, atk = Config.ClassStats(lv)
+    local hp20, sh20, atk20 = Config.ClassStats(20)
+    Config.SetClass(activeClass)
+
+    nvgBeginPath(S.ctx)
+    nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
+    nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 200))
+    nvgFill(S.ctx)
+
+    local w, h = 1180, 656
+    local x, y = (Config.DESIGN_W - w) / 2, (Config.DESIGN_H - h) / 2
+    UI.Panel(x, y, w, h, 18, { 26, 22, 38, 252 }, S.col.line, 1)
+
+    UI.Text(x + 28, y + 18, 26, "角色数值 · " .. c.name, S.col.gold)
+    UI.Text(x + 28, y + 52, 12, "这里只显示职业基础数值，不含局内强化", S.col.dim)
+
+    -- 职业切换（只看不切存档）
+    local tx = x + 28
+    for _, cid in ipairs({ "swordsman", "spearman", "ranger", "mage" }) do
+        local cc = Config.Classes[cid]
+        if cc then
+            local on = viewId == cid
+            UI.Button("cdetail_class_" .. cid, tx, y + 74, 138, 34, cc.name, function()
+                S.classDetailView = cid
+                S.classDetailSkill = 1
+            end, {
+                fontSize = 14,
+                fill = on and { 52, 74, 96, 255 } or { 36, 32, 48, 255 },
+                stroke = on and S.col.cyan or S.col.line,
+                accent = on and S.col.cyan or nil,
+            })
+            tx = tx + 146
+        end
+    end
+
+    -- 左：形象
+    local cardX, cardY, cardW, cardH = x + 28, y + 122, 360, 510
+    UI.Panel(cardX, cardY, cardW, cardH, 14, { 30, 26, 42, 255 }, S.col.line, 1)
+    UI.Text(cardX + 20, cardY + 16, 22, c.name, S.col.text)
+    UI.Text(cardX + 20, cardY + 46, 12, c.role or "", S.col.dim)
+    DrawPortrait(viewId, cardX + cardW / 2, cardY + 380, 2.35)
+
+    UI.Text(cardX + 20, cardY + 400, 12, "等级", S.col.dim)
+    UI.Text(cardX + 20, cardY + 418, 20, "Lv." .. lv, S.col.text)
+    if Save.ActiveClass(data) == viewId then
+        UI.Text(cardX + cardW - 20, cardY + 404, 11, "当前出战", S.col.cyan,
+            NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+    end
+    UI.Text(cardX + 20, cardY + 450, 11, string.format(
+        "成长（Lv.1 → Lv.20）：生命 %d→%d · 护盾 %d→%d · 攻击 %d→%d",
+        hp1, hp20, sh1, sh20, atk1, atk20), S.col.dim)
+    UI.Text(cardX + 20, cardY + 470, 11, "资源：" ..
+        ((c.showResource == false) and "无（纯技能职业）" or
+            string.format("%s（上限 %d）", c.resourceName or "—", c.resourceMax or 0)), S.col.dim)
+
+    -- 右：数值
+    local rx = x + 408
+    UI.Text(rx, y + 122, 15, "基础属性 · Lv." .. lv, S.col.gold)
+    local cells = {
+        { "生命上限", tostring(hp), { 130, 220, 150 } },
+        { "护盾上限", tostring(sh), { 140, 210, 240 } },
+        { "攻击力", tostring(atk), { 255, 200, 140 } },
+        { "攻击速度", string.format("%.1f 次/秒", c.attackSpeed or 1), S.col.text },
+        { "移动速度", string.format("%.1f 米/秒", (c.speed or 0) / 32), S.col.text },
+        { "普攻系数", string.format("×%.2f", c.basicCoef or 1), { 255, 180, 150 } },
+        { "普攻射程", string.format("%d px", c.basicRange or 0), S.col.text },
+        { "普攻扇形", string.format("%d°", math.floor(math.deg(c.basicArc or 0) + 0.5)), S.col.text },
+        { "暴伤", "×1.50", S.col.text },
+    }
+    for i, cell in ipairs(cells) do
+        local col = (i - 1) % 3
+        local row = math.floor((i - 1) / 3)
+        StatCard(rx + col * 248, y + 148 + row * 70, 236, 62, cell[1], cell[2], cell[3])
+    end
+
+    -- 技能表
+    local skY = y + 372
+    UI.Text(rx, skY, 15, "技能 · 冷却与效果", S.col.gold)
+    local list = Config.ClassSkills[viewId] or {}
+    local sel = S.classDetailSkill or 1
+    if sel > #list then sel = 1 end
+    for i, sk in ipairs(list) do
+        local ry = skY + 26 + (i - 1) * 26
+        local unlocked = lv >= (sk.unlockLevel or 1)
+        if sel == i then
+            UI.Panel(rx - 6, ry - 3, 744, 25, 6, { 44, 56, 78, 255 }, S.col.cyan, 1)
+        end
+        UI.Text(rx + 2, ry, 12, sk.short or "·",
+            unlocked and S.col.cyan or { 110, 106, 120 }, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        UI.Text(rx + 26, ry, 13, sk.name, unlocked and S.col.text or { 120, 116, 130 })
+        UI.Text(rx + 170, ry + 1, 11, string.format("%.1f 秒", sk.cd or 0), S.col.dim)
+        UI.Text(rx + 240, ry + 1, 11,
+            unlocked and "已解锁" or ("Lv." .. tostring(sk.unlockLevel or 1) .. " 解锁"),
+            unlocked and S.col.dim or { 120, 110, 130 })
+        UI.Text(rx + 320, ry + 1, 10.5, ClipText(sk.desc or "", 46), S.col.dim)
+        UI.Region("cdetail_skill_" .. i, rx - 6, ry - 3, 744, 25, function()
+            S.classDetailSkill = i
+        end, true)
+    end
+
+    -- 选中技能完整说明
+    local cur = list[sel]
+    if cur then
+        UI.Text(rx, y + 636, 10.5, ClipText(cur.name .. "：" .. (cur.desc or ""), 88), S.col.text)
+    end
+
+    UI.Button("cdetail_close", x + w - 190, y + 16, 160, 40, "关闭", function()
+        S.classDetail = false
+    end, { fontSize = 15 })
 end
 
 -- ---------------------------------------------------------------- 今日运动

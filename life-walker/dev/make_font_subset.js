@@ -22,13 +22,20 @@ const OUT = path.join(ROOT, "assets", "Fonts", "MiSans-Game.ttf");
 const EXTRA = "×·—…「」『』【】、。，：；！？（）《》“”‘’±%‰℃①②③④⑤·・－";
 
 (async () => {
-    const dir = path.join(ROOT, "scripts");
+    const root = path.join(ROOT, "scripts");
     const chars = new Set();
-    for (const f of fs.readdirSync(dir)) {
-        if (!f.endsWith(".lua")) continue;
-        const text = fs.readFileSync(path.join(dir, f), "utf8");
-        for (const ch of text) chars.add(ch);
-    }
+    // 递归扫 scripts/（network 等子目录里的文案也要算进来）
+    const walk = (dir) => {
+        for (const f of fs.readdirSync(dir)) {
+            const full = path.join(dir, f);
+            const stat = fs.statSync(full);
+            if (stat.isDirectory()) { walk(full); continue; }
+            if (!f.endsWith(".lua")) continue;
+            const text = fs.readFileSync(full, "utf8");
+            for (const ch of text) chars.add(ch);
+        }
+    };
+    walk(root);
     for (let c = 0x20; c <= 0x7e; c++) chars.add(String.fromCodePoint(c));
     for (const ch of EXTRA) chars.add(ch);
 

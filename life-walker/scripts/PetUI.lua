@@ -247,6 +247,25 @@ local function DrawStorage(data)
             end
             UI.Text(LIST.x + 484, y + 12, 12, stateText,
                 ready and S.col.green or (waiting and S.col.dim or S.col.cyan))
+            if waiting then
+                local ord = 0
+                for k = 1, i do
+                    if p.eggs[k].state == "waiting" then ord = ord + 1 end
+                end
+                UI.Text(LIST.x + 660, y + 12, 11, "第 " .. ord .. " 位", S.col.dim)
+                UI.Button("pet_up_" .. i, LIST.x + 690, y + 5, 36, 28, "↑", function()
+                    if Pet.MoveEgg(S.data, i, -1) then
+                        Save.Write(S.data)
+                        UI.SetToast("已提前一位", 1.4)
+                    end
+                end, { fontSize = 14, enabled = ord > 1 })
+                UI.Button("pet_down_" .. i, LIST.x + 730, y + 5, 36, 28, "↓", function()
+                    if Pet.MoveEgg(S.data, i, 1) then
+                        Save.Write(S.data)
+                        UI.SetToast("已后移一位", 1.4)
+                    end
+                end, { fontSize = 14 })
+            end
             UI.Button("pet_speed_" .. i, LIST.x + 824, y + 5, 160, 28,
                 "加速卡 · 4h", function()
                     local ok, msg = Pet.Buy(S.data, "speed", i)

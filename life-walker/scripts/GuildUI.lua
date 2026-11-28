@@ -7,6 +7,8 @@ local UI = require "UI"
 local S = require "State"
 local Guild = require "Guild"
 local Run = require "Run"
+local RaidCloud = require "RaidCloud"
+local GuildClient = require "network.GuildClient"
 
 local GuildUI = {}
 
@@ -117,51 +119,90 @@ local function drawHome()
         commit(ok, msg)
     end, { fontSize = 13, enabled = (g.thanks or 0) > 0 })
 
-    UI.Text(154, 590, 12, "每周一 00:00 刷新：周产出上限 / 周限购商店 / 团本次数与评级", S.col.dim)
+    UI.Text(154, 578, 12, "每周一 00:00 刷新：周产出上限 / 周限购商店 / 团本次数与评级", S.col.dim)
 
-    -- 右：每日社交动作
-    UI.Panel(674, 168, 476, 452, 14, S.col.panel, S.col.line, 1)
-    UI.Text(698, 186, 20, "今日社交（每周一 00:00 刷新周产出）", S.col.cyan)
+    -- 联机公会（NetCore + GuildServer）
+    local bootTag = ""
+    if GuildClient.serverBoot and GuildClient.serverBoot > 0 then
+        bootTag = "　·　服务端 " .. os.date("%H:%M:%S", GuildClient.serverBoot) .. " 已启动"
+    end
+    UI.Text(698, 536, 12, "联机：" .. GuildClient.StatusText() .. bootTag, S.col.cyan)
+    if GuildClient.guild then
+        UI.Text(698, 552, 11, "公会 ID：" .. tostring(GuildClient.guild.id)
+            .. "（发给队友即可申请加入）", S.col.dim)
+    else
+        UI.Text(698, 552, 11, "联机公会要在大厅「联机进入」后创建；离线时下面是本地模拟公会", S.col.dim)
+    end
 
-    UI.Button("guild_sign", 698, 216, 424, 40,
-        g.sign and "今日已签到" or "签到并捐赠材料  +20", function()
-            local ok, msg = Guild.Sign(S.data)
-            commit(ok, msg)
-        end, { fontSize = 15, enabled = not g.sign,
-               fill = { 40, 62, 48, 255 }, stroke = { 86, 140, 100, 255 } })
+    local online = GuildClient.Available()
+    local inGuild = GuildClient.guild ~= nil
 
-    UI.Text(698, 268, 14, "灵魂摆渡（今日 " .. g.rescue .. "/3） 每次 +80", S.col.dim)
-    local list = Guild.RescueList(S.data)
-    for i, m in ipairs(list) do
-        if i <= 3 then
-            local y = 290 + (i - 1) * 44
-            local used = S.data.guild.liked["rescue_" .. m.idx]
-            local cls = Config.Classes[m.class]
-            UI.Panel(698, y, 424, 38, 10, S.col.panel2, S.col.line, 1)
-            UI.Text(712, y + 10, 14, m.name .. "（" .. (cls and cls.name or "?") .. "）",
-                used and S.col.dim or S.col.text)
-            UI.Button("guild_rescue_" .. i, 1010, y + 5, 100, 28,
-                used and "已救援" or "+80 救援", function()
-                    local ok, msg = Guild.Rescue(S.data, m.idx)
-                    commit(ok, msg)
-                end, { fontSize = 12, enabled = (not used) and g.rescue < 3 })
+    UI.Button("guild_net_sync", 698, 568, 112, 30, "同步", function()
+        if not online then
+            toast("当前离线：请从大厅「联机进入」")
+            return
         end
-    end
+        GuildClient.Sync(function(resp)
+            toast(resp.ok and "公会数据已同步" or (resp.msg or "同步失败"))
+        end)
+    end, { fontSize = 12, enabled = online })
 
-    UI.Text(698, 428, 14, "悬赏拓印（今日 " .. g.bounty .. "/2） 每次 +50", S.col.dim)
-    local bl = Guild.BountyList(S.data)
-    for i, b in ipairs(bl) do
-        local y = 450 + (i - 1) * 44
-        local used = S.data.guild.liked["bounty_" .. i]
-        UI.Panel(698, y, 424, 38, 10, S.col.panel2, S.col.line, 1)
-        UI.Text(712, y + 10, 14, b.name .. " 求购「" .. b.buff .. "」（" .. b.rarity .. "）",
-            used and S.col.dim or S.col.text)
-        UI.Button("guild_bounty_" .. i, 1010, y + 5, 100, 28,
-            used and "已寄出" or "+50 寄出", function()
-                local ok, msg = Guild.SendBounty(S.data, i)
-                commit(ok, msg)
-            end, { fontSize = 12, enabled = (not used) and g.bounty < 2 })
-    end
+    UI.Button("guild_net_create", 816, 568, 112, 30, "创建公会", function()
+        if not online then
+            toast("当前离线：请从大厅「联机进入」后再创建")
+            return
+        end
+        if inGuild then
+            toast("你已经在「" .. tostring(GuildClient.guild.name) .. "」里了")
+            return
+        end
+        local nick = GuildClient.nickname or ""
+        local name = (nick ~= "" and (nick .. "的公会")) or "行者公会"
+        if utf8 and utf8.len then
+            while (utf8.len(name) or 0) > 12 do name = name:sub(1, -4) end
+        end
+        GuildClient.Create(name, nick, function(resp)
+            toast(resp.ok and ("已创建「" .. name .. "」") or (resp.msg or "创建失败"))
+        end)
+    end, { fontSize = 12, enabled = online and not inGuild })
+
+    UI.Button("guild_net_join", 934, 568, 112, 30, "申请加入", function()
+        if not online then
+            toast("当前离线：请从大厅「联机进入」后再申请")
+            return
+        end
+        if inGuild then
+            toast("你已经在一个公会里了，先退出才能申请")
+            return
+        end
+        S.guildInput = {
+            active = true, value = "", maxLen = 40,
+            title = "申请加入公会",
+            hint = "输入会长给你的公会 ID（形如 123456-1730000000）",
+            onDone = function(value)
+                if not value or value == "" then return end
+                GuildClient.Apply(value, GuildClient.nickname or "", function(resp)
+                    toast(resp.ok and "申请已提交，等会长审批" or (resp.msg or "申请失败"))
+                end)
+            end,
+        }
+    end, { fontSize = 12, enabled = online and not inGuild })
+
+    UI.Button("guild_net_leave", 1052, 568, 92, 30,
+        (online and inGuild) and "退出公会" or "重置本地公会", function()
+        if online and inGuild then
+            GuildClient.Leave(GuildClient.nickname or "", function(resp)
+                toast(resp.ok and "已退出公会" or (resp.msg or "退出失败"))
+            end)
+            return
+        end
+        -- 离线：本地模拟公会重置成初始状态
+        S.data.guild = nil
+        Guild.Ensure(S.data)
+        Save.Write(S.data)
+        toast("已重置本地模拟公会（贡献币 / 等级 / 科技全部清空）")
+    end, { fontSize = 11, enabled = (online and inGuild) or (not online) })
+
 end
 
 -- ---------------------------------------------------------------- 商店
@@ -299,26 +340,64 @@ local function drawRaid()
     local maxTier = Guild.RaidTierMax(S.data)
     local bossName = raidBossName()
 
+    -- 异步共斗：先把本地输出补传，再按 TTL 拉一次共享血量池
+    RaidCloud.Sync(S.data)
+    -- 联机公会：服务端权威血量池优先；离线/未进会时退回本地 + 排行榜快照
+    local netPool = GuildClient.RaidPool()
+    local pool
+    if netPool then
+        pool = {
+            available = true, server = true,
+            bossMax = netPool.bossMax, dealt = netPool.dealt, remaining = netPool.remain,
+            ratio = netPool.ratio, participants = math.max(1, netPool.participants),
+            mine = netPool.myDamage, week = netPool.week, top = netPool.top,
+        }
+    else
+        pool = RaidCloud.Pool(S.data)
+    end
+
     UI.Panel(130, 168, 520, 452, 14, S.col.panel, S.col.line, 1)
     UI.Text(154, 184, 20, "公会团本 · " .. bossName, S.col.orange)
-    UI.TextBox(154, 208, 472, 12,
-        "每周一次（周一重置）。Boss 使用关底模型，数值先按第 1 关关底计算；"
-        .. "出场技能跟随主界面选择的技能配置，个人贡献按输出量评 D~S。", S.col.dim)
+    UI.TextBox(154, 206, 472, 12,
+        "每周一次（周一重置）。Boss 使用关底模型，数值按第 1 关关底计算；"
+        .. "出场技能跟随主界面配置，个人贡献按输出量评 D~S。", S.col.dim)
 
-    -- 当前档位 + BOSS 信息
-    UI.Panel(154, 250, 472, 56, 10, S.col.panel2, S.col.line, 1)
-    UI.Text(168, 258, 14, "难度：" .. info.name .. "  ·  BOSS：" .. bossName, S.col.cyan)
-    UI.Text(168, 280, 12,
-        "Boss 伤害 x" .. info.atkMul .. "  ·  结算贡献币 x" .. info.coinMul
+    -- 档位 + BOSS
+    UI.Panel(154, 244, 472, 52, 10, S.col.panel2, S.col.line, 1)
+    UI.Text(168, 250, 13, "难度：" .. info.name .. "  ·  BOSS：" .. bossName, S.col.cyan)
+    UI.Text(168, 270, 11,
+        "Boss 伤害 x" .. info.atkMul .. "  ·  贡献币 x" .. info.coinMul
         .. "  ·  已解锁 " .. maxTier .. "/" .. #Guild.RAID_TIERS .. " 档", S.col.text)
 
-    UI.Text(154, 318, 13, "切换难度（公会 Lv." .. lv .. " 已解锁 " .. maxTier .. " 档）", S.col.dim)
+    -- 共享血量池（异步共斗）
+    local remainPct = math.floor((1 - pool.ratio) * 100 + 0.5)
+    local dealtPct = math.floor(pool.ratio * 100 + 0.5)
+    UI.Panel(154, 302, 472, 72, 10,
+        pool.available and { 46, 34, 34, 255 } or { 32, 30, 40, 255 },
+        pool.available and { 150, 90, 80, 255 } or S.col.line, 1)
+    if pool.available then
+        UI.Text(168, 308, 13,
+            "公会共享血量池" .. (pool.server and "（服务端）" or "") .. " · 剩余 " .. remainPct .. "%",
+            S.col.red)
+        UI.Bar(168, 330, 300, 10, math.max(0, 1 - pool.ratio), S.col.red,
+            { 60, 34, 34, 255 }, { 140, 80, 78, 255 })
+        UI.Text(476, 326, 12, "已打掉 " .. dealtPct .. "%", S.col.gold)
+        UI.Text(168, 348, 11,
+            "参与 " .. pool.participants .. " 人  ·  我已输出 " .. UI.FormatNumber(pool.mine)
+            .. (pool.remaining <= 0 and "  ·  Boss 已被推倒！" or ""), S.col.dim)
+    else
+        UI.Text(168, 308, 13, "共享血量池：当前离线", S.col.dim)
+        UI.Text(168, 330, 11, "联网（TapTap 客户端）后自动同步全公会输出；本地仍可单独打", S.col.dim)
+        UI.Text(168, 348, 11, "本地本周已输出 " .. UI.FormatNumber(pool.mine), S.col.dim)
+    end
+
+    UI.Text(154, 384, 12, "切换难度（公会 Lv." .. lv .. " 已解锁 " .. maxTier .. " 档）", S.col.dim)
     for i = 1, #Guild.RAID_TIERS do
         local ti = Guild.RAID_TIERS[i]
         local x = 154 + (i - 1) * 98
         local unlocked = i <= maxTier
         local active = (tier == i)
-        UI.Button("guild_tier_" .. i, x, 338, 90, 34,
+        UI.Button("guild_tier_" .. i, x, 402, 90, 32,
             unlocked and ti.name or (ti.name .. "·锁"), function()
                 if not unlocked then
                     toast("公会 Lv." .. i .. " 解锁" .. ti.name .. "难度")
@@ -333,12 +412,12 @@ local function drawRaid()
     end
 
     local canRaid = Guild.RaidReady(S.data, S.dev)
-    UI.Text(154, 384, 14, "本周状态：" ..
+    UI.Text(154, 444, 13, "我的本周状态：" ..
         (g.raid.done and ("已结算 · " .. (g.raid.tier and Guild.RaidTierInfo(g.raid.tier).name or "")
             .. " · 评级 " .. g.raid.grade .. "（输出 " .. g.raid.percent .. "%）")
             or "可挑战"), g.raid.done and S.col.dim or S.col.green)
 
-    UI.Button("guild_raid_start", 154, 408, 300, 50,
+    UI.Button("guild_raid_start", 154, 464, 300, 46,
         (g.raid.done and S.dev) and "再次挑战（测试）" or (g.raid.done and "本周已完成" or "挑战团本"),
         function()
             if not Guild.RaidReady(S.data, S.dev) then
@@ -350,41 +429,86 @@ local function drawRaid()
         end, { fontSize = 18, enabled = canRaid,
                fill = { 64, 40, 34, 255 }, stroke = { 150, 90, 60, 255 } })
 
-    UI.Text(154, 466, 12, "提示：团本里死亡不会掉进度，按已造成的输出量结算评级。", S.col.dim)
+    UI.Button("guild_pool_refresh", 470, 464, 156, 46, "刷新血量池", function()
+        RaidCloud.Submit(S.data, true)
+        RaidCloud.Refresh(true)
+        toast("已刷新公会血量池")
+    end, { fontSize = 13, enabled = pool.available })
+
+    UI.Text(154, 516, 11, "团本里死亡不掉进度，按输出量结算；共享血量池按全公会累计输出计算。", S.col.dim)
 
     if S.dev then
-        UI.Button("guild_reset_week", 154, 490, 380, 36,
+        UI.Button("guild_reset_week", 154, 532, 380, 32,
             "一键重置（测试）：周限购 + 团本次数", function()
                 local ok, msg = Guild.ResetWeeklyForTest(S.data)
                 commit(ok, msg)
-            end, { fontSize = 13, fill = { 56, 40, 36, 255 }, stroke = { 130, 80, 60, 255 } })
-        UI.Text(154, 534, 12, "测试模式：团本可无限次重复体验，不计每周次数", S.col.cyan)
+            end, { fontSize = 12, fill = { 56, 40, 36, 255 }, stroke = { 130, 80, 60, 255 } })
     end
 
     UI.Panel(690, 168, 460, 452, 14, S.col.panel, S.col.line, 1)
     UI.Text(714, 186, 20, "评级与奖励", S.col.gold)
     for i, row in ipairs(Guild.RAID_GRADES) do
-        local y = 222 + (i - 1) * 56
-        UI.Panel(714, y, 412, 48, 10, S.col.panel2, S.col.line, 1)
-        UI.Text(730, y + 12, 22, row.grade,
+        local y = 222 + (i - 1) * 52
+        UI.Panel(714, y, 412, 44, 10, S.col.panel2, S.col.line, 1)
+        UI.Text(730, y + 10, 20, row.grade,
             row.grade == "S" and S.col.gold or (row.grade == "A" and S.col.orange or S.col.text))
-        UI.Text(790, y + 10, 13, "输出 ≥ Boss 血量 " .. row.min .. "%", S.col.dim)
-        UI.Text(1090, y + 10, 18,
+        UI.Text(790, y + 8, 12, "输出 ≥ Boss 血量 " .. row.min .. "%", S.col.dim)
+        UI.Text(1090, y + 8, 17,
             math.floor(row.coins * info.coinMul + 0.5) .. " 币", S.col.gold,
             NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
     end
-    UI.Text(714, 500, 12, "本周已获得团本贡献：" .. (g.raid.coins or 0) .. " 币", S.col.dim)
-    UI.Text(714, 522, 12, "难度越高 Boss 伤害越高，贡献币也越多", S.col.dim)
-    UI.Text(714, 544, 12, "BOSS 数值来源：第 1 关关底（瘟衰巨像模型）", S.col.dim)
+
+    UI.Text(714, 496, 12, "本周已获得团本贡献：" .. (g.raid.coins or 0) .. " 币", S.col.dim)
+    UI.Text(714, 518, 12, "难度越高 Boss 伤害越高，贡献币也越多", S.col.dim)
+    UI.Text(714, 540, 12, "BOSS 数值来源：第 1 关关底（瘟衰巨像模型）", S.col.dim)
+
+    -- 公会输出前三（异步共斗）
+    if pool.available and #RaidCloud.State().list > 0 then
+        local parts = {}
+        for i = 1, math.min(3, #RaidCloud.State().list) do
+            local e = RaidCloud.State().list[i]
+            local nm = e.nickname or ("行者#" .. tostring(e.userId))
+            parts[#parts + 1] = nm .. " " .. UI.FormatNumber(e.dmg)
+        end
+        UI.Text(714, 566, 12, "输出前三：" .. table.concat(parts, "  ·  "), S.col.cyan)
+    end
+    UI.Text(714, 588, 11, "本周已上报：" .. UI.FormatNumber(pool.mine) .. " / 全公会 "
+        .. UI.FormatNumber(pool.dealt), S.col.dim)
 end
 
 -- ---------------------------------------------------------------- 互助（战报）
 local function drawSocial()
     local g = Guild.Roll(S.data)
-    UI.Text(130, 176, 15, "公会战报 · 点赞每次 +5 贡献币（今日 " .. g.likes .. "/5）", S.col.dim)
+    local offset = 0
+
+    -- 联机会长/管理员：审批入会申请
+    local gnet = GuildClient.guild
+    if GuildClient.CanManage() and gnet and #(gnet.applies or {}) > 0 then
+        UI.Text(130, 172, 15, "入会申请（同意后对方即可进会）", S.col.orange)
+        for i, a in ipairs(gnet.applies) do
+            if i > 3 then break end
+            local y = 196 + (i - 1) * 44
+            UI.Panel(130, y, 1000, 38, 10, S.col.panel2, S.col.line, 1)
+            UI.Text(150, y + 10, 14, tostring(a.name or "行者") .. "  ·  ID " .. tostring(a.uid), S.col.text)
+            UI.Button("guild_approve_" .. i, 930, y + 5, 90, 28, "同意", function()
+                GuildClient.Approve(a.uid, function(resp)
+                    toast(resp.ok and ("已同意 " .. tostring(a.name)) or (resp.msg or "操作失败"))
+                end)
+            end, { fontSize = 12, fill = { 42, 62, 46, 255 }, stroke = { 86, 140, 100, 255 } })
+            UI.Button("guild_reject_" .. i, 1026, y + 5, 90, 28, "拒绝", function()
+                GuildClient.Reject(a.uid, function(resp)
+                    toast(resp.ok and "已拒绝" or (resp.msg or "操作失败"))
+                end)
+            end, { fontSize = 12, fill = { 56, 40, 40, 255 }, stroke = { 120, 76, 76, 255 } })
+            offset = offset + 44
+        end
+        offset = offset + 8
+    end
+
+    UI.Text(130, 176 + offset, 15, "公会战报 · 点赞每次 +5 贡献币（今日 " .. g.likes .. "/5）", S.col.dim)
     local feed = Guild.Feed(S.data)
     for i, post in ipairs(feed) do
-        local y = 204 + (i - 1) * 84
+        local y = 204 + offset + (i - 1) * 84
         UI.Panel(130, y, 1000, 74, 12, S.col.panel, S.col.line, 1)
         UI.Text(152, y + 10, 14, post.author .. " · " .. post.title, S.col.cyan)
         UI.TextBox(152, y + 32, 700, 12, post.text, S.col.text)
@@ -414,6 +538,28 @@ function GuildUI.Draw()
     elseif tab == 3 then drawTech()
     elseif tab == 4 then drawRaid()
     else drawSocial() end
+
+    -- 文本输入框（申请加入公会用；Enter 提交 / Esc 取消由 main.lua 处理）
+    local gi = S.guildInput
+    if gi and gi.active then
+        nvgBeginPath(S.ctx)
+        nvgRect(S.ctx, 0, 0, Config.DESIGN_W, Config.DESIGN_H)
+        nvgFillColor(S.ctx, nvgRGBA(0, 0, 0, 210))
+        nvgFill(S.ctx)
+        UI.Panel(340, 276, 600, 168, 14, { 30, 34, 30, 252 }, S.col.line, 1)
+        UI.Text(364, 296, 18, gi.title or "输入", S.col.text)
+        UI.Text(364, 324, 12, gi.hint or "", S.col.dim)
+        UI.Panel(364, 348, 552, 40, 8, { 22, 24, 22, 255 }, S.col.cyan, 1)
+        local shown = (gi.value ~= "" and gi.value) or "（在这里输入）"
+        UI.Text(378, 358, 16, shown, gi.value ~= "" and S.col.text or S.col.dim)
+        UI.Text(364, 398, 11, "Enter 提交 · Esc 取消 · 只接受字母 / 数字 / - / _", S.col.dim)
+        UI.Button("guild_input_ok", 920, 396, 96, 28, "提交", function()
+            gi.active = false
+            local cb = gi.onDone
+            gi.onDone = nil
+            if cb then cb(gi.value) end
+        end, { fontSize = 12 })
+    end
 end
 
 return GuildUI

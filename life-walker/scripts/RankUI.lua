@@ -29,7 +29,12 @@ local function NickFace()
     local ok, f = pcall(function()
         return nvgCreateFont(S.ctx, "nick", "Fonts/MiSans-Nickname.ttf")
     end)
-    if ok and type(f) == "number" and f >= 0 then nickFace = f end
+    if ok and type(f) == "number" and f >= 0 then
+        nickFace = f
+        if S.font and S.font >= 0 then
+            pcall(function() nvgAddFallbackFontId(S.ctx, nickFace, S.font) end)
+        end
+    end
     return nickFace
 end
 

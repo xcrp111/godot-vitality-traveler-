@@ -11,6 +11,8 @@ local function Boot()
     local ok, err = xpcall(function()
         local FarmServer = require "network.FarmServer"
         FarmServer.Start()
+        local GuildServer = require "network.GuildServer"
+        GuildServer.Start()
     end, function(e)
         local okTb, trace = pcall(function() return debug.traceback("", 2) end)
         return tostring(e) .. (okTb and trace and ("\n" .. trace) or "")
@@ -27,6 +29,8 @@ function FarmServerOnUpdate()
     local okPoll, err = pcall(function()
         local FarmServer = require "network.FarmServer"
         FarmServer.Poll()
+        local GuildServer = require "network.GuildServer"
+        GuildServer.Poll()
     end)
     if not okPoll then print("[server] poll 出错: " .. tostring(err)) end
 end
