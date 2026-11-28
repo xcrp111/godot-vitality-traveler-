@@ -31,8 +31,19 @@ for key, hex in pairs(Fortune.HEXAGRAMS) do
         and type(hex.good) == "string" and #hex.good > 0
         and type(hex.bad) == "string" and #hex.bad > 0)
 end
-check("卦表至少 12 卦", hexCount >= 12, hexCount)
+check("卦表 64 卦全齐", hexCount == 64, hexCount)
 print("[Ftn] 卦表：" .. hexCount .. " 卦")
+
+-- 六十四卦应该把八卦两两组合的 64 种全覆盖（上卦三位 .. 下卦三位）
+local missing = {}
+for upperKey in pairs(Fortune.TRIGRAMS) do
+    for lowerKey in pairs(Fortune.TRIGRAMS) do
+        if not Fortune.HEXAGRAMS[upperKey .. lowerKey] then
+            missing[#missing + 1] = upperKey .. lowerKey
+        end
+    end
+end
+check("八卦两两组合全有卦（64 种）", #missing == 0, table.concat(missing, ","))
 
 local triCount = 0
 for key, tri in pairs(Fortune.TRIGRAMS) do
@@ -135,7 +146,7 @@ for d = 1, 30 do
     if not seen[t.name] then seen[t.name] = true; seenCount = seenCount + 1 end
 end
 print(string.format("[Ftn] 12 月连抽 30 天：出现 %d 种卦（含兜底）", seenCount))
-check("30 天内至少出 5 种不同卦", seenCount >= 5, seenCount)
+check("30 天内至少出 10 种不同卦", seenCount >= 10, seenCount)
 
 -- ---------------------------------------------------------------- ⑥ 零数值产出
 local src = io and io.open and io.open("scripts/Fortune.lua", "r")
